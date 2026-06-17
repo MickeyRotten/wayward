@@ -1,0 +1,143 @@
+from pydantic import BaseModel
+
+
+class BasicInfoSchema(BaseModel):
+    name: str = ""
+    gender: str = ""
+    species: str = ""
+    age: int = 0
+    heightCm: int = 0
+    weightKg: int = 0
+    description: str = ""
+    portrait: str = ""
+    likes: str = ""
+    dislikes: str = ""
+    personality: str = ""
+
+
+class AttributeBlockSchema(BaseModel):
+    STR: int = 10
+    CON: int = 10
+    DEX: int = 10
+    INT: int = 10
+    WIS: int = 10
+    CHA: int = 10
+
+
+class EquipmentSchema(BaseModel):
+    head: str = ""
+    neck: str = ""
+    torsoOver: str = ""
+    torsoUnder: str = ""
+    leftHand: str = ""
+    rightHand: str = ""
+    waist: str = ""
+    legsOver: str = ""
+    legsUnder: str = ""
+    feet: str = ""
+    accessory1: str = ""
+    accessory2: str = ""
+
+
+class FieldSkillSchema(BaseModel):
+    name: str = ""
+    description: str = ""
+
+
+# --- Player Character ---
+
+class PlayerCharacterUpdate(BaseModel):
+    basicInfo: BasicInfoSchema
+    attributes: AttributeBlockSchema
+    equipment: EquipmentSchema
+
+
+class PlayerCharacterResponse(BaseModel):
+    id: str
+    schemaVersion: int
+    basicInfo: BasicInfoSchema
+    attributes: AttributeBlockSchema
+    equipment: EquipmentSchema
+
+
+# --- Party Member ---
+
+class PartyMemberCreate(BaseModel):
+    basicInfo: BasicInfoSchema = BasicInfoSchema()
+    attributes: AttributeBlockSchema = AttributeBlockSchema()
+    equipment: EquipmentSchema = EquipmentSchema()
+    fieldSkill: FieldSkillSchema = FieldSkillSchema()
+
+
+class PartyMemberUpdate(BaseModel):
+    basicInfo: BasicInfoSchema
+    attributes: AttributeBlockSchema
+    equipment: EquipmentSchema
+    fieldSkill: FieldSkillSchema
+
+
+class PartyMemberResponse(BaseModel):
+    id: str
+    schemaVersion: int
+    basicInfo: BasicInfoSchema
+    attributes: AttributeBlockSchema
+    equipment: EquipmentSchema
+    fieldSkill: FieldSkillSchema
+    lastSpokeTurn: int
+
+
+# --- Scenario ---
+
+class ScenarioUpdate(BaseModel):
+    description: str
+
+
+class ScenarioResponse(BaseModel):
+    description: str
+
+
+# --- Narrator ---
+
+class NarratorUpdate(BaseModel):
+    instructions: str
+
+
+class NarratorResponse(BaseModel):
+    instructions: str
+
+
+# --- OpenRouter Settings ---
+
+class OpenRouterSettingsUpdate(BaseModel):
+    apiKey: str | None = None
+    modelId: str = ""
+    temperature: float = 0.7
+    maxTokensResponse: int = 1000
+    maxContextTokens: int = 128000
+
+
+class OpenRouterSettingsResponse(BaseModel):
+    modelId: str
+    temperature: float
+    maxTokensResponse: int
+    maxContextTokens: int
+    apiKeySet: bool
+
+
+# --- Chat ---
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    role: str
+    content: str
+    turnNumber: int
+    variant: int
+    createdAt: str
+
+
+class ChatTurnRequest(BaseModel):
+    message: str
+
+
+class ChatMessageUpdate(BaseModel):
+    content: str

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wayward — Launch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bokor&family=Rethink+Sans:ital,wght@0,400..800;1,400..800&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --white: #ffffff;
+      --off: #f5f4f1;
+      --off2: #eceae6;
+      --border: #1a1816;
+      --text: #1a1816;
+      --text-sec: #666460;
+      --text-dim: #999793;
+      --mid: #c0bebb;
+      --font-h: 'Bokor', serif;
+      --font-b: 'Rethink Sans', sans-serif;
+      --font-ui: 'Silkscreen', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-b);
+      color: var(--text);
+      background: var(--white);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .shell {
+      width: 640px;
+      max-width: calc(100% - 32px);
+      border: 1.5px solid var(--border);
+      background: var(--off);
+    }
+
+    header {
+      padding: 40px 40px 24px;
+      border-bottom: 1.5px solid var(--border);
+      background: var(--white);
+    }
+
+    header h1 {
+      font-family: var(--font-h);
+      font-weight: 400;
+      font-size: 56px;
+      padding-top: 8px;
+      line-height: 1;
+    }
+
+    header p {
+      font-size: 14px;
+      color: var(--text-sec);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    .status-bar {
+      display: flex;
+      gap: 12px;
+      padding: 12px 40px;
+      border-bottom: 1.5px solid var(--mid);
+      background: var(--off2);
+    }
+
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-ui);
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border: 1.5px solid var(--border);
+      border-radius: 50%;
+      background: var(--mid);
+      flex-shrink: 0;
+    }
+
+    .dot.ok { background: var(--border); }
+
+    main { padding: 32px 40px; }
+
+    .steps {
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding-left: 36px;
+      margin-bottom: 28px;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      border: 1.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-ui);
+      font-size: 10px;
+      background: var(--white);
+    }
+
+    .steps h3 {
+      font-family: var(--font-ui);
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .steps p {
+      font-size: 14px;
+      color: var(--text-sec);
+      line-height: 1.5;
+    }
+
+    pre {
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      padding: 10px 14px;
+      margin-top: 8px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      line-height: 1.6;
+      color: var(--text);
+    }
+
+    .launch {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      border: 1.5px solid var(--border);
+      background: var(--border);
+      color: var(--white);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      letter-spacing: 0.5px;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .launch:hover { background: var(--text-sec); }
+
+    .launch.secondary {
+      background: var(--white);
+      color: var(--text);
+    }
+
+    .launch.secondary:hover { background: var(--off2); }
+
+    footer {
+      padding: 16px 40px;
+      border-top: 1.5px solid var(--mid);
+      text-align: center;
+    }
+
+    footer p {
+      font-family: var(--font-ui);
+      font-size: 9px;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <h1>Wayward</h1>
+      <p>AI-driven narrative RPG — alpha build</p>
+    </header>
+
+    <div class="status-bar">
+      <div class="indicator">
+        <div class="dot" id="dot-back"></div>
+        <span id="lbl-back">BACKEND</span>
+      </div>
+      <div class="indicator">
+        <div class="dot" id="dot-front"></div>
+        <span id="lbl-front">FRONTEND</span>
+      </div>
+    </div>
+
+    <main>
+      <ol class="steps">
+        <li>
+          <h3>INSTALL DEPENDENCIES</h3>
+          <p>Run once after cloning the repo.</p>
+          <pre>pip install -r server/requirements.txt
+cd client &amp;&amp; npm install</pre>
+        </li>
+
+        <li>
+          <h3>START THE BACKEND</h3>
+          <p>Starts the FastAPI server on port 8000. Creates the database and seeds default content on first run.</p>
+          <pre>python -m uvicorn server.main:app --reload</pre>
+        </li>
+
+        <li>
+          <h3>START THE FRONTEND</h3>
+          <p>Starts the Vite dev server on port 5173. API calls proxy to the backend automatically.</p>
+          <pre>cd client &amp;&amp; npm run dev</pre>
+        </li>
+
+        <li>
+          <h3>CONFIGURE &amp; PLAY</h3>
+          <p>Open the app, click <strong>Settings</strong>, enter your OpenRouter API key, pick a model, and start your adventure.</p>
+          <a class="launch" href="http://localhost:5173" target="_blank" id="launch-btn">OPEN WAYWARD</a>
+          <a class="launch secondary" href="http://localhost:8000/docs" target="_blank" style="margin-top: 6px;">API DOCS</a>
+        </li>
+      </ol>
+    </main>
+
+    <footer>
+      <p>SERAPHINE &middot; TIFA &middot; ROSALINA</p>
+    </footer>
+  </div>
+
+  <script>
+    async function check(url, dotId, lblId, okLabel, failLabel) {
+      const dot = document.getElementById(dotId);
+      const lbl = document.getElementById(lblId);
+      try {
+        const r = await fetch(url, { mode: 'no-cors' });
+        dot.classList.add('ok');
+        lbl.textContent = okLabel;
+      } catch {
+        dot.classList.remove('ok');
+        lbl.textContent = failLabel;
+      }
+    }
+
+    function poll() {
+      check('/health', 'dot-back', 'lbl-back', 'BACKEND OK', 'BACKEND OFFLINE');
+      check('http://localhost:5173', 'dot-front', 'lbl-front', 'FRONTEND OK', 'FRONTEND OFFLINE');
+    }
+
+    poll();
+    setInterval(poll, 5000);
+  </script>
+</body>
+</html>

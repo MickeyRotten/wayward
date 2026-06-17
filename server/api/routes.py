@@ -1,0 +1,656 @@
+import json
+import logging
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+PORTRAITS_DIR = Path(__file__).resolve().parent.parent / "portraits"
+
+from server.ai.openrouter import chat_completion_stream, fetch_models
+from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
+from server.ai.spotlight import compute_spotlight_signals, detect_speakers, format_spotlight_block
+from server.ai.summarizer import (
+    format_messages_for_summary,
+    generate_summary,
+    pick_messages_to_summarize,
+    should_summarize,
+)
+from server.db.database import async_session
+from server.api.schemas import (
+    ChatMessageResponse,
+    ChatMessageUpdate,
+    ChatTurnRequest,
+    NarratorResponse,
+    NarratorUpdate,
+    OpenRouterSettingsResponse,
+    OpenRouterSettingsUpdate,
+    PartyMemberCreate,
+    PartyMemberResponse,
+    PartyMemberUpdate,
+    PlayerCharacterResponse,
+    PlayerCharacterUpdate,
+    ScenarioResponse,
+    ScenarioUpdate,
+)
+from server.db.database import get_session
+from server.db.models import (
+    ChatMessage,
+    NarratorConfig,
+    OpenRouterSettings,
+    PartyMember,
+    PlayerCharacter,
+    StorySummary,
+    Scenario,
+)
+
+router = APIRouter(prefix="/api")
+
+
+def _pc_to_response(pc: PlayerCharacter) -> PlayerCharacterResponse:
+    return PlayerCharacterResponse(
+        id=pc.id,
+        schemaVersion=pc.schema_version,
+        basicInfo=pc.basic_info,
+        attributes=pc.attributes,
+        equipment=pc.equipment,
+    )
+
+
+def _pm_to_response(pm: PartyMember) -> PartyMemberResponse:
+    return PartyMemberResponse(
+        id=pm.id,
+        schemaVersion=pm.schema_version,
+        basicInfo=pm.basic_info,
+        attributes=pm.attributes,
+        equipment=pm.equipment,
+        fieldSkill=pm.field_skill,
+        lastSpokeTurn=pm.last_spoke_turn,
+    )
+
+
+# ── Player Character ──────────────────────────────────────────────
+
+@router.get("/player-character", response_model=PlayerCharacterResponse | None)
+async def get_player_character(session: AsyncSession = Depends(get_session)):
+    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    if not pc:
+        return None
+    return _pc_to_response(pc)
+
+
+@router.put("/player-character", response_model=PlayerCharacterResponse)
+async def upsert_player_character(
+    data: PlayerCharacterUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    if not pc:
+        pc = PlayerCharacter()
+        session.add(pc)
+    pc.basic_info = data.basicInfo.model_dump()
+    pc.attributes = data.attributes.model_dump()
+    pc.equipment = data.equipment.model_dump()
+    await session.commit()
+    await session.refresh(pc)
+    return _pc_to_response(pc)
+
+
+# ── Portrait Upload ───────────────────────────────────────────────
+
+@router.post("/portraits/upload")
+async def upload_portrait(file: UploadFile):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+    ext = Path(file.filename or "img.png").suffix or ".png"
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = PORTRAITS_DIR / filename
+    content = await file.read()
+    dest.write_bytes(content)
+    return {"filename": filename, "url": f"/portraits/{filename}"}
+
+
+# ── Party Members ─────────────────────────────────────────────────
+
+@router.get("/party-members", response_model=list[PartyMemberResponse])
+async def list_party_members(session: AsyncSession = Depends(get_session)):
+    result = await session.execute(select(PartyMember))
+    return [_pm_to_response(pm) for pm in result.scalars().all()]
+
+
+@router.post("/party-members", response_model=PartyMemberResponse, status_code=201)
+async def add_party_member(
+    data: PartyMemberCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    pm = PartyMember(
+        basic_info=data.basicInfo.model_dump(),
+        attributes=data.attributes.model_dump(),
+        equipment=data.equipment.model_dump(),
+        field_skill=data.fieldSkill.model_dump(),
+    )
+    session.add(pm)
+    await session.commit()
+    await session.refresh(pm)
+    return _pm_to_response(pm)
+
+
+@router.put("/party-members/{member_id}", response_model=PartyMemberResponse)
+async def update_party_member(
+    member_id: str,
+    data: PartyMemberUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    pm = await session.get(PartyMember, member_id)
+    if not pm:
+        raise HTTPException(404, "Party member not found")
+    pm.basic_info = data.basicInfo.model_dump()
+    pm.attributes = data.attributes.model_dump()
+    pm.equipment = data.equipment.model_dump()
+    pm.field_skill = data.fieldSkill.model_dump()
+    await session.commit()
+    await session.refresh(pm)
+    return _pm_to_response(pm)
+
+
+@router.delete("/party-members/{member_id}", status_code=204)
+async def remove_party_member(
+    member_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    pm = await session.get(PartyMember, member_id)
+    if not pm:
+        raise HTTPException(404, "Party member not found")
+    await session.delete(pm)
+    await session.commit()
+
+
+# ── Scenario ──────────────────────────────────────────────────────
+
+@router.get("/scenario", response_model=ScenarioResponse)
+async def get_scenario(session: AsyncSession = Depends(get_session)):
+    s = (await session.execute(select(Scenario))).scalars().first()
+    if not s:
+        s = Scenario(description="")
+        session.add(s)
+        await session.commit()
+    return ScenarioResponse(description=s.description)
+
+
+@router.put("/scenario", response_model=ScenarioResponse)
+async def update_scenario(
+    data: ScenarioUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    s = (await session.execute(select(Scenario))).scalars().first()
+    if not s:
+        s = Scenario()
+        session.add(s)
+    s.description = data.description
+    await session.commit()
+    return ScenarioResponse(description=s.description)
+
+
+# ── Narrator Config ───────────────────────────────────────────────
+
+@router.get("/narrator", response_model=NarratorResponse)
+async def get_narrator(session: AsyncSession = Depends(get_session)):
+    n = (await session.execute(select(NarratorConfig))).scalars().first()
+    if not n:
+        n = NarratorConfig(instructions="")
+        session.add(n)
+        await session.commit()
+    return NarratorResponse(instructions=n.instructions)
+
+
+@router.put("/narrator", response_model=NarratorResponse)
+async def update_narrator(
+    data: NarratorUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    n = (await session.execute(select(NarratorConfig))).scalars().first()
+    if not n:
+        n = NarratorConfig()
+        session.add(n)
+    n.instructions = data.instructions
+    await session.commit()
+    return NarratorResponse(instructions=n.instructions)
+
+
+# ── OpenRouter Settings ───────────────────────────────────────────
+
+@router.get("/settings/openrouter", response_model=OpenRouterSettingsResponse)
+async def get_openrouter_settings(session: AsyncSession = Depends(get_session)):
+    s = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    if not s:
+        s = OpenRouterSettings()
+        session.add(s)
+        await session.commit()
+    return OpenRouterSettingsResponse(
+        modelId=s.model_id,
+        temperature=s.temperature,
+        maxTokensResponse=s.max_tokens_response,
+        maxContextTokens=s.max_context_tokens,
+        apiKeySet=bool(s.api_key),
+    )
+
+
+@router.put("/settings/openrouter", response_model=OpenRouterSettingsResponse)
+async def update_openrouter_settings(
+    data: OpenRouterSettingsUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    s = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    if not s:
+        s = OpenRouterSettings()
+        session.add(s)
+    if data.apiKey is not None:
+        s.api_key = data.apiKey
+    s.model_id = data.modelId
+    s.temperature = data.temperature
+    s.max_tokens_response = data.maxTokensResponse
+    s.max_context_tokens = data.maxContextTokens
+    await session.commit()
+    return OpenRouterSettingsResponse(
+        modelId=s.model_id,
+        temperature=s.temperature,
+        maxTokensResponse=s.max_tokens_response,
+        maxContextTokens=s.max_context_tokens,
+        apiKeySet=bool(s.api_key),
+    )
+
+
+# ── Chat Messages ─────────────────────────────────────────────────
+
+@router.get("/chat/messages", response_model=list[ChatMessageResponse])
+async def get_chat_messages(session: AsyncSession = Depends(get_session)):
+    result = await session.execute(
+        select(ChatMessage).order_by(ChatMessage.id)
+    )
+    return [
+        ChatMessageResponse(
+            id=m.id,
+            role=m.role,
+            content=m.content,
+            turnNumber=m.turn_number,
+            variant=m.variant,
+            createdAt=m.created_at.isoformat() if m.created_at else "",
+        )
+        for m in result.scalars().all()
+    ]
+
+
+@router.put("/chat/messages/{msg_id}", response_model=ChatMessageResponse)
+async def edit_message(
+    msg_id: int,
+    data: ChatMessageUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    msg = await session.get(ChatMessage, msg_id)
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    msg.content = data.content
+    await session.commit()
+    await session.refresh(msg)
+    return ChatMessageResponse(
+        id=msg.id,
+        role=msg.role,
+        content=msg.content,
+        turnNumber=msg.turn_number,
+        variant=msg.variant,
+        createdAt=msg.created_at.isoformat() if msg.created_at else "",
+    )
+
+
+@router.delete("/chat/messages/{msg_id}/and-after", status_code=204)
+async def delete_message_and_after(
+    msg_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    msg = await session.get(ChatMessage, msg_id)
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    await session.execute(
+        delete(ChatMessage).where(ChatMessage.id >= msg.id)
+    )
+    await session.commit()
+
+
+@router.post("/chat/save-partial")
+async def save_partial(
+    data: ChatMessageUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Save a partial response when the user stops generation."""
+    all_msgs = (
+        await session.execute(select(ChatMessage).order_by(ChatMessage.id.desc()))
+    ).scalars().first()
+
+    if not all_msgs:
+        return {"ok": True}
+
+    last_turn = all_msgs.turn_number
+    existing_assistant = (
+        await session.execute(
+            select(ChatMessage).where(
+                ChatMessage.turn_number == last_turn,
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalars().all()
+
+    variant = len(existing_assistant)
+    partial_msg = ChatMessage(
+        role="assistant",
+        content=data.content,
+        turn_number=last_turn,
+        variant=variant,
+    )
+    session.add(partial_msg)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/chat/messages", status_code=204)
+async def clear_chat(session: AsyncSession = Depends(get_session)):
+    await session.execute(delete(ChatMessage))
+    result = await session.execute(select(PartyMember))
+    for pm in result.scalars().all():
+        pm.last_spoke_turn = 0
+    await session.commit()
+
+
+# ── Models Proxy ──────────────────────────────────────────────────
+
+@router.get("/models")
+async def list_models(session: AsyncSession = Depends(get_session)):
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    if not settings or not settings.api_key:
+        raise HTTPException(400, "OpenRouter API key not configured")
+    try:
+        models = await fetch_models(settings.api_key)
+        return models
+    except Exception as e:
+        raise HTTPException(502, f"Failed to fetch models: {e}")
+
+
+# ── Prompt Log ────────────────────────────────────────────────────
+
+import pathlib as _pathlib
+
+_PROMPT_LOG_PATH = _pathlib.Path(__file__).resolve().parent.parent.parent / ".prompt_log.json"
+
+
+def _save_prompt_log(messages: list[dict]):
+    _PROMPT_LOG_PATH.write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
+
+
+@router.get("/chat/prompt-log")
+async def get_prompt_log():
+    if not _PROMPT_LOG_PATH.exists():
+        raise HTTPException(404, "No prompt log available")
+    return json.loads(_PROMPT_LOG_PATH.read_text(encoding="utf-8"))
+
+
+# ── Chat Turn ─────────────────────────────────────────────────────
+
+log = logging.getLogger("wayward.chat")
+
+
+async def _load_game_context(session: AsyncSession):
+    """Load all game state needed for a chat turn."""
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    if not settings or not settings.api_key:
+        raise HTTPException(400, "OpenRouter API key not configured")
+    if not settings.model_id:
+        raise HTTPException(400, "No model selected")
+
+    narrator = (await session.execute(select(NarratorConfig))).scalars().first() or NarratorConfig(instructions="")
+    scenario = (await session.execute(select(Scenario))).scalars().first() or Scenario(description="")
+    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    if not pc:
+        raise HTTPException(400, "No player character created")
+
+    party = list((await session.execute(select(PartyMember))).scalars().all())
+    all_messages = list(
+        (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
+    )
+    summary = (await session.execute(select(StorySummary))).scalars().first()
+    if not summary:
+        summary = StorySummary(content="", summary_up_to_turn=0)
+        session.add(summary)
+
+    return settings, narrator, scenario, pc, party, all_messages, summary
+
+
+async def _maybe_summarize_and_build(
+    settings, narrator, scenario, pc, party_list,
+    history: list[ChatMessage],
+    summary: StorySummary,
+    player_message: str,
+    current_turn: int,
+    session: AsyncSession,
+):
+    """Check if summarization is needed, do it, then build the prompt.
+    Returns (prompt_messages, did_summarize)."""
+
+    # Filter history to only unsummarized turns
+    filtered = [m for m in history if m.turn_number > summary.summary_up_to_turn]
+
+    # Compute spotlight
+    spotlight_block = None
+    if party_list:
+        recent_assistant = [m.content for m in filtered if m.role == "assistant"][-3:]
+        recent_context = " ".join(recent_assistant)
+        signals = compute_spotlight_signals(
+            player_message=player_message,
+            recent_context=recent_context,
+            party_members=party_list,
+            current_turn=current_turn,
+        )
+        spotlight_block = format_spotlight_block(signals)
+
+    # Build a test prompt to check size
+    test_prompt = build_prompt(
+        narrator_config=narrator,
+        scenario=scenario,
+        player_character=pc,
+        party_members=party_list,
+        chat_history=filtered,
+        player_message=player_message,
+        spotlight_block=spotlight_block,
+        story_summary=summary.content or None,
+        max_context_tokens=settings.max_context_tokens,
+        max_response_tokens=settings.max_tokens_response,
+    )
+
+    preamble_tokens = estimate_prompt_tokens(test_prompt)
+    did_summarize = False
+
+    if should_summarize(preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response):
+        to_summarize, to_keep, new_boundary = pick_messages_to_summarize(filtered)
+        if to_summarize:
+            new_summary = await generate_summary(
+                api_key=settings.api_key,
+                model_id=settings.model_id,
+                messages_to_summarize=to_summarize,
+                existing_summary=summary.content,
+            )
+            summary.content = new_summary
+            summary.summary_up_to_turn = new_boundary
+            await session.commit()
+            filtered = to_keep
+            did_summarize = True
+
+    messages = build_prompt(
+        narrator_config=narrator,
+        scenario=scenario,
+        player_character=pc,
+        party_members=party_list,
+        chat_history=filtered,
+        player_message=player_message,
+        spotlight_block=spotlight_block,
+        story_summary=summary.content or None,
+        max_context_tokens=settings.max_context_tokens,
+        max_response_tokens=settings.max_tokens_response,
+    )
+
+    return messages, did_summarize
+
+
+@router.post("/chat/turn")
+async def chat_turn(
+    data: ChatTurnRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    settings, narrator, scenario, pc, party, all_messages, summary = await _load_game_context(session)
+
+    max_turn = max((m.turn_number for m in all_messages), default=0)
+    current_turn = max_turn + 1
+
+    user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn)
+    session.add(user_msg)
+    await session.commit()
+
+    messages, did_summarize = await _maybe_summarize_and_build(
+        settings, narrator, scenario, pc, party,
+        history=all_messages,
+        summary=summary,
+        player_message=data.message,
+        current_turn=current_turn,
+        session=session,
+    )
+
+    variant_count = sum(
+        1 for m in all_messages if m.turn_number == current_turn and m.role == "assistant"
+    )
+
+    return _stream_llm_response(
+        messages=messages,
+        settings=settings,
+        party_list=party,
+        current_turn=current_turn,
+        variant=variant_count,
+        did_summarize=did_summarize,
+    )
+
+
+# ── Regenerate ────────────────────────────────────────────────────
+
+@router.post("/chat/regenerate")
+async def regenerate(session: AsyncSession = Depends(get_session)):
+    settings, narrator, scenario, pc, party, all_messages, summary = await _load_game_context(session)
+
+    if not all_messages:
+        raise HTTPException(400, "No messages to regenerate")
+
+    last_turn = max(m.turn_number for m in all_messages)
+    last_user_msg = next(
+        (m for m in reversed(all_messages) if m.turn_number == last_turn and m.role == "user"),
+        None,
+    )
+    if not last_user_msg:
+        raise HTTPException(400, "No user message found for last turn")
+
+    history = [m for m in all_messages if m.turn_number < last_turn]
+
+    messages, did_summarize = await _maybe_summarize_and_build(
+        settings, narrator, scenario, pc, party,
+        history=history,
+        summary=summary,
+        player_message=last_user_msg.content,
+        current_turn=last_turn,
+        session=session,
+    )
+
+    variant_count = sum(
+        1 for m in all_messages if m.turn_number == last_turn and m.role == "assistant"
+    )
+
+    return _stream_llm_response(
+        messages=messages,
+        settings=settings,
+        party_list=party,
+        current_turn=last_turn,
+        variant=variant_count,
+        did_summarize=did_summarize,
+    )
+
+
+# ── Summary endpoint ──────────────────────────────────────────────
+
+@router.get("/chat/summary")
+async def get_summary(session: AsyncSession = Depends(get_session)):
+    s = (await session.execute(select(StorySummary))).scalars().first()
+    if not s or not s.content:
+        return {"content": "", "summaryUpToTurn": 0}
+    return {"content": s.content, "summaryUpToTurn": s.summary_up_to_turn}
+
+
+# ── Shared streaming helper ───────────────────────────────────────
+
+def _stream_llm_response(
+    messages: list[dict],
+    settings: OpenRouterSettings,
+    party_list: list[PartyMember],
+    current_turn: int,
+    variant: int,
+    did_summarize: bool = False,
+):
+    _save_prompt_log(messages)
+
+    context_tokens = estimate_prompt_tokens(messages)
+    api_key = settings.api_key
+    model_id = settings.model_id
+    temperature = settings.temperature
+    max_tokens = settings.max_tokens_response
+    max_context = settings.max_context_tokens
+
+    async def stream():
+        if did_summarize:
+            yield f"data: {json.dumps({'type': 'summarized'})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
+
+        full_text = ""
+        try:
+            async for chunk in chat_completion_stream(
+                api_key=api_key,
+                model_id=model_id,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ):
+                full_text += chunk
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+        except Exception as e:
+            log.exception("OpenRouter stream failed")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            return
+
+        try:
+            async with async_session() as save_session:
+                if party_list:
+                    speaker_ids = detect_speakers(full_text, party_list)
+                    for pm in party_list:
+                        if pm.id in speaker_ids:
+                            db_pm = await save_session.get(PartyMember, pm.id)
+                            if db_pm:
+                                db_pm.last_spoke_turn = current_turn
+
+                assistant_msg = ChatMessage(
+                    role="assistant", content=full_text,
+                    turn_number=current_turn, variant=variant,
+                )
+                save_session.add(assistant_msg)
+                await save_session.commit()
+        except Exception as e:
+            log.exception("Failed to save response to DB")
+
+        response_tokens = len(full_text) // 4
+        yield f"data: {json.dumps({'type': 'done', 'contextTokens': context_tokens + response_tokens, 'maxContextTokens': max_context})}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")

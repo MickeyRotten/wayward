@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Database
+*.db
+
+# Node
+client/node_modules/
+client/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Stray screenshots
+*.png
+!server/portraits/*.png
+
+# Env
+.env
+
+# Uploaded portraits (keep seed files tracked with git add -f)
+
+
+# Debug
+.prompt_log.json

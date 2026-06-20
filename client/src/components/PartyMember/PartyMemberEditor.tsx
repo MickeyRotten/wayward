@@ -1,33 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PartyMember, AttributeBlock, Equipment, BasicInfo, FieldSkill } from '@shared/types/models'
+import type { PartyMember, Equipment, BasicInfo, FieldSkill } from '@shared/types/models'
 import { usePartyStore } from '../../state/partyStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitUpload } from '../PortraitUpload'
 import { ConfirmDialog } from '../ConfirmDialog'
 
-const ATTR_KEYS: (keyof AttributeBlock)[] = ['STR', 'CON', 'DEX', 'INT', 'WIS', 'CHA']
-
 const EQUIP_SLOTS: { key: keyof Equipment; label: string }[] = [
   { key: 'head', label: 'Head' },
   { key: 'neck', label: 'Neck' },
-  { key: 'torsoOver', label: 'Torso (Over)' },
-  { key: 'torsoUnder', label: 'Torso (Under)' },
+  { key: 'torsoOver', label: 'Torso · Over' },
+  { key: 'torsoUnder', label: 'Torso · Under' },
   { key: 'leftHand', label: 'Left Hand' },
   { key: 'rightHand', label: 'Right Hand' },
   { key: 'waist', label: 'Waist' },
-  { key: 'legsOver', label: 'Legs (Over)' },
-  { key: 'legsUnder', label: 'Legs (Under)' },
+  { key: 'legsOver', label: 'Legs · Over' },
+  { key: 'legsUnder', label: 'Legs · Under' },
   { key: 'feet', label: 'Feet' },
-  { key: 'accessory1', label: 'Accessory 1' },
-  { key: 'accessory2', label: 'Accessory 2' },
+  { key: 'accessory1', label: 'Accessory I' },
+  { key: 'accessory2', label: 'Accessory II' },
 ]
 
 const FIELD_SKILL_PLACEHOLDER = `Punches as hard as a wrecking ball — able to break stone and put a big dent in metal with her bare fist. Still just a punch — things too big, too tough, or not physical at all are out of her reach.`
 
-export function PartyMemberEditor({ member }: { member: PartyMember }) {
+export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode: 'view' | 'edit' }) {
   const save = usePartyStore((s) => s.savePartyMember)
   const remove = usePartyStore((s) => s.removePartyMember)
   const select = useUiStore((s) => s.select)
+  const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PartyMember>(structuredClone(member))
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -38,7 +37,8 @@ export function PartyMemberEditor({ member }: { member: PartyMember }) {
   const flush = useCallback(() => {
     clearTimeout(timer.current)
     save(draft.current)
-  }, [save])
+    setEditDirty(false)
+  }, [save, setEditDirty])
 
   const scheduleFlush = useCallback(() => {
     clearTimeout(timer.current)
@@ -49,34 +49,94 @@ export function PartyMemberEditor({ member }: { member: PartyMember }) {
 
   const updateBasic = (key: keyof BasicInfo, value: string | number, immediate?: boolean) => {
     Object.assign(draft.current.basicInfo, { [key]: value })
-    immediate ? flush() : scheduleFlush()
-  }
-
-  const updateAttr = (key: keyof AttributeBlock, value: number, immediate?: boolean) => {
-    draft.current.attributes[key] = value
+    setEditDirty(true)
     immediate ? flush() : scheduleFlush()
   }
 
   const updateEquip = (key: keyof Equipment, value: string, immediate?: boolean) => {
     draft.current.equipment[key] = value
+    setEditDirty(true)
     immediate ? flush() : scheduleFlush()
   }
 
   const updateSkill = (key: keyof FieldSkill, value: string, immediate?: boolean) => {
     draft.current.fieldSkill[key] = value
+    setEditDirty(true)
     immediate ? flush() : scheduleFlush()
+  }
+
+  if (mode === 'view') {
+    return (
+      <div className="space-y-6 p-6">
+        {/* Portrait */}
+        {d.basicInfo.portrait && (
+          <div className="w-full aspect-3/4 border-[1.5px] border-line bg-bg2 overflow-hidden">
+            <img
+              src={`/portraits/${d.basicInfo.portrait}`}
+              alt="Portrait"
+              className="w-full h-full object-cover object-top"
+            />
+          </div>
+        )}
+
+        {/* Basic Info */}
+        <Section title="Basic Info">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <ViewField label="Gender" value={d.basicInfo.gender} />
+              <ViewField label="Species" value={d.basicInfo.species} />
+              <ViewField label="Age" value={d.basicInfo.age ? String(d.basicInfo.age) : ''} />
+              <ViewField label="Height" value={d.basicInfo.heightCm ? `${d.basicInfo.heightCm} cm` : ''} />
+              <ViewField label="Weight" value={d.basicInfo.weightKg ? `${d.basicInfo.weightKg} kg` : ''} />
+            </div>
+            {d.basicInfo.personality && (
+              <ViewField label="Personality" value={d.basicInfo.personality} />
+            )}
+            {d.basicInfo.likes && (
+              <ViewField label="Likes" value={d.basicInfo.likes} />
+            )}
+            {d.basicInfo.dislikes && (
+              <ViewField label="Dislikes" value={d.basicInfo.dislikes} />
+            )}
+            {d.basicInfo.description && (
+              <p className="font-body text-sm text-text2 leading-relaxed mt-2">{d.basicInfo.description}</p>
+            )}
+          </div>
+        </Section>
+
+        {/* Field Skill */}
+        {(d.fieldSkill.name || d.fieldSkill.description) && (
+          <Section title="Field Skill">
+            {d.fieldSkill.name && (
+              <p className="font-disp text-[15px] text-gold pt-0.5 mb-1">{d.fieldSkill.name}</p>
+            )}
+            {d.fieldSkill.description && (
+              <p className="font-body text-sm text-text2 leading-relaxed">{d.fieldSkill.description}</p>
+            )}
+          </Section>
+        )}
+
+        {/* Equipment */}
+        <Section title="Equipment">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {EQUIP_SLOTS.map(({ key, label }) => (
+              <ViewField
+                key={key}
+                label={label}
+                value={d.equipment[key] || ''}
+                emptyText="Empty"
+              />
+            ))}
+          </div>
+        </Section>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <span className="font-ui text-[9px] text-textdim tracking-wider">PARTY MEMBER</span>
-          <h2 className="font-disp text-[28px] pt-[3px] leading-none">
-            {d.basicInfo.name || 'New Member'}
-          </h2>
-        </div>
+      {/* Header with Remove */}
+      <div className="flex items-start justify-end">
         <RemoveButton onRemove={async () => { await remove(member.id); select(null) }} name={d.basicInfo.name || 'this member'} />
       </div>
 
@@ -120,15 +180,6 @@ export function PartyMemberEditor({ member }: { member: PartyMember }) {
         </div>
       </Section>
 
-      {/* Attributes */}
-      <Section title="Attributes">
-        <div className="grid grid-cols-3 gap-3">
-          {ATTR_KEYS.map((k) => (
-            <NumField key={k} label={k} value={d.attributes[k]} onChange={(v) => updateAttr(k, v)} onBlur={(v) => updateAttr(k, v, true)} />
-          ))}
-        </div>
-      </Section>
-
       {/* Equipment */}
       <Section title="Equipment">
         <div className="space-y-3">
@@ -154,6 +205,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
       {children}
     </section>
+  )
+}
+
+function ViewField({ label, value, emptyText }: { label: string; value: string; emptyText?: string }) {
+  return (
+    <div className="py-0.5">
+      <span className="text-[11px] text-textdim font-body">{label}</span>
+      <span className="text-[11px] text-textdim font-body mx-1">&middot;</span>
+      <span className={`text-sm font-body ${value ? 'text-text' : 'text-textdim italic'}`}>
+        {value || emptyText || '—'}
+      </span>
+    </div>
   )
 }
 

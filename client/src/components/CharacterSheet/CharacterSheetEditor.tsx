@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useRef } from 'react'
-import type { PlayerCharacter, AttributeBlock, Equipment, BasicInfo } from '@shared/types/models'
+import type { PlayerCharacter, Equipment, BasicInfo } from '@shared/types/models'
 import { usePartyStore } from '../../state/partyStore'
+import { useUiStore } from '../../state/uiStore'
 import { PortraitUpload } from '../PortraitUpload'
-
-const ATTR_KEYS: (keyof AttributeBlock)[] = ['STR', 'CON', 'DEX', 'INT', 'WIS', 'CHA']
 
 const EQUIP_SLOTS: { key: keyof Equipment; label: string }[] = [
   { key: 'head', label: 'Head' },
   { key: 'neck', label: 'Neck' },
-  { key: 'torsoOver', label: 'Torso (Over)' },
-  { key: 'torsoUnder', label: 'Torso (Under)' },
+  { key: 'torsoOver', label: 'Torso · Over' },
+  { key: 'torsoUnder', label: 'Torso · Under' },
   { key: 'leftHand', label: 'Left Hand' },
   { key: 'rightHand', label: 'Right Hand' },
   { key: 'waist', label: 'Waist' },
-  { key: 'legsOver', label: 'Legs (Over)' },
-  { key: 'legsUnder', label: 'Legs (Under)' },
+  { key: 'legsOver', label: 'Legs · Over' },
+  { key: 'legsUnder', label: 'Legs · Under' },
   { key: 'feet', label: 'Feet' },
-  { key: 'accessory1', label: 'Accessory 1' },
-  { key: 'accessory2', label: 'Accessory 2' },
+  { key: 'accessory1', label: 'Accessory I' },
+  { key: 'accessory2', label: 'Accessory II' },
 ]
 
-export function CharacterSheetEditor() {
+export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const pc = usePartyStore((s) => s.playerCharacter)
   const save = usePartyStore((s) => s.savePlayerCharacter)
+  const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PlayerCharacter | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -32,8 +32,11 @@ export function CharacterSheetEditor() {
 
   const flush = useCallback(() => {
     clearTimeout(timer.current)
-    if (draft.current) save(draft.current)
-  }, [save])
+    if (draft.current) {
+      save(draft.current)
+      setEditDirty(false)
+    }
+  }, [save, setEditDirty])
 
   const scheduleFlush = useCallback(() => {
     clearTimeout(timer.current)
@@ -46,31 +49,66 @@ export function CharacterSheetEditor() {
   const updateBasic = (key: keyof BasicInfo, value: string | number, immediate?: boolean) => {
     if (!draft.current) return
     Object.assign(draft.current.basicInfo, { [key]: value })
-    immediate ? flush() : scheduleFlush()
-  }
-
-  const updateAttr = (key: keyof AttributeBlock, value: number, immediate?: boolean) => {
-    if (!draft.current) return
-    draft.current.attributes[key] = value
+    setEditDirty(true)
     immediate ? flush() : scheduleFlush()
   }
 
   const updateEquip = (key: keyof Equipment, value: string, immediate?: boolean) => {
     if (!draft.current) return
     draft.current.equipment[key] = value
+    setEditDirty(true)
     immediate ? flush() : scheduleFlush()
+  }
+
+  if (mode === 'view') {
+    return (
+      <div className="space-y-6 p-6">
+        {/* Portrait */}
+        {d.basicInfo.portrait && (
+          <div className="w-full aspect-3/4 border-[1.5px] border-line bg-bg2 overflow-hidden">
+            <img
+              src={`/portraits/${d.basicInfo.portrait}`}
+              alt="Portrait"
+              className="w-full h-full object-cover object-top"
+            />
+          </div>
+        )}
+
+        {/* Basic Info */}
+        <Section title="Basic Info">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <ViewField label="Gender" value={d.basicInfo.gender} />
+              <ViewField label="Species" value={d.basicInfo.species} />
+              <ViewField label="Age" value={d.basicInfo.age ? String(d.basicInfo.age) : ''} />
+              <ViewField label="Height" value={d.basicInfo.heightCm ? `${d.basicInfo.heightCm} cm` : ''} />
+              <ViewField label="Weight" value={d.basicInfo.weightKg ? `${d.basicInfo.weightKg} kg` : ''} />
+            </div>
+            {d.basicInfo.description && (
+              <p className="font-body text-sm text-text2 leading-relaxed mt-2">{d.basicInfo.description}</p>
+            )}
+          </div>
+        </Section>
+
+        {/* Equipment */}
+        <Section title="Equipment">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {EQUIP_SLOTS.map(({ key, label }) => (
+              <ViewField
+                key={key}
+                label={label}
+                value={d.equipment[key] || ''}
+                emptyText="Empty"
+              />
+            ))}
+          </div>
+        </Section>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div>
-        <span className="font-ui text-[9px] text-textdim tracking-wider">PLAYER CHARACTER</span>
-        <h2 className="font-disp text-[28px] pt-[3px] leading-none">
-          {d.basicInfo.name || 'New Character'}
-        </h2>
-      </div>
-
       {/* Portrait */}
       <PortraitUpload
         portrait={d.basicInfo.portrait}
@@ -91,15 +129,6 @@ export function CharacterSheetEditor() {
             <NumField label="Weight (kg)" value={d.basicInfo.weightKg} onChange={(v) => updateBasic('weightKg', v)} onBlur={(v) => updateBasic('weightKg', v, true)} />
           </div>
           <TextArea label="Description" value={d.basicInfo.description} onChange={(v) => updateBasic('description', v)} onBlur={(v) => updateBasic('description', v, true)} />
-        </div>
-      </Section>
-
-      {/* Attributes */}
-      <Section title="Attributes">
-        <div className="grid grid-cols-3 gap-3">
-          {ATTR_KEYS.map((k) => (
-            <NumField key={k} label={k} value={d.attributes[k]} onChange={(v) => updateAttr(k, v)} onBlur={(v) => updateAttr(k, v, true)} />
-          ))}
         </div>
       </Section>
 
@@ -128,6 +157,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
       {children}
     </section>
+  )
+}
+
+function ViewField({ label, value, emptyText }: { label: string; value: string; emptyText?: string }) {
+  return (
+    <div className="py-0.5">
+      <span className="text-[11px] text-textdim font-body">{label}</span>
+      <span className="text-[11px] text-textdim font-body mx-1">&middot;</span>
+      <span className={`text-sm font-body ${value ? 'text-text' : 'text-textdim italic'}`}>
+        {value || emptyText || '—'}
+      </span>
+    </div>
   )
 }
 

@@ -9,25 +9,78 @@ export function PartyInspector() {
   const members = usePartyStore((s) => s.partyMembers)
   const selection = useUiStore((s) => s.selection)
   const everSelected = useUiStore((s) => s.everSelected)
+  const mode = useUiStore((s) => s.mode)
+  const editDirty = useUiStore((s) => s.editDirty)
+  const setMode = useUiStore((s) => s.setMode)
 
   if (!everSelected) return <EmptyState />
 
-  const hasSelection = (selection?.kind === 'player' && pc) ||
-    (selection?.kind === 'member' && members.some((m) => m.id === (selection as { kind: 'member'; id: string }).id))
+  // Resolve the selected entity
+  const selIsPC = selection?.kind === 'player' && !!pc
+  const selMember = selection?.kind === 'member'
+    ? members.find((m) => m.id === selection.id)
+    : undefined
+  const selIsMember = !!selMember
+
+  const hasSelection = selIsPC || selIsMember
+
+  // Derive entity name for the header
+  const entityName = selIsPC
+    ? (pc!.basicInfo.name || 'New Character')
+    : selIsMember
+      ? (selMember!.basicInfo.name || 'New Member')
+      : ''
+
+  const entityLabel = selIsPC ? 'PLAYER CHARACTER' : selIsMember ? 'PARTY MEMBER' : ''
 
   return (
-    <div className="relative h-full">
-      {hasSelection && <SaveIndicator />}
-      {selection?.kind === 'player' && pc ? (
-        <CharacterSheetEditor />
-      ) : selection?.kind === 'member' ? (
-        (() => {
-          const member = members.find((m) => m.id === selection.id)
-          return member ? <PartyMemberEditor key={member.id} member={member} /> : <EmptyState />
-        })()
-      ) : (
-        <EmptyState />
+    <div className="flex flex-col h-full">
+      {/* Inspector Header */}
+      {hasSelection && (
+        <div className="shrink-0 border-b border-line px-6 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="font-ui text-[9px] text-textdim tracking-wider">{entityLabel}</span>
+              <h2 className="font-disp text-[24px] pt-0.75 leading-none text-text truncate">
+                {entityName}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 mt-1">
+              {/* Edit dirty indicator */}
+              {editDirty && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-gold"
+                  title="Unsaved changes"
+                />
+              )}
+              {/* View/Edit toggle */}
+              <button
+                type="button"
+                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border-[1.5px] transition-colors ${
+                  mode === 'view'
+                    ? 'text-textsec border-line hover:text-text hover:border-line2'
+                    : 'text-gold border-gold/40 hover:border-gold/60'
+                }`}
+                onClick={() => setMode(mode === 'view' ? 'edit' : 'view')}
+              >
+                {mode === 'view' ? 'EDIT' : 'VIEW'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Inspector Body — single scrollable child */}
+      <div className="flex-1 overflow-y-auto">
+        {hasSelection && <SaveIndicator />}
+        {selIsPC ? (
+          <CharacterSheetEditor mode={mode} />
+        ) : selIsMember ? (
+          <PartyMemberEditor key={selMember!.id} member={selMember!} mode={mode} />
+        ) : (
+          <EmptyState />
+        )}
+      </div>
     </div>
   )
 }
@@ -45,7 +98,7 @@ function SaveIndicator() {
 
   return (
     <div
-      className={`absolute top-2 right-2 z-10 font-ui text-[9px] text-textdim tracking-wider transition-opacity duration-300 ${
+      className={`sticky top-0 z-10 text-right pr-6 pt-2 font-ui text-[9px] text-textdim tracking-wider transition-opacity duration-300 ${
         visible ? 'opacity-100' : 'opacity-0'
       }`}
     >

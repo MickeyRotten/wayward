@@ -3,8 +3,6 @@ from sqlalchemy import select
 from server.db.database import async_session
 from server.db.models import NarratorConfig, PartyMember, PlayerCharacter, Scenario, StorySummary
 
-DEFAULT_ATTRIBUTES = {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "WIS": 10, "CHA": 10}
-
 EMPTY_EQUIPMENT = {
     "head": "", "neck": "", "torsoOver": "", "torsoUnder": "",
     "leftHand": "", "rightHand": "", "waist": "",
@@ -29,7 +27,6 @@ async def seed_defaults():
                 "weightKg": 58,
                 "description": "A wandering bard with silver-streaked hair and quiet, watchful eyes. She carries herself with the calm of someone who has seen more than she lets on.",
             },
-            attributes={"STR": 8, "CON": 10, "DEX": 12, "INT": 14, "WIS": 13, "CHA": 16},
             equipment={**EMPTY_EQUIPMENT, "rightHand": "Worn lute", "torsoOver": "Traveler's cloak"},
         )
 
@@ -44,7 +41,6 @@ async def seed_defaults():
                 "description": "A martial artist with dark hair and wine-red eyes. Warm and steady with her companions, devastating to anything she can reach with her fists.",
                 "portrait": "tifa.png",
             },
-            attributes={"STR": 18, "CON": 14, "DEX": 15, "INT": 10, "WIS": 11, "CHA": 13},
             equipment={**EMPTY_EQUIPMENT, "leftHand": "Premium leather gloves", "rightHand": "Premium leather gloves", "feet": "Steel-toed boots"},
             field_skill={
                 "name": "Wrecking Fist",
@@ -62,7 +58,6 @@ async def seed_defaults():
                 "weightKg": 55,
                 "description": "Tall and ethereal, with platinum hair that catches light like starshine. She speaks softly and sees far, carrying the quiet weight of someone who has watched over galaxies.",
             },
-            attributes={"STR": 7, "CON": 9, "DEX": 10, "INT": 18, "WIS": 17, "CHA": 15},
             equipment={**EMPTY_EQUIPMENT, "torsoOver": "Celestial gown", "rightHand": "Star wand"},
             field_skill={
                 "name": "Luma Swarm",

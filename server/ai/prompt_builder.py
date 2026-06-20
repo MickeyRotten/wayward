@@ -33,7 +33,6 @@ def build_prompt(
 
     # 3. Player character summary
     pc_info = player_character.basic_info
-    pc_attrs = player_character.attributes
     pc_equip = player_character.equipment
 
     equipped = [
@@ -47,9 +46,6 @@ def build_prompt(
         f"PLAYER CHARACTER: {pc_info.get('name', 'Unknown')}, "
         f"a {pc_info.get('species', 'unknown')} {pc_info.get('gender', '').lower()}. "
         f"{pc_info.get('description', '')}\n"
-        f"Attributes: STR {pc_attrs.get('STR', 10)} / CON {pc_attrs.get('CON', 10)} / "
-        f"DEX {pc_attrs.get('DEX', 10)} / INT {pc_attrs.get('INT', 10)} / "
-        f"WIS {pc_attrs.get('WIS', 10)} / CHA {pc_attrs.get('CHA', 10)}\n"
         f"Carrying: {equip_str}"
     )
     messages.append({"role": "system", "content": pc_summary})

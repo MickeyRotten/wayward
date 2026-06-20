@@ -55,7 +55,6 @@ def _pc_to_response(pc: PlayerCharacter) -> PlayerCharacterResponse:
         id=pc.id,
         schemaVersion=pc.schema_version,
         basicInfo=pc.basic_info,
-        attributes=pc.attributes,
         equipment=pc.equipment,
     )
 
@@ -65,7 +64,6 @@ def _pm_to_response(pm: PartyMember) -> PartyMemberResponse:
         id=pm.id,
         schemaVersion=pm.schema_version,
         basicInfo=pm.basic_info,
-        attributes=pm.attributes,
         equipment=pm.equipment,
         fieldSkill=pm.field_skill,
         lastSpokeTurn=pm.last_spoke_turn,
@@ -92,7 +90,6 @@ async def upsert_player_character(
         pc = PlayerCharacter()
         session.add(pc)
     pc.basic_info = data.basicInfo.model_dump()
-    pc.attributes = data.attributes.model_dump()
     pc.equipment = data.equipment.model_dump()
     await session.commit()
     await session.refresh(pc)
@@ -128,7 +125,6 @@ async def add_party_member(
 ):
     pm = PartyMember(
         basic_info=data.basicInfo.model_dump(),
-        attributes=data.attributes.model_dump(),
         equipment=data.equipment.model_dump(),
         field_skill=data.fieldSkill.model_dump(),
     )
@@ -148,7 +144,6 @@ async def update_party_member(
     if not pm:
         raise HTTPException(404, "Party member not found")
     pm.basic_info = data.basicInfo.model_dump()
-    pm.attributes = data.attributes.model_dump()
     pm.equipment = data.equipment.model_dump()
     pm.field_skill = data.fieldSkill.model_dump()
     await session.commit()
@@ -222,6 +217,22 @@ async def update_narrator(
 
 # ── OpenRouter Settings ───────────────────────────────────────────
 
+def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
+    return OpenRouterSettingsResponse(
+        modelId=s.model_id,
+        temperature=s.temperature,
+        topP=s.top_p,
+        minP=s.min_p,
+        topK=s.top_k,
+        frequencyPenalty=s.frequency_penalty,
+        presencePenalty=s.presence_penalty,
+        repetitionPenalty=s.repetition_penalty,
+        maxTokensResponse=s.max_tokens_response,
+        maxContextTokens=s.max_context_tokens,
+        apiKeySet=bool(s.api_key),
+    )
+
+
 @router.get("/settings/openrouter", response_model=OpenRouterSettingsResponse)
 async def get_openrouter_settings(session: AsyncSession = Depends(get_session)):
     s = (await session.execute(select(OpenRouterSettings))).scalars().first()
@@ -229,13 +240,7 @@ async def get_openrouter_settings(session: AsyncSession = Depends(get_session)):
         s = OpenRouterSettings()
         session.add(s)
         await session.commit()
-    return OpenRouterSettingsResponse(
-        modelId=s.model_id,
-        temperature=s.temperature,
-        maxTokensResponse=s.max_tokens_response,
-        maxContextTokens=s.max_context_tokens,
-        apiKeySet=bool(s.api_key),
-    )
+    return _or_response(s)
 
 
 @router.put("/settings/openrouter", response_model=OpenRouterSettingsResponse)
@@ -251,16 +256,16 @@ async def update_openrouter_settings(
         s.api_key = data.apiKey
     s.model_id = data.modelId
     s.temperature = data.temperature
+    s.top_p = data.topP
+    s.min_p = data.minP
+    s.top_k = data.topK
+    s.frequency_penalty = data.frequencyPenalty
+    s.presence_penalty = data.presencePenalty
+    s.repetition_penalty = data.repetitionPenalty
     s.max_tokens_response = data.maxTokensResponse
     s.max_context_tokens = data.maxContextTokens
     await session.commit()
-    return OpenRouterSettingsResponse(
-        modelId=s.model_id,
-        temperature=s.temperature,
-        maxTokensResponse=s.max_tokens_response,
-        maxContextTokens=s.max_context_tokens,
-        apiKeySet=bool(s.api_key),
-    )
+    return _or_response(s)
 
 
 # ── Chat Messages ─────────────────────────────────────────────────
@@ -361,6 +366,137 @@ async def clear_chat(session: AsyncSession = Depends(get_session)):
     for pm in result.scalars().all():
         pm.last_spoke_turn = 0
     await session.commit()
+
+
+# ── Adventure Export / Import / Reset ─────────────────────────────
+
+@router.get("/adventure/export")
+async def export_adventure(session: AsyncSession = Depends(get_session)):
+    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    members = (await session.execute(select(PartyMember))).scalars().all()
+    narrator = (await session.execute(select(NarratorConfig))).scalars().first()
+    scenario_obj = (await session.execute(select(Scenario))).scalars().first()
+    messages = (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
+    summary = (await session.execute(select(StorySummary))).scalars().first()
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+
+    return {
+        "version": 1,
+        "playerCharacter": _pc_to_response(pc).model_dump() if pc else None,
+        "partyMembers": [_pm_to_response(m).model_dump() for m in members],
+        "narrator": {"instructions": narrator.instructions} if narrator else {"instructions": ""},
+        "scenario": {"description": scenario_obj.description} if scenario_obj else {"description": ""},
+        "chatMessages": [
+            {
+                "role": m.role, "content": m.content,
+                "turnNumber": m.turn_number, "variant": m.variant,
+            }
+            for m in messages
+        ],
+        "storySummary": {
+            "content": summary.content if summary else "",
+            "summaryUpToTurn": summary.summary_up_to_turn if summary else 0,
+        },
+        "settings": {
+            "modelId": settings.model_id if settings else "",
+            "temperature": settings.temperature if settings else 0.7,
+            "maxTokensResponse": settings.max_tokens_response if settings else 1000,
+            "maxContextTokens": settings.max_context_tokens if settings else 128000,
+        },
+    }
+
+
+@router.post("/adventure/import")
+async def import_adventure(data: dict, session: AsyncSession = Depends(get_session)):
+    # Clear everything
+    await session.execute(delete(ChatMessage))
+    await session.execute(delete(PartyMember))
+    await session.execute(delete(PlayerCharacter))
+    await session.execute(delete(NarratorConfig))
+    await session.execute(delete(Scenario))
+    await session.execute(delete(StorySummary))
+    await session.execute(delete(OpenRouterSettings))
+
+    # Restore player character
+    if data.get("playerCharacter"):
+        pc_data = data["playerCharacter"]
+        pc = PlayerCharacter(
+            basic_info=pc_data.get("basicInfo", {}),
+            equipment=pc_data.get("equipment", {}),
+        )
+        session.add(pc)
+
+    # Restore party members
+    for pm_data in data.get("partyMembers", []):
+        pm = PartyMember(
+            basic_info=pm_data.get("basicInfo", {}),
+            equipment=pm_data.get("equipment", {}),
+            field_skill=pm_data.get("fieldSkill", {}),
+        )
+        session.add(pm)
+
+    # Restore narrator + scenario
+    session.add(NarratorConfig(instructions=data.get("narrator", {}).get("instructions", "")))
+    session.add(Scenario(description=data.get("scenario", {}).get("description", "")))
+
+    # Restore chat
+    for msg in data.get("chatMessages", []):
+        session.add(ChatMessage(
+            role=msg["role"], content=msg["content"],
+            turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
+        ))
+
+    # Restore summary
+    summary_data = data.get("storySummary", {})
+    session.add(StorySummary(
+        content=summary_data.get("content", ""),
+        summary_up_to_turn=summary_data.get("summaryUpToTurn", 0),
+    ))
+
+    # Restore settings (without apiKey)
+    existing_settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    old_api_key = existing_settings.api_key if existing_settings else ""
+    s = data.get("settings", {})
+    session.add(OpenRouterSettings(
+        api_key=old_api_key,
+        model_id=s.get("modelId", ""),
+        temperature=s.get("temperature", 0.7),
+        max_tokens_response=s.get("maxTokensResponse", 1000),
+        max_context_tokens=s.get("maxContextTokens", 128000),
+    ))
+
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/adventure/reset")
+async def reset_adventure(session: AsyncSession = Depends(get_session)):
+    # Preserve API key
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    old_api_key = settings.api_key if settings else ""
+
+    await session.execute(delete(ChatMessage))
+    await session.execute(delete(PartyMember))
+    await session.execute(delete(PlayerCharacter))
+    await session.execute(delete(NarratorConfig))
+    await session.execute(delete(Scenario))
+    await session.execute(delete(StorySummary))
+    await session.execute(delete(OpenRouterSettings))
+    await session.commit()
+
+    # Re-seed
+    from server.db.seed import seed_defaults
+    await seed_defaults()
+
+    # Restore API key
+    if old_api_key:
+        async with async_session() as s2:
+            or_settings = (await s2.execute(select(OpenRouterSettings))).scalars().first()
+            if or_settings:
+                or_settings.api_key = old_api_key
+                await s2.commit()
+
+    return {"ok": True}
 
 
 # ── Models Proxy ──────────────────────────────────────────────────
@@ -606,6 +742,12 @@ def _stream_llm_response(
     api_key = settings.api_key
     model_id = settings.model_id
     temperature = settings.temperature
+    top_p = settings.top_p
+    min_p = settings.min_p
+    top_k = settings.top_k
+    frequency_penalty = settings.frequency_penalty
+    presence_penalty = settings.presence_penalty
+    repetition_penalty = settings.repetition_penalty
     max_tokens = settings.max_tokens_response
     max_context = settings.max_context_tokens
 
@@ -623,6 +765,12 @@ def _stream_llm_response(
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                top_p=top_p,
+                min_p=min_p,
+                top_k=top_k,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
+                repetition_penalty=repetition_penalty,
             ):
                 full_text += chunk
                 yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"

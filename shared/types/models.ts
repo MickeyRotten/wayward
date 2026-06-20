@@ -1,12 +1,3 @@
-export interface AttributeBlock {
-  STR: number
-  CON: number
-  DEX: number
-  INT: number
-  WIS: number
-  CHA: number
-}
-
 export interface Equipment {
   head: string
   neck: string
@@ -45,7 +36,6 @@ export interface PlayerCharacter {
   id: string
   schemaVersion: number
   basicInfo: BasicInfo
-  attributes: AttributeBlock
   equipment: Equipment
 }
 
@@ -53,7 +43,6 @@ export interface PartyMember {
   id: string
   schemaVersion: number
   basicInfo: BasicInfo
-  attributes: AttributeBlock
   equipment: Equipment
   fieldSkill: FieldSkill
   lastSpokeTurn: number
@@ -70,6 +59,12 @@ export interface NarratorConfig {
 export interface OpenRouterSettings {
   modelId: string
   temperature: number
+  topP: number
+  minP: number
+  topK: number
+  frequencyPenalty: number
+  presencePenalty: number
+  repetitionPenalty: number
   maxTokensResponse: number
   maxContextTokens: number
 }

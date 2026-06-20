@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 interface PartyState {
   playerCharacter: PlayerCharacter | null
   partyMembers: PartyMember[]
+  lastSavedAt: number | null
   fetchAll: () => Promise<void>
   savePlayerCharacter: (pc: PlayerCharacter) => Promise<void>
   addPartyMember: () => Promise<PartyMember>
@@ -15,6 +16,7 @@ interface PartyState {
 export const usePartyStore = create<PartyState>((set, get) => ({
   playerCharacter: null,
   partyMembers: [],
+  lastSavedAt: null,
 
   fetchAll: async () => {
     const [pc, members] = await Promise.all([
@@ -27,10 +29,9 @@ export const usePartyStore = create<PartyState>((set, get) => ({
   savePlayerCharacter: async (pc) => {
     const saved = await api.put<PlayerCharacter>('/player-character', {
       basicInfo: pc.basicInfo,
-      attributes: pc.attributes,
       equipment: pc.equipment,
     })
-    set({ playerCharacter: saved })
+    set({ playerCharacter: saved, lastSavedAt: Date.now() })
   },
 
   addPartyMember: async () => {
@@ -42,7 +43,6 @@ export const usePartyStore = create<PartyState>((set, get) => ({
   savePartyMember: async (pm) => {
     const saved = await api.put<PartyMember>(`/party-members/${pm.id}`, {
       basicInfo: pm.basicInfo,
-      attributes: pm.attributes,
       equipment: pm.equipment,
       fieldSkill: pm.fieldSkill,
     })
@@ -50,6 +50,7 @@ export const usePartyStore = create<PartyState>((set, get) => ({
       partyMembers: get().partyMembers.map((m) =>
         m.id === saved.id ? saved : m
       ),
+      lastSavedAt: Date.now(),
     })
   },
 

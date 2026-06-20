@@ -19,7 +19,6 @@ class PlayerCharacter(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     schema_version: Mapped[int] = mapped_column(Integer, default=1)
     basic_info: Mapped[dict] = mapped_column(JSON, default=dict)
-    attributes: Mapped[dict] = mapped_column(JSON, default=dict)
     equipment: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
@@ -29,7 +28,6 @@ class PartyMember(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     schema_version: Mapped[int] = mapped_column(Integer, default=1)
     basic_info: Mapped[dict] = mapped_column(JSON, default=dict)
-    attributes: Mapped[dict] = mapped_column(JSON, default=dict)
     equipment: Mapped[dict] = mapped_column(JSON, default=dict)
     field_skill: Mapped[dict] = mapped_column(JSON, default=dict)
     last_spoke_turn: Mapped[int] = mapped_column(Integer, default=0)
@@ -56,6 +54,12 @@ class OpenRouterSettings(Base):
     api_key: Mapped[str] = mapped_column(String, default="")
     model_id: Mapped[str] = mapped_column(String, default="")
     temperature: Mapped[float] = mapped_column(Float, default=0.7)
+    top_p: Mapped[float] = mapped_column(Float, default=1.0)
+    min_p: Mapped[float] = mapped_column(Float, default=0.0)
+    top_k: Mapped[int] = mapped_column(Integer, default=0)
+    frequency_penalty: Mapped[float] = mapped_column(Float, default=0.0)
+    presence_penalty: Mapped[float] = mapped_column(Float, default=0.0)
+    repetition_penalty: Mapped[float] = mapped_column(Float, default=1.0)
     max_tokens_response: Mapped[int] = mapped_column(Integer, default=1000)
     max_context_tokens: Mapped[int] = mapped_column(Integer, default=128000)
 

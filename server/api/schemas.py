@@ -15,15 +15,6 @@ class BasicInfoSchema(BaseModel):
     personality: str = ""
 
 
-class AttributeBlockSchema(BaseModel):
-    STR: int = 10
-    CON: int = 10
-    DEX: int = 10
-    INT: int = 10
-    WIS: int = 10
-    CHA: int = 10
-
-
 class EquipmentSchema(BaseModel):
     head: str = ""
     neck: str = ""
@@ -48,7 +39,6 @@ class FieldSkillSchema(BaseModel):
 
 class PlayerCharacterUpdate(BaseModel):
     basicInfo: BasicInfoSchema
-    attributes: AttributeBlockSchema
     equipment: EquipmentSchema
 
 
@@ -56,7 +46,6 @@ class PlayerCharacterResponse(BaseModel):
     id: str
     schemaVersion: int
     basicInfo: BasicInfoSchema
-    attributes: AttributeBlockSchema
     equipment: EquipmentSchema
 
 
@@ -64,14 +53,12 @@ class PlayerCharacterResponse(BaseModel):
 
 class PartyMemberCreate(BaseModel):
     basicInfo: BasicInfoSchema = BasicInfoSchema()
-    attributes: AttributeBlockSchema = AttributeBlockSchema()
     equipment: EquipmentSchema = EquipmentSchema()
     fieldSkill: FieldSkillSchema = FieldSkillSchema()
 
 
 class PartyMemberUpdate(BaseModel):
     basicInfo: BasicInfoSchema
-    attributes: AttributeBlockSchema
     equipment: EquipmentSchema
     fieldSkill: FieldSkillSchema
 
@@ -80,7 +67,6 @@ class PartyMemberResponse(BaseModel):
     id: str
     schemaVersion: int
     basicInfo: BasicInfoSchema
-    attributes: AttributeBlockSchema
     equipment: EquipmentSchema
     fieldSkill: FieldSkillSchema
     lastSpokeTurn: int
@@ -112,6 +98,12 @@ class OpenRouterSettingsUpdate(BaseModel):
     apiKey: str | None = None
     modelId: str = ""
     temperature: float = 0.7
+    topP: float = 1.0
+    minP: float = 0.0
+    topK: int = 0
+    frequencyPenalty: float = 0.0
+    presencePenalty: float = 0.0
+    repetitionPenalty: float = 1.0
     maxTokensResponse: int = 1000
     maxContextTokens: int = 128000
 
@@ -119,6 +111,12 @@ class OpenRouterSettingsUpdate(BaseModel):
 class OpenRouterSettingsResponse(BaseModel):
     modelId: str
     temperature: float
+    topP: float
+    minP: float
+    topK: int
+    frequencyPenalty: float
+    presencePenalty: float
+    repetitionPenalty: float
     maxTokensResponse: int
     maxContextTokens: int
     apiKeySet: bool

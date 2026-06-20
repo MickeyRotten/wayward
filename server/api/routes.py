@@ -12,7 +12,7 @@ PORTRAITS_DIR = Path(__file__).resolve().parent.parent / "portraits"
 
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
-from server.ai.spotlight import compute_spotlight_signals, detect_speakers, format_spotlight_block
+from server.ai.spotlight import SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
 from server.ai.summarizer import (
     format_messages_for_summary,
     generate_summary,
@@ -786,6 +786,7 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             turnNumber=m.turn_number,
             variant=m.variant,
             speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
+            spotlightReason=m.spotlight_reason,
             createdAt=m.created_at.isoformat() if m.created_at else "",
         )
         for m in result.scalars().all()
@@ -811,6 +812,7 @@ async def edit_message(
         turnNumber=msg.turn_number,
         variant=msg.variant,
         speaker=msg.speaker or ("narrator" if msg.role == "assistant" else "player"),
+        spotlightReason=msg.spotlight_reason,
         createdAt=msg.created_at.isoformat() if msg.created_at else "",
     )
 
@@ -910,6 +912,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
                 "role": m.role, "content": m.content,
                 "turnNumber": m.turn_number, "variant": m.variant,
                 "speaker": m.speaker or ("narrator" if m.role == "assistant" else "player"),
+                "spotlightReason": m.spotlight_reason,
             }
             for m in messages
         ],
@@ -1002,6 +1005,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             role=msg["role"], content=msg["content"],
             turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
             speaker=msg.get("speaker", "narrator" if msg["role"] == "assistant" else "player"),
+            spotlight_reason=msg.get("spotlightReason"),
         ))
 
     # Restore summary
@@ -1211,23 +1215,24 @@ async def _maybe_summarize_and_build(
     lore_config: LorebookConfig | None = None,
 ):
     """Check if summarization is needed, do it, then build the prompt.
-    Returns (prompt_messages, did_summarize)."""
+    Returns (prompt_messages, did_summarize, spotlight_signals)."""
 
     # Filter history to only unsummarized turns
     filtered = [m for m in history if m.turn_number > summary.summary_up_to_turn]
 
     # Compute spotlight
     spotlight_block = None
+    spotlight_signals = []
     if party_list:
         recent_assistant = [m.content for m in filtered if m.role == "assistant"][-3:]
         recent_context = " ".join(recent_assistant)
-        signals = compute_spotlight_signals(
+        spotlight_signals = compute_spotlight_signals(
             player_message=player_message,
             recent_context=recent_context,
             party_members=party_list,
             current_turn=current_turn,
         )
-        spotlight_block = format_spotlight_block(signals)
+        spotlight_block = format_spotlight_block(spotlight_signals)
 
     # Build a test prompt to check size
     test_prompt = build_prompt(
@@ -1284,7 +1289,7 @@ async def _maybe_summarize_and_build(
         max_response_tokens=settings.max_tokens_response,
     )
 
-    return messages, did_summarize
+    return messages, did_summarize, spotlight_signals
 
 
 @router.post("/chat/turn")
@@ -1301,7 +1306,7 @@ async def chat_turn(
     session.add(user_msg)
     await session.commit()
 
-    messages, did_summarize = await _maybe_summarize_and_build(
+    messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, scenario, pc, party,
         history=all_messages,
         summary=summary,
@@ -1326,6 +1331,7 @@ async def chat_turn(
         current_turn=current_turn,
         variant=variant_count,
         did_summarize=did_summarize,
+        spotlight_signals=spotlight_signals,
     )
 
 
@@ -1348,7 +1354,7 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
 
     history = [m for m in all_messages if m.turn_number < last_turn]
 
-    messages, did_summarize = await _maybe_summarize_and_build(
+    messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, scenario, pc, party,
         history=history,
         summary=summary,
@@ -1373,6 +1379,7 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         current_turn=last_turn,
         variant=variant_count,
         did_summarize=did_summarize,
+        spotlight_signals=spotlight_signals,
     )
 
 
@@ -1395,6 +1402,7 @@ def _stream_llm_response(
     current_turn: int,
     variant: int,
     did_summarize: bool = False,
+    spotlight_signals: list[SpotlightSignal] | None = None,
 ):
     _save_prompt_log(messages)
 
@@ -1441,6 +1449,7 @@ def _stream_llm_response(
 
         try:
             async with async_session() as save_session:
+                speaker_ids: list[str] = []
                 if party_list:
                     speaker_ids = detect_speakers(full_text, party_list)
                     for pm in party_list:
@@ -1449,10 +1458,26 @@ def _stream_llm_response(
                             if db_pm:
                                 db_pm.last_spoke_turn = current_turn
 
+                # Determine spotlight reason for the first speaking party member
+                spot_reason: str | None = None
+                if speaker_ids and spotlight_signals:
+                    signal_map = {s.member_id: s for s in spotlight_signals}
+                    for sid in speaker_ids:
+                        sig = signal_map.get(sid)
+                        if sig:
+                            if sig.directly_addressed:
+                                spot_reason = "Directly addressed"
+                            elif sig.field_skill_relevant:
+                                spot_reason = "Field skill · relevant"
+                            elif sig.turns_since_last_spoke >= 5:
+                                spot_reason = "Hasn't spoken in a while"
+                            break
+
                 assistant_msg = ChatMessage(
                     role="assistant", content=full_text,
                     turn_number=current_turn, variant=variant,
                     speaker="narrator",
+                    spotlight_reason=spot_reason,
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()

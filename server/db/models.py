@@ -82,6 +82,7 @@ class ChatMessage(Base):
     turn_number: Mapped[int] = mapped_column(Integer)
     variant: Mapped[int] = mapped_column(Integer, default=0)
     speaker: Mapped[str] = mapped_column(String, default="narrator")
+    spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

@@ -133,6 +133,7 @@ class ChatMessageResponse(BaseModel):
     turnNumber: int
     variant: int
     speaker: str = "narrator"
+    spotlightReason: str | None = None
     createdAt: str
 
 

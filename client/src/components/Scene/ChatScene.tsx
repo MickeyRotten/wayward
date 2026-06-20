@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
+import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import type { ChatMessage } from '@shared/types/models'
@@ -31,6 +32,7 @@ export function ChatScene() {
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
+  const catalog = useItemsStore((s) => s.catalog)
 
   const [input, setInput] = useState('')
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
@@ -88,6 +90,9 @@ export function ChatScene() {
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
   const pcPortrait = playerCharacter?.basicInfo?.portrait || ''
 
+  // Item names for inline chip rendering
+  const itemNames = catalog.map((item) => item.name).filter(Boolean)
+
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
@@ -121,6 +126,7 @@ export function ChatScene() {
             pcName={pcName}
             pcPortrait={pcPortrait}
             partyMemberMap={partyMemberMap}
+            itemNames={itemNames}
           />
         ))}
 
@@ -140,7 +146,7 @@ export function ChatScene() {
           <div className="max-w-[85%] mr-auto px-4 py-3">
             <div
               className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
-              dangerouslySetInnerHTML={{ __html: formatNarration(streamingContent) }}
+              dangerouslySetInnerHTML={{ __html: applyItemChips(formatNarration(streamingContent), itemNames) }}
             />
           </div>
         )}
@@ -302,6 +308,7 @@ function MessageBubble({
   pcName,
   pcPortrait,
   partyMemberMap,
+  itemNames,
 }: {
   message: ChatMessage
   variantCount: number
@@ -314,6 +321,7 @@ function MessageBubble({
   pcName: string
   pcPortrait: string
   partyMemberMap: Map<string, { id: string; basicInfo: { name: string; portrait?: string } }>
+  itemNames: string[]
 }) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
@@ -381,7 +389,7 @@ function MessageBubble({
               ) : (
                 <div
                   className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: formatNarration(message.content) }}
+                  dangerouslySetInnerHTML={{ __html: applyItemChips(formatNarration(message.content), itemNames) }}
                 />
               )}
             </div>
@@ -429,11 +437,20 @@ function MessageBubble({
           />
 
           <div className="flex-1 min-w-0">
-            {/* Name header */}
-            <div className="mb-1">
+            {/* Name header + spotlight badge */}
+            <div className="mb-1 flex items-center gap-2">
               <span className="font-disp text-[13px] text-gold pt-[2px]">
                 {pmName.split(' ')[0]}
               </span>
+              {message.spotlightReason && (
+                <span className={`text-[10px] font-ui px-1.5 py-0.5 border rounded-full ${
+                  message.spotlightReason === 'Hasn\'t spoken in a while'
+                    ? 'border-golddeep text-golddeep'
+                    : 'border-gold text-gold'
+                }`}>
+                  {message.spotlightReason}
+                </span>
+              )}
             </div>
 
             {/* Message content */}
@@ -454,7 +471,7 @@ function MessageBubble({
               ) : (
                 <div
                   className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: formatNarration(message.content) }}
+                  dangerouslySetInnerHTML={{ __html: applyItemChips(formatNarration(message.content), itemNames) }}
                 />
               )}
             </div>
@@ -499,9 +516,12 @@ function MessageBubble({
               isFirstNarrator ? 'first-narrator-dropcap' : ''
             }`}
             dangerouslySetInnerHTML={{
-              __html: isFirstNarrator
-                ? formatNarrationWithDropCap(message.content)
-                : formatNarration(message.content),
+              __html: applyItemChips(
+                isFirstNarrator
+                  ? formatNarrationWithDropCap(message.content)
+                  : formatNarration(message.content),
+                itemNames,
+              ),
             }}
           />
         )}
@@ -746,6 +766,20 @@ function formatNarration(text: string): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>')
     .replace(/\n/g, '<br/>')
+}
+
+function applyItemChips(html: string, itemNames: string[]): string {
+  if (itemNames.length === 0) return html
+  // Sort by length descending so longer names match first (e.g. "Tide-Salt Draught" before "Salt")
+  const sorted = [...itemNames].sort((a, b) => b.length - a.length)
+  // Build a single regex that matches any item name (case-insensitive, word-boundary)
+  const escaped = sorted.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const itemRe = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  // Split HTML into tags and text segments, only process text segments
+  return html.replace(/(<[^>]*>)|([^<]+)/g, (_, tag, text) => {
+    if (tag) return tag
+    return text.replace(itemRe, '<span class="text-gold2 bg-gold/10 px-1 rounded text-sm font-ui">$1</span>')
+  })
 }
 
 function formatNarrationWithDropCap(text: string): string {

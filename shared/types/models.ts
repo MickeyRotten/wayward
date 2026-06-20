@@ -100,6 +100,7 @@ export interface ChatMessage {
   turnNumber: number
   variant: number
   speaker: string
+  spotlightReason?: string | null
   createdAt: string
 }
 

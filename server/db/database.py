@@ -30,6 +30,8 @@ async def _run_migrations():
     migrations = [
         # Task 5.1: speaker column on chat_messages
         ("chat_messages", "speaker", "ALTER TABLE chat_messages ADD COLUMN speaker VARCHAR DEFAULT 'narrator'"),
+        # Task 5.2: spotlight_reason column on chat_messages
+        ("chat_messages", "spotlight_reason", "ALTER TABLE chat_messages ADD COLUMN spotlight_reason VARCHAR"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

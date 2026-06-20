@@ -192,3 +192,47 @@ class InventoryAddRequest(BaseModel):
 class InventoryRemoveRequest(BaseModel):
     itemId: str
     count: int = 1
+
+
+# --- Quest ---
+
+class QuestObjectiveSchema(BaseModel):
+    id: str
+    text: str
+    done: bool
+
+
+class QuestSchema(BaseModel):
+    id: str
+    title: str
+    status: str = "active"
+    desc: str = ""
+    objectives: list[QuestObjectiveSchema] = []
+    notes: str = ""
+    relatedLore: list[str] = []
+
+
+class QuestCreate(BaseModel):
+    title: str
+    status: str = "active"
+    desc: str = ""
+    notes: str = ""
+    relatedLore: list[str] = []
+
+
+class QuestUpdate(BaseModel):
+    title: str | None = None
+    status: str | None = None
+    desc: str | None = None
+    notes: str | None = None
+    relatedLore: list[str] | None = None
+
+
+class QuestObjectiveCreate(BaseModel):
+    text: str
+    done: bool = False
+
+
+class QuestObjectiveUpdate(BaseModel):
+    text: str | None = None
+    done: bool | None = None

@@ -7,6 +7,8 @@ from server.db.models import (
     NarratorConfig,
     PartyMember,
     PlayerCharacter,
+    Quest,
+    QuestObjective,
     Scenario,
     StorySummary,
 )
@@ -16,6 +18,25 @@ EMPTY_EQUIPMENT = {
     "leftHand": None, "rightHand": None, "waist": None,
     "legsOver": None, "legsUnder": None, "feet": None,
     "accessory1": None, "accessory2": None,
+}
+
+# ---------------------------------------------------------------------------
+# Stable IDs for seed quests and objectives
+# ---------------------------------------------------------------------------
+QUEST_IDS = {
+    "moonlit_clearing":    "b0000001-0001-4000-8000-000000000001",
+    "sigil_fragments":     "b0000001-0001-4000-8000-000000000002",
+    "rosalinas_errand":    "b0000001-0001-4000-8000-000000000003",
+}
+OBJECTIVE_IDS = {
+    "mc_investigate":      "c0000001-0001-4000-8000-000000000001",
+    "mc_pillars":          "c0000001-0001-4000-8000-000000000002",
+    "mc_light":            "c0000001-0001-4000-8000-000000000003",
+    "sf_find_first":       "c0000001-0001-4000-8000-000000000004",
+    "sf_find_second":      "c0000001-0001-4000-8000-000000000005",
+    "sf_learn_purpose":    "c0000001-0001-4000-8000-000000000006",
+    "re_starlight":        "c0000001-0001-4000-8000-000000000007",
+    "re_return":           "c0000001-0001-4000-8000-000000000008",
 }
 
 # ---------------------------------------------------------------------------
@@ -334,8 +355,85 @@ async def seed_defaults():
             count=5,
         )
 
+        # --- Seed quests ---
+        quest_clearing = Quest(
+            id=QUEST_IDS["moonlit_clearing"],
+            title="The Moonlit Clearing",
+            status="active",
+            desc="Ancient stone pillars ring a shallow depression where silver light pools like water. Something old stirs here.",
+            notes="The clearing appeared only after the mist rolled in. The villagers warned us not to linger.",
+        )
+        quest_sigils = Quest(
+            id=QUEST_IDS["sigil_fragments"],
+            title="Sigil Fragments",
+            status="active",
+            desc="Fragments of an ancient ward-sigil are scattered across the region. Reassembling them may reveal their purpose.",
+            notes="",
+        )
+        quest_errand = Quest(
+            id=QUEST_IDS["rosalinas_errand"],
+            title="Rosalina's Errand",
+            status="active",
+            desc="Rosalina senses a faint starlight signature nearby that she wants to investigate before moving on.",
+            notes="She hasn't said much about why it matters to her.",
+        )
+
+        obj_mc_investigate = QuestObjective(
+            id=OBJECTIVE_IDS["mc_investigate"],
+            quest_id=QUEST_IDS["moonlit_clearing"],
+            text="Investigate the silver light pooling in the depression",
+            sort_order=0,
+        )
+        obj_mc_pillars = QuestObjective(
+            id=OBJECTIVE_IDS["mc_pillars"],
+            quest_id=QUEST_IDS["moonlit_clearing"],
+            text="Examine the stone pillars for inscriptions or markings",
+            sort_order=1,
+        )
+        obj_mc_light = QuestObjective(
+            id=OBJECTIVE_IDS["mc_light"],
+            quest_id=QUEST_IDS["moonlit_clearing"],
+            text="Determine what the light does when touched",
+            sort_order=2,
+        )
+        obj_sf_first = QuestObjective(
+            id=OBJECTIVE_IDS["sf_find_first"],
+            quest_id=QUEST_IDS["sigil_fragments"],
+            text="Find the first sigil fragment",
+            done=True,
+            sort_order=0,
+        )
+        obj_sf_second = QuestObjective(
+            id=OBJECTIVE_IDS["sf_find_second"],
+            quest_id=QUEST_IDS["sigil_fragments"],
+            text="Find the second sigil fragment",
+            sort_order=1,
+        )
+        obj_sf_purpose = QuestObjective(
+            id=OBJECTIVE_IDS["sf_learn_purpose"],
+            quest_id=QUEST_IDS["sigil_fragments"],
+            text="Learn the purpose of the complete sigil",
+            sort_order=2,
+        )
+        obj_re_starlight = QuestObjective(
+            id=OBJECTIVE_IDS["re_starlight"],
+            quest_id=QUEST_IDS["rosalinas_errand"],
+            text="Follow Rosalina to the starlight source",
+            sort_order=0,
+        )
+        obj_re_return = QuestObjective(
+            id=OBJECTIVE_IDS["re_return"],
+            quest_id=QUEST_IDS["rosalinas_errand"],
+            text="Return to the party afterward",
+            sort_order=1,
+        )
+
         session.add_all([
             pc, tifa, rosalina, narrator, scenario, summary,
             inv_draught, inv_lantern, inv_rations,
+            quest_clearing, quest_sigils, quest_errand,
+            obj_mc_investigate, obj_mc_pillars, obj_mc_light,
+            obj_sf_first, obj_sf_second, obj_sf_purpose,
+            obj_re_starlight, obj_re_return,
         ])
         await session.commit()

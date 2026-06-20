@@ -37,6 +37,11 @@ from server.api.schemas import (
     PartyMemberUpdate,
     PlayerCharacterResponse,
     PlayerCharacterUpdate,
+    QuestCreate,
+    QuestObjectiveCreate,
+    QuestObjectiveUpdate,
+    QuestSchema,
+    QuestUpdate,
     ScenarioResponse,
     ScenarioUpdate,
 )
@@ -49,6 +54,8 @@ from server.db.models import (
     OpenRouterSettings,
     PartyMember,
     PlayerCharacter,
+    Quest,
+    QuestObjective,
     StorySummary,
     Scenario,
 )
@@ -467,6 +474,167 @@ async def get_inventory_capacity(session: AsyncSession = Depends(get_session)):
     return {"used": total_stacks, "max": max_slots}
 
 
+# ── Quests ────────────────────────────────────────────────────────
+
+async def _quest_to_schema(quest: Quest, session: AsyncSession) -> QuestSchema:
+    objectives = (
+        await session.execute(
+            select(QuestObjective)
+            .where(QuestObjective.quest_id == quest.id)
+            .order_by(QuestObjective.sort_order)
+        )
+    ).scalars().all()
+    return QuestSchema(
+        id=quest.id,
+        title=quest.title,
+        status=quest.status,
+        desc=quest.desc,
+        objectives=[
+            {"id": o.id, "text": o.text, "done": bool(o.done)}
+            for o in objectives
+        ],
+        notes=quest.notes,
+        relatedLore=quest.related_lore or [],
+    )
+
+
+@router.get("/quests", response_model=list[QuestSchema])
+async def list_quests(session: AsyncSession = Depends(get_session)):
+    quests = (await session.execute(select(Quest))).scalars().all()
+    return [await _quest_to_schema(q, session) for q in quests]
+
+
+@router.post("/quests", response_model=QuestSchema, status_code=201)
+async def create_quest(
+    data: QuestCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = Quest(
+        title=data.title,
+        status=data.status,
+        desc=data.desc,
+        notes=data.notes,
+        related_lore=data.relatedLore,
+    )
+    session.add(quest)
+    await session.commit()
+    await session.refresh(quest)
+    return await _quest_to_schema(quest, session)
+
+
+@router.get("/quests/{quest_id}", response_model=QuestSchema)
+async def get_quest(
+    quest_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = await session.get(Quest, quest_id)
+    if not quest:
+        raise HTTPException(404, "Quest not found")
+    return await _quest_to_schema(quest, session)
+
+
+@router.put("/quests/{quest_id}", response_model=QuestSchema)
+async def update_quest(
+    quest_id: str,
+    data: QuestUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = await session.get(Quest, quest_id)
+    if not quest:
+        raise HTTPException(404, "Quest not found")
+    if data.title is not None:
+        quest.title = data.title
+    if data.status is not None:
+        quest.status = data.status
+    if data.desc is not None:
+        quest.desc = data.desc
+    if data.notes is not None:
+        quest.notes = data.notes
+    if data.relatedLore is not None:
+        quest.related_lore = data.relatedLore
+    await session.commit()
+    await session.refresh(quest)
+    return await _quest_to_schema(quest, session)
+
+
+@router.delete("/quests/{quest_id}", status_code=204)
+async def delete_quest(
+    quest_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = await session.get(Quest, quest_id)
+    if not quest:
+        raise HTTPException(404, "Quest not found")
+    await session.execute(
+        delete(QuestObjective).where(QuestObjective.quest_id == quest_id)
+    )
+    await session.delete(quest)
+    await session.commit()
+
+
+@router.post("/quests/{quest_id}/objectives", response_model=QuestSchema, status_code=201)
+async def add_objective(
+    quest_id: str,
+    data: QuestObjectiveCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = await session.get(Quest, quest_id)
+    if not quest:
+        raise HTTPException(404, "Quest not found")
+    max_order = (
+        await session.execute(
+            select(func.coalesce(func.max(QuestObjective.sort_order), -1))
+            .where(QuestObjective.quest_id == quest_id)
+        )
+    ).scalar()
+    obj = QuestObjective(
+        quest_id=quest_id,
+        text=data.text,
+        done=data.done,
+        sort_order=(max_order or 0) + 1,
+    )
+    session.add(obj)
+    await session.commit()
+    return await _quest_to_schema(quest, session)
+
+
+@router.put("/quests/{quest_id}/objectives/{objective_id}", response_model=QuestSchema)
+async def update_objective(
+    quest_id: str,
+    objective_id: str,
+    data: QuestObjectiveUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = await session.get(Quest, quest_id)
+    if not quest:
+        raise HTTPException(404, "Quest not found")
+    obj = await session.get(QuestObjective, objective_id)
+    if not obj or obj.quest_id != quest_id:
+        raise HTTPException(404, "Objective not found")
+    if data.text is not None:
+        obj.text = data.text
+    if data.done is not None:
+        obj.done = data.done
+    await session.commit()
+    return await _quest_to_schema(quest, session)
+
+
+@router.delete("/quests/{quest_id}/objectives/{objective_id}", status_code=204)
+async def delete_objective(
+    quest_id: str,
+    objective_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    quest = await session.get(Quest, quest_id)
+    if not quest:
+        raise HTTPException(404, "Quest not found")
+    obj = await session.get(QuestObjective, objective_id)
+    if not obj or obj.quest_id != quest_id:
+        raise HTTPException(404, "Objective not found")
+    await session.delete(obj)
+    await session.commit()
+
+
 # ── Chat Messages ─────────────────────────────────────────────────
 
 @router.get("/chat/messages", response_model=list[ChatMessageResponse])
@@ -580,6 +748,15 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     items = (await session.execute(select(ItemCatalogEntry))).scalars().all()
     inventory = (await session.execute(select(InventoryStack))).scalars().all()
+    quests = (await session.execute(select(Quest))).scalars().all()
+    quest_objectives = (await session.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
+
+    # Group objectives by quest_id
+    obj_by_quest: dict[str, list] = {}
+    for o in quest_objectives:
+        obj_by_quest.setdefault(o.quest_id, []).append({
+            "id": o.id, "text": o.text, "done": bool(o.done), "sortOrder": o.sort_order,
+        })
 
     return {
         "version": 1,
@@ -607,12 +784,26 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
         },
         "items": [_item_to_dict(i) for i in items],
         "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
+        "quests": [
+            {
+                "id": q.id,
+                "title": q.title,
+                "status": q.status,
+                "desc": q.desc,
+                "notes": q.notes,
+                "relatedLore": q.related_lore or [],
+                "objectives": obj_by_quest.get(q.id, []),
+            }
+            for q in quests
+        ],
     }
 
 
 @router.post("/adventure/import")
 async def import_adventure(data: dict, session: AsyncSession = Depends(get_session)):
     # Clear everything
+    await session.execute(delete(QuestObjective))
+    await session.execute(delete(Quest))
     await session.execute(delete(InventoryStack))
     await session.execute(delete(ItemCatalogEntry))
     await session.execute(delete(ChatMessage))
@@ -692,6 +883,26 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             count=inv_data.get("count", 1),
         ))
 
+    # Restore quests
+    for q_data in data.get("quests", []):
+        quest = Quest(
+            id=q_data.get("id"),
+            title=q_data.get("title", ""),
+            status=q_data.get("status", "active"),
+            desc=q_data.get("desc", ""),
+            notes=q_data.get("notes", ""),
+            related_lore=q_data.get("relatedLore", []),
+        )
+        session.add(quest)
+        for obj_data in q_data.get("objectives", []):
+            session.add(QuestObjective(
+                id=obj_data.get("id"),
+                quest_id=quest.id,
+                text=obj_data.get("text", ""),
+                done=obj_data.get("done", False),
+                sort_order=obj_data.get("sortOrder", 0),
+            ))
+
     await session.commit()
     return {"ok": True}
 
@@ -702,6 +913,8 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     old_api_key = settings.api_key if settings else ""
 
+    await session.execute(delete(QuestObjective))
+    await session.execute(delete(Quest))
     await session.execute(delete(InventoryStack))
     await session.execute(delete(ItemCatalogEntry))
     await session.execute(delete(ChatMessage))
@@ -788,8 +1001,12 @@ async def _load_game_context(session: AsyncSession):
         summary = StorySummary(content="", summary_up_to_turn=0)
         session.add(summary)
     catalog = list((await session.execute(select(ItemCatalogEntry))).scalars().all())
+    quests = list((await session.execute(select(Quest))).scalars().all())
+    quest_objectives = list(
+        (await session.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
+    )
 
-    return settings, narrator, scenario, pc, party, all_messages, summary, catalog
+    return settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives
 
 
 async def _maybe_summarize_and_build(
@@ -800,6 +1017,8 @@ async def _maybe_summarize_and_build(
     current_turn: int,
     session: AsyncSession,
     item_catalog: list[ItemCatalogEntry] | None = None,
+    quests: list[Quest] | None = None,
+    quest_objectives: list[QuestObjective] | None = None,
 ):
     """Check if summarization is needed, do it, then build the prompt.
     Returns (prompt_messages, did_summarize)."""
@@ -831,6 +1050,8 @@ async def _maybe_summarize_and_build(
         spotlight_block=spotlight_block,
         story_summary=summary.content or None,
         item_catalog=item_catalog,
+        quests=quests,
+        quest_objectives=quest_objectives,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
     )
@@ -863,6 +1084,8 @@ async def _maybe_summarize_and_build(
         spotlight_block=spotlight_block,
         story_summary=summary.content or None,
         item_catalog=item_catalog,
+        quests=quests,
+        quest_objectives=quest_objectives,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
     )
@@ -875,7 +1098,7 @@ async def chat_turn(
     data: ChatTurnRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog = await _load_game_context(session)
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives = await _load_game_context(session)
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
@@ -892,6 +1115,8 @@ async def chat_turn(
         current_turn=current_turn,
         session=session,
         item_catalog=catalog,
+        quests=quests,
+        quest_objectives=quest_objectives,
     )
 
     variant_count = sum(
@@ -912,7 +1137,7 @@ async def chat_turn(
 
 @router.post("/chat/regenerate")
 async def regenerate(session: AsyncSession = Depends(get_session)):
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog = await _load_game_context(session)
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives = await _load_game_context(session)
 
     if not all_messages:
         raise HTTPException(400, "No messages to regenerate")
@@ -935,6 +1160,8 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         current_turn=last_turn,
         session=session,
         item_catalog=catalog,
+        quests=quests,
+        quest_objectives=quest_objectives,
     )
 
     variant_count = sum(

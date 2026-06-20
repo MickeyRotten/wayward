@@ -109,6 +109,22 @@ export interface SpotlightSignal {
   turnsSinceLastSpoke: number
 }
 
+export interface QuestObjective {
+  id: string
+  text: string
+  done: boolean
+}
+
+export interface Quest {
+  id: string
+  title: string
+  status: 'active' | 'completed' | 'failed'
+  desc: string
+  objectives: QuestObjective[]
+  notes: string
+  relatedLore: string[]
+}
+
 export interface OpenRouterModel {
   id: string
   name: string

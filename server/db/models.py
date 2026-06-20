@@ -105,3 +105,24 @@ class InventoryStack(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     item_id: Mapped[str] = mapped_column(String, nullable=False)
     count: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Quest(Base):
+    __tablename__ = "quests"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    title: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="active")
+    desc: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    related_lore: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class QuestObjective(Base):
+    __tablename__ = "quest_objectives"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    quest_id: Mapped[str] = mapped_column(String, nullable=False)
+    text: Mapped[str] = mapped_column(String, default="")
+    done: Mapped[bool] = mapped_column(Integer, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)

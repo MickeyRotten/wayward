@@ -62,6 +62,7 @@ class OpenRouterSettings(Base):
     repetition_penalty: Mapped[float] = mapped_column(Float, default=1.0)
     max_tokens_response: Mapped[int] = mapped_column(Integer, default=1000)
     max_context_tokens: Mapped[int] = mapped_column(Integer, default=128000)
+    max_carry_slots: Mapped[int] = mapped_column(Integer, default=12)
 
 
 class StorySummary(Base):

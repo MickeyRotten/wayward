@@ -24,6 +24,10 @@ from server.api.schemas import (
     ChatMessageResponse,
     ChatMessageUpdate,
     ChatTurnRequest,
+    ItemCatalogCreate,
+    ItemCatalogUpdate,
+    InventoryAddRequest,
+    InventoryRemoveRequest,
     NarratorResponse,
     NarratorUpdate,
     OpenRouterSettingsResponse,
@@ -39,6 +43,8 @@ from server.api.schemas import (
 from server.db.database import get_session
 from server.db.models import (
     ChatMessage,
+    InventoryStack,
+    ItemCatalogEntry,
     NarratorConfig,
     OpenRouterSettings,
     PartyMember,
@@ -217,6 +223,20 @@ async def update_narrator(
 
 # ── OpenRouter Settings ───────────────────────────────────────────
 
+def _item_to_dict(item: ItemCatalogEntry) -> dict:
+    return {
+        "id": item.id,
+        "kind": "item",
+        "name": item.name,
+        "type": item.type,
+        "slot": item.slot,
+        "maxStack": item.max_stack,
+        "uses": item.uses,
+        "rarity": item.rarity,
+        "desc": item.desc,
+    }
+
+
 def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
     return OpenRouterSettingsResponse(
         modelId=s.model_id,
@@ -229,6 +249,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         repetitionPenalty=s.repetition_penalty,
         maxTokensResponse=s.max_tokens_response,
         maxContextTokens=s.max_context_tokens,
+        maxCarrySlots=s.max_carry_slots,
         apiKeySet=bool(s.api_key),
     )
 
@@ -264,8 +285,186 @@ async def update_openrouter_settings(
     s.repetition_penalty = data.repetitionPenalty
     s.max_tokens_response = data.maxTokensResponse
     s.max_context_tokens = data.maxContextTokens
+    s.max_carry_slots = data.maxCarrySlots
     await session.commit()
     return _or_response(s)
+
+
+# ── Item Catalog ──────────────────────────────────────────────────
+
+@router.get("/items")
+async def list_items(
+    type: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(ItemCatalogEntry)
+    if type:
+        query = query.where(ItemCatalogEntry.type == type)
+    items = (await session.execute(query)).scalars().all()
+    return [_item_to_dict(i) for i in items]
+
+
+@router.get("/items/search")
+async def search_items(
+    q: str,
+    session: AsyncSession = Depends(get_session),
+):
+    if len(q) < 3:
+        return []
+    items = (await session.execute(
+        select(ItemCatalogEntry).where(ItemCatalogEntry.name.ilike(f"%{q}%"))
+    )).scalars().all()
+    return [_item_to_dict(i) for i in items]
+
+
+@router.get("/items/{item_id}")
+async def get_item(
+    item_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    item = await session.get(ItemCatalogEntry, item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+    return _item_to_dict(item)
+
+
+@router.post("/items", status_code=201)
+async def create_item(
+    data: ItemCatalogCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    item = ItemCatalogEntry(
+        name=data.name,
+        type=data.type,
+        slot=data.slot,
+        max_stack=data.maxStack,
+        uses=data.uses,
+        rarity=data.rarity,
+        desc=data.desc,
+    )
+    session.add(item)
+    await session.commit()
+    await session.refresh(item)
+    return _item_to_dict(item)
+
+
+@router.put("/items/{item_id}")
+async def update_item(
+    item_id: str,
+    data: ItemCatalogUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    item = await session.get(ItemCatalogEntry, item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+    if data.name is not None:
+        item.name = data.name
+    if data.type is not None:
+        item.type = data.type
+    if data.slot is not None:
+        item.slot = data.slot
+    if data.maxStack is not None:
+        item.max_stack = data.maxStack
+    if data.uses is not None:
+        item.uses = data.uses
+    if data.rarity is not None:
+        item.rarity = data.rarity
+    if data.desc is not None:
+        item.desc = data.desc
+    await session.commit()
+    await session.refresh(item)
+    return _item_to_dict(item)
+
+
+@router.delete("/items/{item_id}", status_code=204)
+async def delete_item(
+    item_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    item = await session.get(ItemCatalogEntry, item_id)
+    if not item:
+        raise HTTPException(404, "Item not found")
+    await session.delete(item)
+    await session.commit()
+
+
+# ── Inventory ─────────────────────────────────────────────────────
+
+MAX_CARRY_SLOTS_DEFAULT = 12
+
+
+@router.get("/inventory")
+async def list_inventory(session: AsyncSession = Depends(get_session)):
+    stacks = (await session.execute(select(InventoryStack))).scalars().all()
+    result = []
+    for s in stacks:
+        item = await session.get(ItemCatalogEntry, s.item_id)
+        result.append({
+            "itemId": s.item_id,
+            "count": s.count,
+            "item": _item_to_dict(item) if item else None,
+        })
+    return result
+
+
+@router.post("/inventory/add")
+async def add_to_inventory(
+    data: InventoryAddRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    item = await session.get(ItemCatalogEntry, data.itemId)
+    if not item:
+        raise HTTPException(404, "Item not in catalog")
+
+    existing = (await session.execute(
+        select(InventoryStack).where(InventoryStack.item_id == data.itemId)
+    )).scalars().first()
+
+    if existing:
+        new_count = existing.count + data.count
+        if item.max_stack > 1 and new_count > item.max_stack:
+            raise HTTPException(400, f"Exceeds max stack of {item.max_stack}")
+        existing.count = new_count
+    else:
+        # Check carry capacity
+        total_stacks = (await session.execute(
+            select(func.count()).select_from(InventoryStack)
+        )).scalar()
+        settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+        max_slots = settings.max_carry_slots if settings else MAX_CARRY_SLOTS_DEFAULT
+        if total_stacks >= max_slots:
+            raise HTTPException(400, "Inventory full — no carry slots remaining")
+        session.add(InventoryStack(item_id=data.itemId, count=data.count))
+
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/inventory/remove")
+async def remove_from_inventory(
+    data: InventoryRemoveRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    existing = (await session.execute(
+        select(InventoryStack).where(InventoryStack.item_id == data.itemId)
+    )).scalars().first()
+    if not existing:
+        raise HTTPException(404, "Item not in inventory")
+    existing.count -= data.count
+    if existing.count <= 0:
+        await session.delete(existing)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/inventory/capacity")
+async def get_inventory_capacity(session: AsyncSession = Depends(get_session)):
+    total_stacks = (await session.execute(
+        select(func.count()).select_from(InventoryStack)
+    )).scalar()
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    max_slots = settings.max_carry_slots if settings else MAX_CARRY_SLOTS_DEFAULT
+    return {"used": total_stacks, "max": max_slots}
 
 
 # ── Chat Messages ─────────────────────────────────────────────────
@@ -379,6 +578,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
     messages = (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
     summary = (await session.execute(select(StorySummary))).scalars().first()
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    items = (await session.execute(select(ItemCatalogEntry))).scalars().all()
+    inventory = (await session.execute(select(InventoryStack))).scalars().all()
 
     return {
         "version": 1,
@@ -402,13 +603,18 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "temperature": settings.temperature if settings else 0.7,
             "maxTokensResponse": settings.max_tokens_response if settings else 1000,
             "maxContextTokens": settings.max_context_tokens if settings else 128000,
+            "maxCarrySlots": settings.max_carry_slots if settings else 12,
         },
+        "items": [_item_to_dict(i) for i in items],
+        "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
     }
 
 
 @router.post("/adventure/import")
 async def import_adventure(data: dict, session: AsyncSession = Depends(get_session)):
     # Clear everything
+    await session.execute(delete(InventoryStack))
+    await session.execute(delete(ItemCatalogEntry))
     await session.execute(delete(ChatMessage))
     await session.execute(delete(PartyMember))
     await session.execute(delete(PlayerCharacter))
@@ -463,7 +669,28 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         temperature=s.get("temperature", 0.7),
         max_tokens_response=s.get("maxTokensResponse", 1000),
         max_context_tokens=s.get("maxContextTokens", 128000),
+        max_carry_slots=s.get("maxCarrySlots", 12),
     ))
+
+    # Restore item catalog
+    for item_data in data.get("items", []):
+        session.add(ItemCatalogEntry(
+            id=item_data.get("id"),
+            name=item_data["name"],
+            type=item_data["type"],
+            slot=item_data.get("slot"),
+            max_stack=item_data.get("maxStack", 1),
+            uses=item_data.get("uses"),
+            rarity=item_data.get("rarity", "c"),
+            desc=item_data.get("desc", ""),
+        ))
+
+    # Restore inventory
+    for inv_data in data.get("inventory", []):
+        session.add(InventoryStack(
+            item_id=inv_data["itemId"],
+            count=inv_data.get("count", 1),
+        ))
 
     await session.commit()
     return {"ok": True}
@@ -475,6 +702,8 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     old_api_key = settings.api_key if settings else ""
 
+    await session.execute(delete(InventoryStack))
+    await session.execute(delete(ItemCatalogEntry))
     await session.execute(delete(ChatMessage))
     await session.execute(delete(PartyMember))
     await session.execute(delete(PlayerCharacter))

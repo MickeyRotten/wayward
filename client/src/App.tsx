@@ -4,6 +4,7 @@ import { IconRail } from './components/IconRail/IconRail'
 import { PartyView } from './components/PartyView/PartyView'
 import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
 import { QuestsPanel } from './components/QuestsPanel/QuestsPanel'
+import { LorePanel } from './components/LorePanel/LorePanel'
 import { ChatScene } from './components/Scene/ChatScene'
 import { PartyInspector } from './components/Inspector/PartyInspector'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
@@ -13,6 +14,7 @@ import { useChatStore } from './state/chatStore'
 import { useSettingsStore } from './state/settingsStore'
 import { useItemsStore } from './state/itemsStore'
 import { useQuestsStore } from './state/questsStore'
+import { useLoreStore } from './state/loreStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 
@@ -29,6 +31,8 @@ function App() {
   const fetchCatalog = useItemsStore((s) => s.fetchCatalog)
   const fetchInventory = useItemsStore((s) => s.fetchInventory)
   const fetchQuests = useQuestsStore((s) => s.fetchQuests)
+  const fetchLoreEntries = useLoreStore((s) => s.fetchEntries)
+  const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
 
   useEffect(() => {
     fetchParty()
@@ -38,7 +42,9 @@ function App() {
     fetchCatalog()
     fetchInventory()
     fetchQuests()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests])
+    fetchLoreEntries()
+    fetchLoreConfig()
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig])
 
   const handleTabChange = (tab: TabId) => {
     if (tab === 'config') {
@@ -61,7 +67,7 @@ function App() {
       case 'quests':
         return <QuestsPanel />
       case 'lore':
-        return <TabPlaceholder label="LORE" description="World, Characters, Items, Monsters, Spells" />
+        return <LorePanel />
       default:
         return <PartyView />
     }

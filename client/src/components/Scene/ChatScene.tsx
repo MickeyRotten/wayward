@@ -21,6 +21,7 @@ export function ChatScene() {
   const error = useChatStore((s) => s.error)
   const sendTurn = useChatStore((s) => s.sendTurn)
   const regenerate = useChatStore((s) => s.regenerate)
+  const swipe = useChatStore((s) => s.swipe)
   const stopGeneration = useChatStore((s) => s.stopGeneration)
   const deleteMessageAndAfter = useChatStore((s) => s.deleteMessageAndAfter)
   const clearHistory = useChatStore((s) => s.clearHistory)
@@ -76,6 +77,16 @@ export function ChatScene() {
     lastVisibleMsg.role === 'assistant' &&
     visibleMessages.length > 0
 
+  // Show regenerate in input area when last message is from assistant,
+  // or user sent something but no assistant response exists yet
+  const showInputRegenerate =
+    !isLoading &&
+    messages.length > 0 &&
+    (
+      (lastVisibleMsg && lastVisibleMsg.role === 'assistant') ||
+      (lastVisibleMsg && lastVisibleMsg.role === 'user')
+    )
+
   // Find first narrator message index for drop-cap
   const firstNarratorIdx = visibleMessages.findIndex(
     (m) => m.role === 'assistant' && (m.speaker === 'narrator' || !m.speaker)
@@ -119,6 +130,7 @@ export function ChatScene() {
                 : Math.min(count - 1, current + 1)
               setActiveVariant(m.turnNumber, next)
             } : undefined}
+            onSwipeNew={m.role === 'assistant' && !isLoading ? () => swipe(m.turnNumber) : undefined}
             isLastAssistant={m.role === 'assistant' && m.turnNumber === lastTurn}
             onRegenerate={!isLoading ? regenerate : undefined}
             onDelete={!isLoading && m.id > 0 ? () => setConfirmAction({ message: 'Delete this message and everything after it?', action: () => deleteMessageAndAfter(m.id) }) : undefined}
@@ -221,24 +233,36 @@ export function ChatScene() {
                 SEND
               </button>
             )}
-            {messages.length > 0 && (
-              <div className="flex gap-1">
+            <div className="flex gap-1">
+              {showInputRegenerate && (
                 <button
                   type="button"
-                  className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
-                  onClick={handleShowLog}
+                  className="font-ui text-[9px] text-textdim hover:text-gold px-2 py-1"
+                  title="Regenerate last response (replaces it entirely)"
+                  onClick={regenerate}
                 >
-                  LOG
+                  &#8635;
                 </button>
-                <button
-                  type="button"
-                  className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
-                  onClick={() => setConfirmAction({ message: 'Clear the entire chat history? This cannot be undone.', action: clearHistory })}
-                >
-                  CLEAR
-                </button>
-              </div>
-            )}
+              )}
+              {messages.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
+                    onClick={handleShowLog}
+                  >
+                    LOG
+                  </button>
+                  <button
+                    type="button"
+                    className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
+                    onClick={() => setConfirmAction({ message: 'Clear the entire chat history? This cannot be undone.', action: clearHistory })}
+                  >
+                    CLEAR
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -301,6 +325,7 @@ function MessageBubble({
   variantCount,
   activeVariant,
   onSwipe,
+  onSwipeNew,
   isLastAssistant,
   onRegenerate,
   onDelete,
@@ -314,6 +339,7 @@ function MessageBubble({
   variantCount: number
   activeVariant: number
   onSwipe?: (dir: 'left' | 'right') => void
+  onSwipeNew?: () => void
   isLastAssistant?: boolean
   onRegenerate?: () => void
   onDelete?: () => void
@@ -485,6 +511,7 @@ function MessageBubble({
           variantCount={variantCount}
           activeVariant={activeVariant}
           onSwipe={onSwipe}
+          onSwipeNew={onSwipeNew}
           isLastAssistant={isLastAssistant}
           onRegenerate={onRegenerate}
           onDelete={onDelete}
@@ -550,6 +577,7 @@ function ActionsBar({
   variantCount,
   activeVariant,
   onSwipe,
+  onSwipeNew,
   isLastAssistant,
   onRegenerate,
   onDelete,
@@ -559,6 +587,7 @@ function ActionsBar({
   variantCount: number
   activeVariant: number
   onSwipe?: (dir: 'left' | 'right') => void
+  onSwipeNew?: () => void
   isLastAssistant?: boolean
   onRegenerate?: () => void
   onDelete?: () => void
@@ -568,9 +597,9 @@ function ActionsBar({
   return (
     <div
       className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
-      style={(!isUser && (variantCount > 1 || isLastAssistant)) ? { opacity: 1 } : undefined}
+      style={(!isUser && (variantCount > 1 || isLastAssistant || onSwipeNew)) ? { opacity: 1 } : undefined}
     >
-      {!isUser && variantCount > 1 && (
+      {!isUser && (variantCount > 1 || onSwipeNew) && (
         <>
           <button
             type="button"
@@ -591,18 +620,19 @@ function ActionsBar({
           >
             &#9654;
           </button>
+          {onSwipeNew && (
+            <button
+              type="button"
+              className="font-ui text-[11px] text-textdim hover:text-gold ml-1"
+              title="Generate new variant"
+              onClick={onSwipeNew}
+            >
+              &#8635;
+            </button>
+          )}
         </>
       )}
       <div className="flex items-center gap-1 ml-auto">
-        {isLastAssistant && onRegenerate && (
-          <button
-            type="button"
-            className="font-ui text-[9px] text-textdim hover:text-text"
-            onClick={onRegenerate}
-          >
-            REGENERATE
-          </button>
-        )}
         {onDelete && (
           <button
             type="button"

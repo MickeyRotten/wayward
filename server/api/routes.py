@@ -1335,6 +1335,54 @@ async def chat_turn(
     )
 
 
+# ── Swipe (new variant for a specific turn) ─────────────────────
+
+@router.post("/chat/messages/{turn}/swipe")
+async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
+    """Generate a new variant for a specific turn. Appends to existing variants."""
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
+
+    # Find the user message for this turn
+    user_msg = next(
+        (m for m in all_messages if m.turn_number == turn and m.role == "user"),
+        None,
+    )
+    if not user_msg:
+        raise HTTPException(400, f"No user message found for turn {turn}")
+
+    # Build history up to (but not including) this turn
+    history = [m for m in all_messages if m.turn_number < turn]
+
+    messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
+        settings, narrator, scenario, pc, party,
+        history=history,
+        summary=summary,
+        player_message=user_msg.content,
+        current_turn=turn,
+        session=session,
+        item_catalog=catalog,
+        quests=quests,
+        quest_objectives=quest_objectives,
+        lore_entries=lore_entries,
+        lore_config=lore_config,
+    )
+
+    # Count existing variants for this turn to determine next variant number
+    variant_count = sum(
+        1 for m in all_messages if m.turn_number == turn and m.role == "assistant"
+    )
+
+    return _stream_llm_response(
+        messages=messages,
+        settings=settings,
+        party_list=party,
+        current_turn=turn,
+        variant=variant_count,
+        did_summarize=did_summarize,
+        spotlight_signals=spotlight_signals,
+    )
+
+
 # ── Regenerate ────────────────────────────────────────────────────
 
 @router.post("/chat/regenerate")
@@ -1352,6 +1400,15 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
     if not last_user_msg:
         raise HTTPException(400, "No user message found for last turn")
 
+    # REGENERATE wipes all existing assistant variants for this turn
+    await session.execute(
+        delete(ChatMessage).where(
+            ChatMessage.turn_number == last_turn,
+            ChatMessage.role == "assistant",
+        )
+    )
+    await session.commit()
+
     history = [m for m in all_messages if m.turn_number < last_turn]
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
@@ -1368,16 +1425,13 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         lore_config=lore_config,
     )
 
-    variant_count = sum(
-        1 for m in all_messages if m.turn_number == last_turn and m.role == "assistant"
-    )
-
+    # Start fresh at variant 0 since we wiped all previous variants
     return _stream_llm_response(
         messages=messages,
         settings=settings,
         party_list=party,
         current_turn=last_turn,
-        variant=variant_count,
+        variant=0,
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
     )

@@ -16,6 +16,7 @@ interface ChatState {
   fetchHistory: () => Promise<void>
   sendTurn: (message: string) => Promise<void>
   regenerate: () => Promise<void>
+  swipe: (turn: number) => Promise<void>
   stopGeneration: () => void
   editMessage: (id: number, content: string) => Promise<void>
   deleteMessageAndAfter: (id: number) => Promise<void>
@@ -81,14 +82,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   regenerate: async () => {
     const turn = get().currentTurn
+    const newVariants = { ...get().activeVariants }
+    delete newVariants[turn]
     set((s) => ({
       messages: s.messages.filter((m) => !(m.role === 'assistant' && m.turnNumber === turn)),
+      activeVariants: newVariants,
       isLoading: true,
       error: null,
       streamingContent: '',
       thinkingStartedAt: Date.now(),
     }))
     await _handleStream('/api/chat/regenerate', {})
+  },
+
+  swipe: async (turn) => {
+    set({
+      isLoading: true,
+      error: null,
+      streamingContent: '',
+      thinkingStartedAt: Date.now(),
+    })
+    await _handleStream(`/api/chat/messages/${turn}/swipe`, {})
   },
 
   stopGeneration: () => {

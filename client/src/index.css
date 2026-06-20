@@ -1,44 +1,46 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-white: #ffffff;
-  --color-off: #f5f4f1;
-  --color-off2: #eceae6;
-  --color-border: #1a1816;
-  --color-text: #1a1816;
-  --color-text-sec: #666460;
-  --color-text-dim: #999793;
-  --color-mid: #c0bebb;
+  --color-bg0: #100e0a;
+  --color-bg1: #17140e;
+  --color-bg2: #1e1a12;
+  --color-bg3: #262016;
+  --color-line: rgba(201,165,88,.18);
+  --color-line2: rgba(201,165,88,.42);
+  --color-gold: #c9a558;
+  --color-gold2: #e8cf8c;
+  --color-golddeep: #8a6f3a;
+  --color-blue: #7aa6cf;
+  --color-text: #ece4d3;
+  --color-text2: #cfc6b0;
+  --color-textsec: #9b927a;
+  --color-textdim: #6c654f;
 
-  --font-h: 'Bokor', serif;
-  --font-b: 'Rethink Sans', sans-serif;
-  --font-ui: 'Silkscreen', sans-serif;
+  --font-disp: 'Cinzel', serif;
+  --font-body: 'Quicksand', sans-serif;
+  --font-ui: 'Hanken Grotesk', sans-serif;
 }
 
 html, body, #root {
   height: 100%;
   overflow: hidden;
-  background-color: var(--color-white);
+  background-color: var(--color-bg0);
   color: var(--color-text);
-  font-family: var(--font-b);
-}
-
-.font-h {
-  font-weight: 400 !important;
+  font-family: var(--font-body);
 }
 
 /* Thin scrollbars so they don't eat into padding */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-mid) transparent;
+  scrollbar-color: var(--color-golddeep) var(--color-bg2);
 }
 *::-webkit-scrollbar {
   width: 6px;
 }
 *::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--color-bg2);
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-mid);
+  background: var(--color-golddeep);
   border-radius: 3px;
 }

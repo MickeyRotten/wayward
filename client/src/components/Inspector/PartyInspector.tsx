@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
+import { useQuestsStore } from '../../state/questsStore'
 import { useUiStore } from '../../state/uiStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
-import type { ItemCatalogEntry, ItemType, Rarity } from '@shared/types/models'
+import type { ItemCatalogEntry, ItemType, Rarity, Quest } from '@shared/types/models'
 
 export function PartyInspector() {
   const pc = usePartyStore((s) => s.playerCharacter)
   const members = usePartyStore((s) => s.partyMembers)
   const catalog = useItemsStore((s) => s.catalog)
   const inventory = useItemsStore((s) => s.inventory)
+  const quests = useQuestsStore((s) => s.quests)
   const selection = useUiStore((s) => s.selection)
   const everSelected = useUiStore((s) => s.everSelected)
   const mode = useUiStore((s) => s.mode)
@@ -34,7 +36,13 @@ export function PartyInspector() {
     : undefined
   const selIsItem = !!selItem
 
-  const hasSelection = selIsPC || selIsMember || selIsItem
+  // Quest selection
+  const selQuest = selection?.kind === 'quest'
+    ? quests.find((q) => q.id === selection.id)
+    : undefined
+  const selIsQuest = !!selQuest
+
+  const hasSelection = selIsPC || selIsMember || selIsItem || selIsQuest
 
   // Derive entity name for the header
   const entityName = selIsPC
@@ -43,7 +51,9 @@ export function PartyInspector() {
       ? (selMember!.basicInfo.name || 'New Member')
       : selIsItem
         ? (selItem!.name || 'Unknown Item')
-        : ''
+        : selIsQuest
+          ? (selQuest!.title || 'Untitled Quest')
+          : ''
 
   const entityLabel = selIsPC
     ? 'PLAYER CHARACTER'
@@ -51,7 +61,9 @@ export function PartyInspector() {
       ? 'PARTY MEMBER'
       : selIsItem
         ? 'ITEM'
-        : ''
+        : selIsQuest
+          ? 'QUEST'
+          : ''
 
   return (
     <div className="flex flex-col h-full">
@@ -99,6 +111,8 @@ export function PartyInspector() {
           <PartyMemberEditor key={selMember!.id} member={selMember!} mode={mode} />
         ) : selIsItem ? (
           <ItemInspector key={selItem!.id} item={selItem!} mode={mode} />
+        ) : selIsQuest ? (
+          <QuestInspector key={selQuest!.id} quest={selQuest!} mode={mode} />
         ) : (
           <EmptyState />
         )}
@@ -460,13 +474,399 @@ function ItemTextArea({ label, value, onChange, onBlur, placeholder }: {
   )
 }
 
+// ── Quest Inspector ──────────────────────────────────────────────
+
+const STATUS_OPTIONS: { value: Quest['status']; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed', label: 'Failed' },
+]
+
+function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }) {
+  const updateQuest = useQuestsStore((s) => s.updateQuest)
+  const deleteQuest = useQuestsStore((s) => s.deleteQuest)
+  const addObjective = useQuestsStore((s) => s.addObjective)
+  const updateObjective = useQuestsStore((s) => s.updateObjective)
+  const deleteObjective = useQuestsStore((s) => s.deleteObjective)
+  const select = useUiStore((s) => s.select)
+  const setEditDirty = useUiStore((s) => s.setEditDirty)
+
+  const draft = useRef<Partial<Pick<Quest, 'title' | 'status' | 'desc' | 'notes'>>>(
+    { title: quest.title, status: quest.status, desc: quest.desc, notes: quest.notes }
+  )
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [newObjText, setNewObjText] = useState('')
+
+  useEffect(() => {
+    draft.current = { title: quest.title, status: quest.status, desc: quest.desc, notes: quest.notes }
+  }, [quest])
+
+  const flush = useCallback(() => {
+    clearTimeout(timer.current)
+    updateQuest(quest.id, draft.current)
+    setEditDirty(false)
+  }, [quest.id, updateQuest, setEditDirty])
+
+  const scheduleFlush = useCallback(() => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(flush, 600)
+  }, [flush])
+
+  const update = (key: string, value: string, immediate?: boolean) => {
+    Object.assign(draft.current, { [key]: value })
+    setEditDirty(true)
+    immediate ? flush() : scheduleFlush()
+  }
+
+  const doneCount = quest.objectives.filter((o) => o.done).length
+  const totalCount = quest.objectives.length
+
+  if (mode === 'view') {
+    return (
+      <div className="space-y-6 p-6">
+        {/* Status badge */}
+        <div className="flex items-center gap-2">
+          <span className={`font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line ${
+            quest.status === 'active'
+              ? 'text-gold'
+              : quest.status === 'completed'
+                ? 'text-textsec'
+                : 'text-red-400/70'
+          }`}>
+            {quest.status.toUpperCase()}
+          </span>
+          {totalCount > 0 && (
+            <span className={`font-ui text-[10px] ${
+              doneCount === totalCount ? 'text-gold' : 'text-textsec'
+            }`}>
+              {doneCount}/{totalCount}
+            </span>
+          )}
+        </div>
+
+        {/* Description */}
+        {quest.desc && (
+          <QuestSection title="Description">
+            <p className="font-body text-sm text-text2 leading-relaxed">{quest.desc}</p>
+          </QuestSection>
+        )}
+
+        {/* Objectives */}
+        <QuestSection title="Objectives">
+          {quest.objectives.length === 0 ? (
+            <p className="text-[12px] text-textdim font-body">No objectives yet</p>
+          ) : (
+            <div className="space-y-2">
+              {quest.objectives.map((obj) => (
+                <label key={obj.id} className="flex items-start gap-2.5 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={obj.done}
+                    onChange={() => updateObjective(quest.id, obj.id, { done: !obj.done })}
+                    className="mt-0.5 accent-gold shrink-0"
+                  />
+                  <span className={`font-body text-sm leading-relaxed ${
+                    obj.done ? 'text-textdim line-through' : 'text-text'
+                  }`}>
+                    {obj.text}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </QuestSection>
+
+        {/* Notes */}
+        {quest.notes && (
+          <QuestSection title="Notes">
+            <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{quest.notes}</p>
+          </QuestSection>
+        )}
+
+        {/* Related Lore */}
+        {quest.relatedLore.length > 0 && (
+          <QuestSection title="Related Lore">
+            <div className="flex flex-wrap gap-1.5">
+              {quest.relatedLore.map((loreId) => (
+                <span
+                  key={loreId}
+                  className="font-ui text-[9px] text-textsec tracking-wider border border-line px-2 py-0.5"
+                >
+                  {loreId}
+                </span>
+              ))}
+            </div>
+          </QuestSection>
+        )}
+      </div>
+    )
+  }
+
+  // Edit mode
+  const d = draft.current
+  return (
+    <div className="space-y-6 p-6">
+      {/* Delete button */}
+      <div className="flex items-start justify-end">
+        <button
+          type="button"
+          className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
+          onClick={() => setShowDeleteConfirm(true)}
+        >
+          DELETE QUEST
+        </button>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="bg-bg2 border border-line p-5 max-w-xs space-y-4">
+              <p className="font-body text-sm text-text">
+                Delete <strong>{quest.title || 'this quest'}</strong>? This removes all objectives.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  className="font-ui text-[9px] text-textdim border-[1.5px] border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="button"
+                  className="font-ui text-[9px] text-bg0 bg-gold hover:bg-gold2 px-3 py-1 transition-colors"
+                  onClick={async () => {
+                    await deleteQuest(quest.id)
+                    select(null)
+                  }}
+                >
+                  DELETE
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Title & Status */}
+      <QuestSection title="Basic Info">
+        <div className="space-y-3">
+          <QuestField
+            label="Title"
+            value={d.title ?? ''}
+            onChange={(v) => update('title', v)}
+            onBlur={(v) => update('title', v, true)}
+          />
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body block mb-0.5">Status</span>
+            <select
+              className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              defaultValue={d.status ?? 'active'}
+              onChange={(e) => update('status', e.target.value, true)}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </QuestSection>
+
+      {/* Description */}
+      <QuestSection title="Description">
+        <QuestTextArea
+          value={d.desc ?? ''}
+          onChange={(v) => update('desc', v)}
+          onBlur={(v) => update('desc', v, true)}
+          placeholder="Quest description..."
+        />
+      </QuestSection>
+
+      {/* Objectives */}
+      <QuestSection title="Objectives">
+        <div className="space-y-2">
+          {quest.objectives.map((obj) => (
+            <div key={obj.id} className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={obj.done}
+                onChange={() => updateObjective(quest.id, obj.id, { done: !obj.done })}
+                className="mt-1.5 accent-gold shrink-0"
+                title={`Toggle: ${obj.text}`}
+              />
+              <ObjectiveEditRow
+                text={obj.text}
+                onUpdate={(text) => updateObjective(quest.id, obj.id, { text })}
+                onDelete={() => deleteObjective(quest.id, obj.id)}
+              />
+            </div>
+          ))}
+
+          {/* Add objective */}
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              className="flex-1 border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              placeholder="New objective... (Enter)"
+              value={newObjText}
+              onChange={(e) => setNewObjText(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const trimmed = newObjText.trim()
+                  if (!trimmed) return
+                  await addObjective(quest.id, trimmed)
+                  setNewObjText('')
+                }
+              }}
+            />
+          </div>
+        </div>
+      </QuestSection>
+
+      {/* Notes */}
+      <QuestSection title="Notes">
+        <QuestTextArea
+          value={d.notes ?? ''}
+          onChange={(v) => update('notes', v)}
+          onBlur={(v) => update('notes', v, true)}
+          placeholder="Freeform notes..."
+        />
+      </QuestSection>
+
+      {/* Related Lore (placeholder) */}
+      <QuestSection title="Related Lore">
+        {quest.relatedLore.length === 0 ? (
+          <p className="text-[12px] text-textdim font-body">
+            No linked lore entries. Lorebook integration coming soon.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {quest.relatedLore.map((loreId) => (
+              <span
+                key={loreId}
+                className="font-ui text-[9px] text-textsec tracking-wider border border-line px-2 py-0.5"
+              >
+                {loreId}
+              </span>
+            ))}
+          </div>
+        )}
+      </QuestSection>
+    </div>
+  )
+}
+
+function ObjectiveEditRow({
+  text,
+  onUpdate,
+  onDelete,
+}: {
+  text: string
+  onUpdate: (text: string) => void
+  onDelete: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState(text)
+
+  if (editing) {
+    return (
+      <div className="flex-1 flex items-center gap-1.5">
+        <input
+          className="flex-1 border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 transition-colors"
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              const trimmed = editText.trim()
+              if (trimmed && trimmed !== text) {
+                onUpdate(trimmed)
+              }
+              setEditing(false)
+            } else if (e.key === 'Escape') {
+              setEditText(text)
+              setEditing(false)
+            }
+          }}
+          onBlur={() => {
+            const trimmed = editText.trim()
+            if (trimmed && trimmed !== text) {
+              onUpdate(trimmed)
+            }
+            setEditing(false)
+          }}
+          autoFocus
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 flex items-center gap-1.5 group">
+      <span
+        className="font-body text-sm text-text flex-1 cursor-pointer hover:text-gold transition-colors"
+        onClick={() => setEditing(true)}
+      >
+        {text}
+      </span>
+      <button
+        type="button"
+        className="font-ui text-[9px] text-textdim opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all shrink-0"
+        onClick={onDelete}
+        title="Delete objective"
+      >
+        &times;
+      </button>
+    </div>
+  )
+}
+
+function QuestSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function QuestField({ label, value, onChange, onBlur, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
+}) {
+  return (
+    <label className="block">
+      {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
+      <input
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        defaultValue={value}
+        placeholder={placeholder}
+        onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  )
+}
+
+function QuestTextArea({ value, onChange, onBlur, placeholder }: {
+  value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
+}) {
+  return (
+    <textarea
+      className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
+      rows={3}
+      defaultValue={value}
+      placeholder={placeholder}
+      onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
 function EmptyState() {
   return (
     <div className="flex items-center justify-center h-full p-6">
       <div className="text-center space-y-2">
         <p className="font-ui text-[10px] text-textdim tracking-wider">INSPECTOR</p>
         <p className="text-[12px] text-textsec font-body">
-          Select a character or item to view and edit details.
+          Select a character, item, or quest to view and edit details.
         </p>
       </div>
     </div>

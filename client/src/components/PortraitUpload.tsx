@@ -22,7 +22,7 @@ export function PortraitUpload({
 
   return (
     <div
-      className="relative w-full aspect-[3/4] border-[1.5px] border-mid bg-off2 overflow-hidden cursor-pointer group"
+      className="relative w-full aspect-[3/4] border-[1.5px] border-line bg-bg2 overflow-hidden cursor-pointer group"
       onClick={() => inputRef.current?.click()}
     >
       {portraitUrl ? (
@@ -33,11 +33,11 @@ export function PortraitUpload({
         />
       ) : (
         <div className="flex items-center justify-center h-full">
-          <span className="font-ui text-[9px] text-text-dim tracking-wider">UPLOAD PORTRAIT</span>
+          <span className="font-ui text-[9px] text-textdim tracking-wider">UPLOAD PORTRAIT</span>
         </div>
       )}
-      <div className="absolute inset-0 bg-border/0 group-hover:bg-border/10 transition-colors flex items-center justify-center">
-        <span className="font-ui text-[9px] text-white opacity-0 group-hover:opacity-100 transition-opacity tracking-wider">
+      <div className="absolute inset-0 bg-bg0/0 group-hover:bg-bg0/30 transition-colors flex items-center justify-center">
+        <span className="font-ui text-[9px] text-text opacity-0 group-hover:opacity-100 transition-opacity tracking-wider">
           {portraitUrl ? 'CHANGE' : 'UPLOAD'}
         </span>
       </div>

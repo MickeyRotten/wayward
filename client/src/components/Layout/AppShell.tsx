@@ -1,21 +1,25 @@
 import type { ReactNode } from 'react'
 
 interface AppShellProps {
+  iconRail: ReactNode
   left: ReactNode
   middle: ReactNode
   right: ReactNode
 }
 
-export function AppShell({ left, middle, right }: AppShellProps) {
+export function AppShell({ iconRail, left, middle, right }: AppShellProps) {
   return (
-    <div className="grid h-full grid-cols-[260px_1fr_360px]">
-      <aside className="overflow-y-auto border-r-[1.5px] border-border bg-off">
+    <div className="grid h-full grid-cols-[66px_288px_minmax(0,1fr)_344px]">
+      <nav className="flex flex-col overflow-hidden bg-bg1 border-r border-line">
+        {iconRail}
+      </nav>
+      <aside className="flex flex-col overflow-y-auto bg-bg1 border-r border-line">
         {left}
       </aside>
-      <main className="flex flex-col overflow-hidden bg-white">
+      <main className="flex flex-col overflow-hidden bg-bg0">
         {middle}
       </main>
-      <aside className="overflow-y-auto border-l-[1.5px] border-border bg-off">
+      <aside className="flex flex-col overflow-y-auto bg-bg1 border-l border-line">
         {right}
       </aside>
     </div>

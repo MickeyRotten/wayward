@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import type { ChatMessage } from '@shared/types/models'
 
@@ -29,6 +30,7 @@ export function ChatScene() {
 
   const [input, setInput] = useState('')
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function ChatScene() {
       <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && !isLoading && (
           <div className="flex items-center justify-center h-full">
-            <p className="font-ui text-[10px] text-text-dim tracking-wider">
+            <p className="font-ui text-[10px] text-textdim tracking-wider">
               {apiKeySet ? 'BEGIN YOUR ADVENTURE' : 'SET API KEY IN SETTINGS TO BEGIN'}
             </p>
           </div>
@@ -88,15 +90,15 @@ export function ChatScene() {
             } : undefined}
             isLastAssistant={m.role === 'assistant' && m.turnNumber === lastTurn}
             onRegenerate={!isLoading ? regenerate : undefined}
-            onDelete={!isLoading && m.id > 0 ? () => deleteMessageAndAfter(m.id) : undefined}
+            onDelete={!isLoading && m.id > 0 ? () => setConfirmAction({ message: 'Delete this message and everything after it?', action: () => deleteMessageAndAfter(m.id) }) : undefined}
           />
         ))}
 
         {/* Streaming response */}
         {isLoading && streamingContent && (
-          <div className="max-w-[85%] mr-auto bg-off border-[1.5px] border-border px-4 py-3">
+          <div className="max-w-[85%] mr-auto bg-bg1 border-[1.5px] border-line2 px-4 py-3">
             <div
-              className="text-sm font-b text-text leading-relaxed whitespace-pre-wrap"
+              className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
               dangerouslySetInnerHTML={{ __html: formatNarration(streamingContent) }}
             />
           </div>
@@ -110,21 +112,21 @@ export function ChatScene() {
         )}
 
         {error && (
-          <div className="mr-auto bg-off border-[1.5px] border-mid px-4 py-3">
-            <p className="font-ui text-[10px] text-text-dim">{error}</p>
+          <div className="mr-auto bg-bg1 border-[1.5px] border-line px-4 py-3">
+            <p className="font-ui text-[10px] text-textdim">{error}</p>
           </div>
         )}
       </div>
 
       {/* Context size bar */}
       {contextTokens !== null && maxContextTokens !== null && (
-        <div className="px-4 py-1.5 border-t border-mid bg-off2 flex items-center justify-between">
-          <span className="font-ui text-[8px] text-text-dim tracking-wider">
+        <div className="px-4 py-1.5 border-t border-line bg-bg2 flex items-center justify-between">
+          <span className="font-ui text-[8px] text-textdim tracking-wider">
             CONTEXT {contextTokens.toLocaleString()} / {maxContextTokens.toLocaleString()} TOKENS
           </span>
-          <div className="w-32 h-1.5 bg-mid rounded-full overflow-hidden">
+          <div className="w-32 h-1.5 bg-bg3 rounded-full overflow-hidden">
             <div
-              className="h-full bg-border rounded-full transition-all"
+              className="h-full bg-golddeep rounded-full transition-all"
               style={{ width: `${Math.min(100, (contextTokens / maxContextTokens) * 100)}%` }}
             />
           </div>
@@ -132,10 +134,10 @@ export function ChatScene() {
       )}
 
       {/* Input */}
-      <div className="border-t-[1.5px] border-border p-4 bg-off">
+      <div className="border-t-[1.5px] border-line2 p-4 bg-bg1">
         <div className="flex gap-2">
           <textarea
-            className="flex-1 border-[1.5px] border-mid bg-white px-3 py-2 text-sm font-b text-text outline-none focus:border-border transition-colors resize-none"
+            className="flex-1 border-[1.5px] border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none"
             rows={2}
             placeholder={apiKeySet ? 'What do you do?' : 'Set API key in Settings...'}
             value={input}
@@ -152,7 +154,7 @@ export function ChatScene() {
             {isLoading ? (
               <button
                 type="button"
-                className="font-ui text-[10px] bg-border text-white px-3 py-1 hover:bg-text transition-colors"
+                className="font-ui text-[10px] bg-golddeep text-bg0 px-3 py-1 hover:bg-gold transition-colors"
                 onClick={stopGeneration}
               >
                 STOP
@@ -160,7 +162,7 @@ export function ChatScene() {
             ) : (
               <button
                 type="button"
-                className="font-ui text-[10px] bg-border text-white px-3 py-1 hover:bg-text transition-colors disabled:opacity-40"
+                className="font-ui text-[10px] bg-golddeep text-bg0 px-3 py-1 hover:bg-gold transition-colors disabled:opacity-40"
                 disabled={!apiKeySet || !input.trim()}
                 onClick={handleSend}
               >
@@ -171,15 +173,15 @@ export function ChatScene() {
               <div className="flex gap-1">
                 <button
                   type="button"
-                  className="font-ui text-[9px] text-text-dim hover:text-text px-2 py-1"
+                  className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
                   onClick={handleShowLog}
                 >
                   LOG
                 </button>
                 <button
                   type="button"
-                  className="font-ui text-[9px] text-text-dim hover:text-text px-2 py-1"
-                  onClick={clearHistory}
+                  className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
+                  onClick={() => setConfirmAction({ message: 'Clear the entire chat history? This cannot be undone.', action: clearHistory })}
                 >
                   CLEAR
                 </button>
@@ -191,6 +193,13 @@ export function ChatScene() {
 
       {promptLog && (
         <PromptLogModal messages={promptLog} onClose={() => setPromptLog(null)} />
+      )}
+      {confirmAction && (
+        <ConfirmDialog
+          message={confirmAction.message}
+          onConfirm={() => { confirmAction.action(); setConfirmAction(null) }}
+          onCancel={() => setConfirmAction(null)}
+        />
       )}
     </div>
   )
@@ -248,8 +257,8 @@ function MessageBubble({
       <div
         className={`${
           isUser
-            ? 'bg-off2 border-[1.5px] border-mid'
-            : 'bg-off border-[1.5px] border-border'
+            ? 'bg-bg2 border-[1.5px] border-line'
+            : 'bg-bg1 border-[1.5px] border-line2'
         } px-4 py-3 cursor-pointer`}
         onClick={() => {
           if (!editing && message.id > 0) {
@@ -262,7 +271,7 @@ function MessageBubble({
             <textarea
               ref={textareaRef}
               title="Edit message"
-              className="w-full text-sm font-b text-text bg-white border-[1.5px] border-mid p-2 outline-none focus:border-border resize-y min-h-[48px]"
+              className="w-full text-sm font-body text-text bg-bg0 border-[1.5px] border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
               onKeyDown={(e) => {
@@ -280,14 +289,14 @@ function MessageBubble({
             <div className="flex gap-2">
               <button
                 type="button"
-                className="font-ui text-[9px] text-white bg-border px-2 py-0.5 hover:bg-text"
+                className="font-ui text-[9px] text-bg0 bg-golddeep px-2 py-0.5 hover:bg-gold"
                 onClick={(e) => { e.stopPropagation(); handleSaveEdit() }}
               >
                 SAVE
               </button>
               <button
                 type="button"
-                className="font-ui text-[9px] text-text-dim hover:text-text px-2 py-0.5"
+                className="font-ui text-[9px] text-textdim hover:text-text px-2 py-0.5"
                 onClick={(e) => {
                   e.stopPropagation()
                   setEditText(message.content)
@@ -296,12 +305,12 @@ function MessageBubble({
               >
                 CANCEL
               </button>
-              <span className="font-ui text-[8px] text-text-dim self-center">CTRL+ENTER TO SAVE</span>
+              <span className="font-ui text-[8px] text-textdim self-center">CTRL+ENTER TO SAVE</span>
             </div>
           </div>
         ) : (
           <div
-            className="text-sm font-b text-text leading-relaxed whitespace-pre-wrap"
+            className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
             dangerouslySetInnerHTML={{ __html: formatNarration(message.content) }}
           />
         )}
@@ -316,18 +325,18 @@ function MessageBubble({
             <>
               <button
                 type="button"
-                className="font-ui text-[10px] text-text-dim hover:text-text disabled:opacity-30"
+                className="font-ui text-[10px] text-textdim hover:text-text disabled:opacity-30"
                 disabled={activeVariant === 0}
                 onClick={() => onSwipe?.('left')}
               >
                 ◀
               </button>
-              <span className="font-ui text-[8px] text-text-dim tracking-wider">
+              <span className="font-ui text-[8px] text-textdim tracking-wider">
                 {activeVariant + 1}/{variantCount}
               </span>
               <button
                 type="button"
-                className="font-ui text-[10px] text-text-dim hover:text-text disabled:opacity-30"
+                className="font-ui text-[10px] text-textdim hover:text-text disabled:opacity-30"
                 disabled={activeVariant === variantCount - 1}
                 onClick={() => onSwipe?.('right')}
               >
@@ -339,7 +348,7 @@ function MessageBubble({
             {isLastAssistant && onRegenerate && (
               <button
                 type="button"
-                className="font-ui text-[9px] text-text-dim hover:text-text"
+                className="font-ui text-[9px] text-textdim hover:text-text"
                 onClick={onRegenerate}
               >
                 REGENERATE
@@ -348,7 +357,7 @@ function MessageBubble({
             {onDelete && (
               <button
                 type="button"
-                className="font-ui text-[9px] text-text-dim hover:text-text"
+                className="font-ui text-[9px] text-textdim hover:text-text"
                 onClick={onDelete}
               >
                 DELETE
@@ -406,7 +415,7 @@ function ThinkingIndicator({ startedAt, isSummarizing }: { startedAt: number | n
   const label = isSummarizing ? 'SUMMARIZING HISTORY' : 'THINKING'
 
   return (
-    <span className="font-ui text-[10px] text-text-dim tracking-wider">
+    <span className="font-ui text-[10px] text-textdim tracking-wider">
       {label}{elapsed > 0 ? ` ${elapsed}s` : ''}
       <span className="animate-pulse"> ···</span>
     </span>
@@ -414,14 +423,20 @@ function ThinkingIndicator({ startedAt, isSummarizing }: { startedAt: number | n
 }
 
 function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-border/20">
-      <div className="bg-white border-[1.5px] border-border w-[720px] max-w-[90vw] max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 border-b-[1.5px] border-border">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg0/80">
+      <div className="bg-bg1 border-[1.5px] border-line2 w-[720px] max-w-[90vw] max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b-[1.5px] border-line2">
           <h2 className="font-ui text-[11px] tracking-wider">PROMPT LOG</h2>
           <button
             type="button"
-            className="font-ui text-[10px] text-text-dim hover:text-text"
+            className="font-ui text-[10px] text-textdim hover:text-text"
             onClick={onClose}
           >
             CLOSE
@@ -430,10 +445,10 @@ function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; o
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {messages.map((m, i) => (
             <div key={i} className="space-y-1">
-              <span className="font-ui text-[9px] tracking-wider text-text-sec uppercase">
+              <span className="font-ui text-[9px] tracking-wider text-textsec uppercase">
                 {m.role}
               </span>
-              <pre className="text-[12px] font-b text-text leading-relaxed whitespace-pre-wrap bg-off border-[1.5px] border-mid p-3 overflow-x-auto">
+              <pre className="text-[12px] font-body text-text leading-relaxed whitespace-pre-wrap bg-bg0 border-[1.5px] border-line p-3 overflow-x-auto">
                 {m.content}
               </pre>
             </div>

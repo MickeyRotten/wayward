@@ -65,8 +65,8 @@ export function CharacterSheetEditor() {
     <div className="space-y-6 p-6">
       {/* Header */}
       <div>
-        <span className="font-ui text-[9px] text-text-dim tracking-wider">PLAYER CHARACTER</span>
-        <h2 className="font-h text-[28px] pt-[3px] leading-none">
+        <span className="font-ui text-[9px] text-textdim tracking-wider">PLAYER CHARACTER</span>
+        <h2 className="font-disp text-[28px] pt-[3px] leading-none">
           {d.basicInfo.name || 'New Character'}
         </h2>
       </div>
@@ -125,7 +125,7 @@ export function CharacterSheetEditor() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="font-ui text-[10px] tracking-wider text-text-sec uppercase mb-3">{title}</h3>
+      <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
       {children}
     </section>
   )
@@ -136,9 +136,9 @@ function Field({ label, value, onChange, onBlur, placeholder }: {
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-text-dim font-b block mb-0.5">{label}</span>
+      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
-        className="w-full border-[1.5px] border-mid bg-white px-2.5 py-1.5 text-sm font-b text-text outline-none focus:border-border focus:bg-off2 transition-colors"
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -153,10 +153,10 @@ function NumField({ label, value, onChange, onBlur }: {
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-text-dim font-b block mb-0.5">{label}</span>
+      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
         type="number"
-        className="w-full border-[1.5px] border-mid bg-white px-2.5 py-1.5 text-sm font-b text-text outline-none focus:border-border focus:bg-off2 transition-colors"
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         onBlur={(e) => (onBlur ?? onChange)(Number(e.target.value) || 0)}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
@@ -170,9 +170,9 @@ function TextArea({ label, value, onChange, onBlur }: {
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-text-dim font-b block mb-0.5">{label}</span>
+      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <textarea
-        className="w-full border-[1.5px] border-mid bg-white px-2.5 py-1.5 text-sm font-b text-text outline-none focus:border-border focus:bg-off2 transition-colors resize-y min-h-[72px]"
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
         defaultValue={value}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}

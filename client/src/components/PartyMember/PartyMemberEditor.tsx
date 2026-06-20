@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PartyMember, AttributeBlock, Equipment, BasicInfo, FieldSkill } from '@shared/types/models'
 import { usePartyStore } from '../../state/partyStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitUpload } from '../PortraitUpload'
+import { ConfirmDialog } from '../ConfirmDialog'
 
 const ATTR_KEYS: (keyof AttributeBlock)[] = ['STR', 'CON', 'DEX', 'INT', 'WIS', 'CHA']
 
@@ -71,21 +72,12 @@ export function PartyMemberEditor({ member }: { member: PartyMember }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <span className="font-ui text-[9px] text-text-dim tracking-wider">PARTY MEMBER</span>
-          <h2 className="font-h text-[28px] pt-[3px] leading-none">
+          <span className="font-ui text-[9px] text-textdim tracking-wider">PARTY MEMBER</span>
+          <h2 className="font-disp text-[28px] pt-[3px] leading-none">
             {d.basicInfo.name || 'New Member'}
           </h2>
         </div>
-        <button
-          type="button"
-          className="font-ui text-[9px] text-text-dim hover:text-text border-[1.5px] border-mid px-2 py-1 hover:border-border transition-colors flex-shrink-0 mt-1"
-          onClick={async () => {
-            await remove(member.id)
-            select(null)
-          }}
-        >
-          REMOVE
-        </button>
+        <RemoveButton onRemove={async () => { await remove(member.id); select(null) }} name={d.basicInfo.name || 'this member'} />
       </div>
 
       {/* Portrait */}
@@ -159,7 +151,7 @@ export function PartyMemberEditor({ member }: { member: PartyMember }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="font-ui text-[10px] tracking-wider text-text-sec uppercase mb-3">{title}</h3>
+      <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
       {children}
     </section>
   )
@@ -170,9 +162,9 @@ function Field({ label, value, onChange, onBlur, placeholder }: {
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-text-dim font-b block mb-0.5">{label}</span>
+      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
-        className="w-full border-[1.5px] border-mid bg-white px-2.5 py-1.5 text-sm font-b text-text outline-none focus:border-border focus:bg-off2 transition-colors"
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -187,10 +179,10 @@ function NumField({ label, value, onChange, onBlur }: {
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-text-dim font-b block mb-0.5">{label}</span>
+      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
         type="number"
-        className="w-full border-[1.5px] border-mid bg-white px-2.5 py-1.5 text-sm font-b text-text outline-none focus:border-border focus:bg-off2 transition-colors"
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         onBlur={(e) => (onBlur ?? onChange)(Number(e.target.value) || 0)}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
@@ -204,9 +196,9 @@ function TextArea({ label, value, onChange, onBlur, placeholder }: {
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-text-dim font-b block mb-0.5">{label}</span>
+      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <textarea
-        className="w-full border-[1.5px] border-mid bg-white px-2.5 py-1.5 text-sm font-b text-text outline-none focus:border-border focus:bg-off2 transition-colors resize-y min-h-[72px]"
+        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
         defaultValue={value}
         placeholder={placeholder}
@@ -214,5 +206,28 @@ function TextArea({ label, value, onChange, onBlur, placeholder }: {
         onChange={(e) => onChange(e.target.value)}
       />
     </label>
+  )
+}
+
+function RemoveButton({ onRemove, name }: { onRemove: () => void; name: string }) {
+  const [showConfirm, setShowConfirm] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0 mt-1"
+        onClick={() => setShowConfirm(true)}
+      >
+        REMOVE
+      </button>
+      {showConfirm && (
+        <ConfirmDialog
+          message={`Remove ${name} from the party? This cannot be undone.`}
+          confirmLabel="REMOVE"
+          onConfirm={onRemove}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+    </>
   )
 }

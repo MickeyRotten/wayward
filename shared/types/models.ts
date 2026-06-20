@@ -1,16 +1,36 @@
 export interface Equipment {
-  head: string
-  neck: string
-  torsoOver: string
-  torsoUnder: string
-  leftHand: string
-  rightHand: string
-  waist: string
-  legsOver: string
-  legsUnder: string
-  feet: string
-  accessory1: string
-  accessory2: string
+  head: string | null
+  neck: string | null
+  torsoOver: string | null
+  torsoUnder: string | null
+  leftHand: string | null
+  rightHand: string | null
+  waist: string | null
+  legsOver: string | null
+  legsUnder: string | null
+  feet: string | null
+  accessory1: string | null
+  accessory2: string | null
+}
+
+export type ItemType = 'Equipment' | 'Tool' | 'Consumable' | 'Key Item' | 'Artifact' | 'Other'
+export type Rarity = 'c' | 'u' | 'r' | 'e' | 'l'
+
+export interface ItemCatalogEntry {
+  id: string
+  kind: 'item'
+  name: string
+  type: ItemType
+  slot?: string
+  maxStack?: number
+  uses?: number
+  rarity: Rarity
+  desc: string
+}
+
+export interface InventoryStack {
+  itemId: string
+  count: number
 }
 
 export interface BasicInfo {

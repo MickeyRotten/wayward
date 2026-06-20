@@ -83,3 +83,24 @@ class ChatMessage(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
+
+
+class ItemCatalogEntry(Base):
+    __tablename__ = "item_catalog"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    slot: Mapped[str | None] = mapped_column(String, nullable=True)
+    max_stack: Mapped[int] = mapped_column(Integer, default=1)
+    uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rarity: Mapped[str] = mapped_column(String, default="c")
+    desc: Mapped[str] = mapped_column(Text, default="")
+
+
+class InventoryStack(Base):
+    __tablename__ = "inventory_stacks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(String, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=1)

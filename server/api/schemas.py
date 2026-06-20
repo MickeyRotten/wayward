@@ -16,18 +16,18 @@ class BasicInfoSchema(BaseModel):
 
 
 class EquipmentSchema(BaseModel):
-    head: str = ""
-    neck: str = ""
-    torsoOver: str = ""
-    torsoUnder: str = ""
-    leftHand: str = ""
-    rightHand: str = ""
-    waist: str = ""
-    legsOver: str = ""
-    legsUnder: str = ""
-    feet: str = ""
-    accessory1: str = ""
-    accessory2: str = ""
+    head: str | None = None
+    neck: str | None = None
+    torsoOver: str | None = None
+    torsoUnder: str | None = None
+    leftHand: str | None = None
+    rightHand: str | None = None
+    waist: str | None = None
+    legsOver: str | None = None
+    legsUnder: str | None = None
+    feet: str | None = None
+    accessory1: str | None = None
+    accessory2: str | None = None
 
 
 class FieldSkillSchema(BaseModel):
@@ -139,3 +139,54 @@ class ChatTurnRequest(BaseModel):
 
 class ChatMessageUpdate(BaseModel):
     content: str
+
+
+# --- Item Catalog ---
+
+class ItemCatalogEntrySchema(BaseModel):
+    id: str
+    kind: str = "item"
+    name: str
+    type: str
+    slot: str | None = None
+    maxStack: int = 1
+    uses: int | None = None
+    rarity: str = "c"
+    desc: str = ""
+
+
+class ItemCatalogCreate(BaseModel):
+    name: str
+    type: str
+    slot: str | None = None
+    maxStack: int = 1
+    uses: int | None = None
+    rarity: str = "c"
+    desc: str = ""
+
+
+class ItemCatalogUpdate(BaseModel):
+    name: str | None = None
+    type: str | None = None
+    slot: str | None = None
+    maxStack: int | None = None
+    uses: int | None = None
+    rarity: str | None = None
+    desc: str | None = None
+
+
+# --- Inventory ---
+
+class InventoryStackSchema(BaseModel):
+    itemId: str
+    count: int
+
+
+class InventoryAddRequest(BaseModel):
+    itemId: str
+    count: int = 1
+
+
+class InventoryRemoveRequest(BaseModel):
+    itemId: str
+    count: int = 1

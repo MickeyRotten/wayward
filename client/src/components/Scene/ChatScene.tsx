@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
+import { usePartyStore } from '../../state/partyStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import type { ChatMessage } from '@shared/types/models'
@@ -27,6 +28,9 @@ export function ChatScene() {
   const activeVariants = useChatStore((s) => s.activeVariants)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
+
+  const playerCharacter = usePartyStore((s) => s.playerCharacter)
+  const partyMembers = usePartyStore((s) => s.partyMembers)
 
   const [input, setInput] = useState('')
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
@@ -62,10 +66,32 @@ export function ChatScene() {
   // Get variant info for each turn
   const variantCounts = getVariantCounts(messages)
 
+  // Determine if we should show the "What do you do?" divider
+  const lastVisibleMsg = visibleMessages[visibleMessages.length - 1]
+  const showWhatDoYouDo =
+    !isLoading &&
+    lastVisibleMsg &&
+    lastVisibleMsg.role === 'assistant' &&
+    visibleMessages.length > 0
+
+  // Find first narrator message index for drop-cap
+  const firstNarratorIdx = visibleMessages.findIndex(
+    (m) => m.role === 'assistant' && (m.speaker === 'narrator' || !m.speaker)
+  )
+
+  // Build a lookup for party member info by id
+  const partyMemberMap = new Map(
+    partyMembers.map((pm) => [pm.id, pm])
+  )
+
+  // PC info
+  const pcName = playerCharacter?.basicInfo?.name || 'Player'
+  const pcPortrait = playerCharacter?.basicInfo?.portrait || ''
+
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
-      <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && !isLoading && (
           <div className="flex items-center justify-center h-full">
             <p className="font-ui text-[10px] text-textdim tracking-wider">
@@ -74,7 +100,7 @@ export function ChatScene() {
           </div>
         )}
 
-        {visibleMessages.map((m) => (
+        {visibleMessages.map((m, idx) => (
           <MessageBubble
             key={`${m.id}-${m.variant}`}
             message={m}
@@ -91,23 +117,43 @@ export function ChatScene() {
             isLastAssistant={m.role === 'assistant' && m.turnNumber === lastTurn}
             onRegenerate={!isLoading ? regenerate : undefined}
             onDelete={!isLoading && m.id > 0 ? () => setConfirmAction({ message: 'Delete this message and everything after it?', action: () => deleteMessageAndAfter(m.id) }) : undefined}
+            isFirstNarrator={idx === firstNarratorIdx}
+            pcName={pcName}
+            pcPortrait={pcPortrait}
+            partyMemberMap={partyMemberMap}
           />
         ))}
 
+        {/* "What do you do?" divider */}
+        {showWhatDoYouDo && (
+          <div className="flex items-center gap-3 py-1">
+            <div className="flex-1 border-t border-line" />
+            <span className="font-disp text-[13px] text-golddeep tracking-wide pt-[2px]">
+              What do you do?
+            </span>
+            <div className="flex-1 border-t border-line" />
+          </div>
+        )}
+
         {/* Streaming response */}
         {isLoading && streamingContent && (
-          <div className="max-w-[85%] mr-auto bg-bg1 border-[1.5px] border-line2 px-4 py-3">
+          <div className="max-w-[85%] mr-auto px-4 py-3">
             <div
-              className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
+              className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
               dangerouslySetInnerHTML={{ __html: formatNarration(streamingContent) }}
             />
           </div>
         )}
 
-        {/* Thinking / summarizing indicator */}
+        {/* Generating indicator — narrator avatar with animated dots */}
         {isLoading && !streamingContent && (
-          <div className="mr-auto px-4 py-3">
-            <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+          <div className="flex items-start gap-3 mr-auto px-1 py-3">
+            <div className="w-10 h-10 rounded-sm border-[1.5px] border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
+              <span className="font-disp text-[16px] text-gold pt-[2px]">N</span>
+            </div>
+            <div className="pt-2">
+              <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+            </div>
           </div>
         )}
 
@@ -205,7 +251,44 @@ export function ChatScene() {
   )
 }
 
-// ── Message Bubble with edit, swipe, regenerate ──────────────────
+// ── Portrait Component ──────────────────────────────────────────────
+
+function Portrait({
+  src,
+  name,
+  borderColor,
+}: {
+  src?: string
+  name: string
+  borderColor: string
+}) {
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  return (
+    <div
+      className={`w-10 h-10 rounded-sm border-[1.5px] bg-bg2 flex items-center justify-center flex-shrink-0 overflow-hidden ${borderColor}`}
+    >
+      {src ? (
+        <img
+          src={src.startsWith('/') || src.startsWith('http') ? src : `/portraits/${src}`}
+          alt={name}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <span className="font-disp text-[14px] text-textsec pt-[2px]">
+          {initials || '?'}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ── Message Bubble with speaker differentiation ────────────────────
 
 function MessageBubble({
   message,
@@ -215,6 +298,10 @@ function MessageBubble({
   isLastAssistant,
   onRegenerate,
   onDelete,
+  isFirstNarrator,
+  pcName,
+  pcPortrait,
+  partyMemberMap,
 }: {
   message: ChatMessage
   variantCount: number
@@ -223,6 +310,10 @@ function MessageBubble({
   isLastAssistant?: boolean
   onRegenerate?: () => void
   onDelete?: () => void
+  isFirstNarrator?: boolean
+  pcName: string
+  pcPortrait: string
+  partyMemberMap: Map<string, { id: string; basicInfo: { name: string; portrait?: string } }>
 }) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
@@ -251,109 +342,62 @@ function MessageBubble({
   }, [editText, message.id, message.content, editMessage])
 
   const isUser = message.role === 'user'
+  const isNarrator = message.role === 'assistant' && (message.speaker === 'narrator' || !message.speaker)
 
-  return (
-    <div className={`max-w-[85%] group ${isUser ? 'ml-auto' : 'mr-auto'}`}>
-      <div
-        className={`${
-          isUser
-            ? 'bg-bg2 border-[1.5px] border-line'
-            : 'bg-bg1 border-[1.5px] border-line2'
-        } px-4 py-3 cursor-pointer`}
-        onClick={() => {
-          if (!editing && message.id > 0) {
-            setEditing(true)
-          }
-        }}
-      >
-        {editing ? (
-          <div className="space-y-2">
-            <textarea
-              ref={textareaRef}
-              title="Edit message"
-              className="w-full text-sm font-body text-text bg-bg0 border-[1.5px] border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.ctrlKey) {
-                  e.preventDefault()
-                  handleSaveEdit()
-                }
-                if (e.key === 'Escape') {
-                  setEditText(message.content)
-                  setEditing(false)
-                }
+  // Check if this is a party member speaking (assistant message with a party member speaker)
+  const partyMember = !isUser && !isNarrator && message.speaker
+    ? partyMemberMap.get(message.speaker)
+    : undefined
+
+  // Determine rendering style based on speaker type
+  if (isUser) {
+    // ── Player Character message ──
+    return (
+      <div className="max-w-[85%] ml-auto group">
+        <div className="flex items-start gap-3 justify-end">
+          <div className="flex-1 min-w-0">
+            {/* Name header */}
+            <div className="text-right mb-1">
+              <span className="font-disp text-[13px] text-blue pt-[2px]">
+                {pcName} <span className="font-ui text-[9px] text-blue/60 tracking-wider">YOU</span>
+              </span>
+            </div>
+
+            {/* Message content */}
+            <div
+              className="bg-bg2 border-[1.5px] border-line px-4 py-3 cursor-pointer"
+              onClick={() => {
+                if (!editing && message.id > 0) setEditing(true)
               }}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="font-ui text-[9px] text-bg0 bg-golddeep px-2 py-0.5 hover:bg-gold"
-                onClick={(e) => { e.stopPropagation(); handleSaveEdit() }}
-              >
-                SAVE
-              </button>
-              <button
-                type="button"
-                className="font-ui text-[9px] text-textdim hover:text-text px-2 py-0.5"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setEditText(message.content)
-                  setEditing(false)
-                }}
-              >
-                CANCEL
-              </button>
-              <span className="font-ui text-[8px] text-textdim self-center">CTRL+ENTER TO SAVE</span>
+            >
+              {editing ? (
+                <EditArea
+                  ref={textareaRef}
+                  value={editText}
+                  onChange={setEditText}
+                  onSave={handleSaveEdit}
+                  onCancel={() => { setEditText(message.content); setEditing(false) }}
+                />
+              ) : (
+                <div
+                  className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{ __html: formatNarration(message.content) }}
+                />
+              )}
             </div>
           </div>
-        ) : (
-          <div
-            className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
-            dangerouslySetInnerHTML={{ __html: formatNarration(message.content) }}
-          />
-        )}
-      </div>
 
-      {/* Actions bar */}
-      {!editing && (
-        <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
-          style={(!isUser && (variantCount > 1 || isLastAssistant)) ? { opacity: 1 } : undefined}
-        >
-          {!isUser && variantCount > 1 && (
-            <>
-              <button
-                type="button"
-                className="font-ui text-[10px] text-textdim hover:text-text disabled:opacity-30"
-                disabled={activeVariant === 0}
-                onClick={() => onSwipe?.('left')}
-              >
-                ◀
-              </button>
-              <span className="font-ui text-[8px] text-textdim tracking-wider">
-                {activeVariant + 1}/{variantCount}
-              </span>
-              <button
-                type="button"
-                className="font-ui text-[10px] text-textdim hover:text-text disabled:opacity-30"
-                disabled={activeVariant === variantCount - 1}
-                onClick={() => onSwipe?.('right')}
-              >
-                ▶
-              </button>
-            </>
-          )}
-          <div className="flex items-center gap-1 ml-auto">
-            {isLastAssistant && onRegenerate && (
-              <button
-                type="button"
-                className="font-ui text-[9px] text-textdim hover:text-text"
-                onClick={onRegenerate}
-              >
-                REGENERATE
-              </button>
-            )}
+          {/* Portrait */}
+          <Portrait
+            src={pcPortrait}
+            name={pcName}
+            borderColor="border-blue"
+          />
+        </div>
+
+        {/* Actions bar */}
+        {!editing && (
+          <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
             {onDelete && (
               <button
                 type="button"
@@ -364,11 +408,250 @@ function MessageBubble({
               </button>
             )}
           </div>
+        )}
+      </div>
+    )
+  }
+
+  if (partyMember) {
+    // ── Party Member message ──
+    const pmName = partyMember.basicInfo?.name || 'Party Member'
+    const pmPortrait = partyMember.basicInfo?.portrait || ''
+
+    return (
+      <div className="max-w-[85%] mr-auto group">
+        <div className="flex items-start gap-3">
+          {/* Portrait */}
+          <Portrait
+            src={pmPortrait}
+            name={pmName}
+            borderColor="border-line2"
+          />
+
+          <div className="flex-1 min-w-0">
+            {/* Name header */}
+            <div className="mb-1">
+              <span className="font-disp text-[13px] text-gold pt-[2px]">
+                {pmName.split(' ')[0]}
+              </span>
+            </div>
+
+            {/* Message content */}
+            <div
+              className="px-4 py-3 cursor-pointer"
+              onClick={() => {
+                if (!editing && message.id > 0) setEditing(true)
+              }}
+            >
+              {editing ? (
+                <EditArea
+                  ref={textareaRef}
+                  value={editText}
+                  onChange={setEditText}
+                  onSave={handleSaveEdit}
+                  onCancel={() => { setEditText(message.content); setEditing(false) }}
+                />
+              ) : (
+                <div
+                  className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{ __html: formatNarration(message.content) }}
+                />
+              )}
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Actions bar */}
+        <ActionsBar
+          editing={editing}
+          isUser={false}
+          variantCount={variantCount}
+          activeVariant={activeVariant}
+          onSwipe={onSwipe}
+          isLastAssistant={isLastAssistant}
+          onRegenerate={onRegenerate}
+          onDelete={onDelete}
+        />
+      </div>
+    )
+  }
+
+  // ── Narrator message (default for assistant) ──
+  return (
+    <div className="max-w-[85%] mr-auto group">
+      <div
+        className="px-4 py-3 cursor-pointer"
+        onClick={() => {
+          if (!editing && message.id > 0) setEditing(true)
+        }}
+      >
+        {editing ? (
+          <EditArea
+            ref={textareaRef}
+            value={editText}
+            onChange={setEditText}
+            onSave={handleSaveEdit}
+            onCancel={() => { setEditText(message.content); setEditing(false) }}
+          />
+        ) : (
+          <div
+            className={`text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap ${
+              isFirstNarrator ? 'first-narrator-dropcap' : ''
+            }`}
+            dangerouslySetInnerHTML={{
+              __html: isFirstNarrator
+                ? formatNarrationWithDropCap(message.content)
+                : formatNarration(message.content),
+            }}
+          />
+        )}
+      </div>
+
+      {/* Actions bar */}
+      <ActionsBar
+        editing={editing}
+        isUser={false}
+        variantCount={variantCount}
+        activeVariant={activeVariant}
+        onSwipe={onSwipe}
+        isLastAssistant={isLastAssistant}
+        onRegenerate={onRegenerate}
+        onDelete={onDelete}
+      />
     </div>
   )
 }
+
+// ── Shared Actions Bar ──────────────────────────────────────────────
+
+function ActionsBar({
+  editing,
+  isUser,
+  variantCount,
+  activeVariant,
+  onSwipe,
+  isLastAssistant,
+  onRegenerate,
+  onDelete,
+}: {
+  editing: boolean
+  isUser: boolean
+  variantCount: number
+  activeVariant: number
+  onSwipe?: (dir: 'left' | 'right') => void
+  isLastAssistant?: boolean
+  onRegenerate?: () => void
+  onDelete?: () => void
+}) {
+  if (editing) return null
+
+  return (
+    <div
+      className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+      style={(!isUser && (variantCount > 1 || isLastAssistant)) ? { opacity: 1 } : undefined}
+    >
+      {!isUser && variantCount > 1 && (
+        <>
+          <button
+            type="button"
+            className="font-ui text-[10px] text-textdim hover:text-text disabled:opacity-30"
+            disabled={activeVariant === 0}
+            onClick={() => onSwipe?.('left')}
+          >
+            &#9664;
+          </button>
+          <span className="font-ui text-[8px] text-textdim tracking-wider">
+            {activeVariant + 1}/{variantCount}
+          </span>
+          <button
+            type="button"
+            className="font-ui text-[10px] text-textdim hover:text-text disabled:opacity-30"
+            disabled={activeVariant === variantCount - 1}
+            onClick={() => onSwipe?.('right')}
+          >
+            &#9654;
+          </button>
+        </>
+      )}
+      <div className="flex items-center gap-1 ml-auto">
+        {isLastAssistant && onRegenerate && (
+          <button
+            type="button"
+            className="font-ui text-[9px] text-textdim hover:text-text"
+            onClick={onRegenerate}
+          >
+            REGENERATE
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            className="font-ui text-[9px] text-textdim hover:text-text"
+            onClick={onDelete}
+          >
+            DELETE
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Edit Area (shared between all message types) ────────────────────
+
+import { forwardRef } from 'react'
+
+const EditArea = forwardRef<
+  HTMLTextAreaElement,
+  {
+    value: string
+    onChange: (v: string) => void
+    onSave: () => void
+    onCancel: () => void
+  }
+>(function EditArea({ value, onChange, onSave, onCancel }, ref) {
+  return (
+    <div className="space-y-2">
+      <textarea
+        ref={ref}
+        title="Edit message"
+        className="w-full text-sm font-body text-text bg-bg0 border-[1.5px] border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && e.ctrlKey) {
+            e.preventDefault()
+            onSave()
+          }
+          if (e.key === 'Escape') {
+            onCancel()
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="font-ui text-[9px] text-bg0 bg-golddeep px-2 py-0.5 hover:bg-gold"
+          onClick={(e) => { e.stopPropagation(); onSave() }}
+        >
+          SAVE
+        </button>
+        <button
+          type="button"
+          className="font-ui text-[9px] text-textdim hover:text-text px-2 py-0.5"
+          onClick={(e) => {
+            e.stopPropagation()
+            onCancel()
+          }}
+        >
+          CANCEL
+        </button>
+        <span className="font-ui text-[8px] text-textdim self-center">CTRL+ENTER TO SAVE</span>
+      </div>
+    </div>
+  )
+})
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -463,4 +746,23 @@ function formatNarration(text: string): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>')
     .replace(/\n/g, '<br/>')
+}
+
+function formatNarrationWithDropCap(text: string): string {
+  // Extract the first character for the drop cap
+  const formatted = formatNarration(text)
+
+  // Find the first actual text character (skip any leading HTML tags)
+  const match = formatted.match(/^(<[^>]*>)*([^<])/)
+  if (!match) return formatted
+
+  const leadingTags = match[1] || ''
+  const firstChar = match[2]
+  const rest = formatted.slice(leadingTags.length + 1)
+
+  return (
+    leadingTags +
+    `<span class="font-disp text-gold text-[3rem] float-left leading-[0.8] mr-2 mt-[0.15rem]">${firstChar}</span>` +
+    rest
+  )
 }

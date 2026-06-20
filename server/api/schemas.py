@@ -132,6 +132,7 @@ class ChatMessageResponse(BaseModel):
     content: str
     turnNumber: int
     variant: int
+    speaker: str = "narrator"
     createdAt: str
 
 

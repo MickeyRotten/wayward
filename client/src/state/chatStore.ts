@@ -64,6 +64,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content: message,
       turnNumber: turn,
       variant: 0,
+      speaker: 'player',
       createdAt: new Date().toISOString(),
     }
     set((s) => ({

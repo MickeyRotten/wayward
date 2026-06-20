@@ -785,6 +785,7 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             content=m.content,
             turnNumber=m.turn_number,
             variant=m.variant,
+            speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
             createdAt=m.created_at.isoformat() if m.created_at else "",
         )
         for m in result.scalars().all()
@@ -809,6 +810,7 @@ async def edit_message(
         content=msg.content,
         turnNumber=msg.turn_number,
         variant=msg.variant,
+        speaker=msg.speaker or ("narrator" if msg.role == "assistant" else "player"),
         createdAt=msg.created_at.isoformat() if msg.created_at else "",
     )
 
@@ -856,6 +858,7 @@ async def save_partial(
         content=data.content,
         turn_number=last_turn,
         variant=variant,
+        speaker="narrator",
     )
     session.add(partial_msg)
     await session.commit()
@@ -906,6 +909,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             {
                 "role": m.role, "content": m.content,
                 "turnNumber": m.turn_number, "variant": m.variant,
+                "speaker": m.speaker or ("narrator" if m.role == "assistant" else "player"),
             }
             for m in messages
         ],
@@ -997,6 +1001,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         session.add(ChatMessage(
             role=msg["role"], content=msg["content"],
             turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
+            speaker=msg.get("speaker", "narrator" if msg["role"] == "assistant" else "player"),
         ))
 
     # Restore summary
@@ -1292,7 +1297,7 @@ async def chat_turn(
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
 
-    user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn)
+    user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn, speaker=pc.id)
     session.add(user_msg)
     await session.commit()
 
@@ -1447,6 +1452,7 @@ def _stream_llm_response(
                 assistant_msg = ChatMessage(
                     role="assistant", content=full_text,
                     turn_number=current_turn, variant=variant,
+                    speaker="narrator",
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()

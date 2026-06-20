@@ -81,6 +81,7 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     turn_number: Mapped[int] = mapped_column(Integer)
     variant: Mapped[int] = mapped_column(Integer, default=0)
+    speaker: Mapped[str] = mapped_column(String, default="narrator")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

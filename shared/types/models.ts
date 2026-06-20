@@ -99,6 +99,7 @@ export interface ChatMessage {
   content: string
   turnNumber: number
   variant: number
+  speaker: string
   createdAt: string
 }
 

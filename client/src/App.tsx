@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AppShell } from './components/Layout/AppShell'
 import { IconRail } from './components/IconRail/IconRail'
 import { PartyView } from './components/PartyView/PartyView'
+import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
 import { ChatScene } from './components/Scene/ChatScene'
 import { PartyInspector } from './components/Inspector/PartyInspector'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
@@ -9,6 +10,7 @@ import { usePartyStore } from './state/partyStore'
 import { useNarratorStore } from './state/narratorStore'
 import { useChatStore } from './state/chatStore'
 import { useSettingsStore } from './state/settingsStore'
+import { useItemsStore } from './state/itemsStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 
@@ -22,13 +24,17 @@ function App() {
   const fetchNarrator = useNarratorStore((s) => s.fetchConfig)
   const fetchChat = useChatStore((s) => s.fetchHistory)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
+  const fetchCatalog = useItemsStore((s) => s.fetchCatalog)
+  const fetchInventory = useItemsStore((s) => s.fetchInventory)
 
   useEffect(() => {
     fetchParty()
     fetchNarrator()
     fetchChat()
     fetchSettings()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings])
+    fetchCatalog()
+    fetchInventory()
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory])
 
   const handleTabChange = (tab: TabId) => {
     if (tab === 'config') {
@@ -47,7 +53,7 @@ function App() {
       case 'scene':
         return <TabPlaceholder label="SCENE" description="Points of interest in the current location" />
       case 'items':
-        return <TabPlaceholder label="ITEMS" description="Party inventory and item catalog" />
+        return <ItemsPanel />
       case 'quests':
         return <TabPlaceholder label="QUESTS" description="Active and completed quests" />
       case 'lore':

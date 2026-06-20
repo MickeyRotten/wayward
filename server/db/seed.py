@@ -4,6 +4,8 @@ from server.db.database import async_session
 from server.db.models import (
     InventoryStack,
     ItemCatalogEntry,
+    LorebookConfig,
+    LorebookEntry,
     NarratorConfig,
     PartyMember,
     PlayerCharacter,
@@ -38,6 +40,120 @@ OBJECTIVE_IDS = {
     "re_starlight":        "c0000001-0001-4000-8000-000000000007",
     "re_return":           "c0000001-0001-4000-8000-000000000008",
 }
+
+# ---------------------------------------------------------------------------
+# Stable IDs for seed lorebook entries
+# ---------------------------------------------------------------------------
+LORE_IDS = {
+    "whispering_woods":    "d0000001-0001-4000-8000-000000000001",
+    "moonlit_clearing":    "d0000001-0001-4000-8000-000000000002",
+    "tifa_lore":           "d0000001-0001-4000-8000-000000000003",
+    "rosalina_lore":       "d0000001-0001-4000-8000-000000000004",
+    "tide_salt_draught":   "d0000001-0001-4000-8000-000000000005",
+    "observatory_key":     "d0000001-0001-4000-8000-000000000006",
+    "shadow_wraith":       "d0000001-0001-4000-8000-000000000007",
+    "moss_golem":          "d0000001-0001-4000-8000-000000000008",
+    "starlight_ward":      "d0000001-0001-4000-8000-000000000009",
+    "mending_light":       "d0000001-0001-4000-8000-00000000000a",
+}
+
+SEED_LOREBOOK = [
+    # --- World (2 entries) ---
+    {
+        "id": LORE_IDS["whispering_woods"],
+        "title": "The Whispering Woods",
+        "content": "An ancient forest where the trees seem to murmur in a language older than any spoken tongue. Travelers report hearing fragments of old conversations carried on the wind. The deeper one ventures, the older the trees grow, and the louder the whispers become. The forest is not hostile, but it remembers everything.",
+        "keywords": ["whispering woods", "forest", "woods", "trees"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "world",
+    },
+    {
+        "id": LORE_IDS["moonlit_clearing"],
+        "title": "The Moonlit Clearing",
+        "content": "A circular clearing ringed by ancient stone pillars, half-consumed by moss and vine. Silver light pools in a shallow depression at its center regardless of the moon's phase. The villagers of Thornhaven avoid it, calling it the Old Place. Those who linger too long report dreams of a city beneath the stars.",
+        "keywords": ["clearing", "moonlit", "pillars", "silver light", "old place"],
+        "enabled": True,
+        "permanent": True,
+        "cat": "world",
+    },
+    # --- Characters (2 entries) ---
+    {
+        "id": LORE_IDS["tifa_lore"],
+        "title": "Tifa Lockhart",
+        "content": "A martial artist from a mountain village destroyed years ago. She fights with her fists and carries the weight of that loss quietly. Fiercely loyal to her companions, she is often the one who keeps the group grounded when things go sideways. Her fighting style is raw, powerful, and direct.",
+        "keywords": ["tifa", "lockhart", "martial artist", "fists"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "characters",
+    },
+    {
+        "id": LORE_IDS["rosalina_lore"],
+        "title": "Rosalina",
+        "content": "A celestial being who has watched over the cosmos for longer than she cares to remember. She travels with a retinue of small star-sprites called Lumas. Her presence is calm and otherworldly, and she speaks with the gentle certainty of someone who has seen the shape of things many times before. She is searching for something she lost long ago.",
+        "keywords": ["rosalina", "celestial", "luma", "lumas", "star", "cosmic"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "characters",
+    },
+    # --- Items (2 entries) ---
+    {
+        "id": LORE_IDS["tide_salt_draught"],
+        "title": "Tide-Salt Draught",
+        "content": "A potion brewed by coastal alchemists using salts harvested during the highest tides. The brine glows faintly when agitated. Drinking it restores vigor and sharpens the mind for a short while, though the taste is memorably unpleasant. Prized by travelers who push through exhaustion.",
+        "keywords": ["tide-salt", "draught", "potion", "brine"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "items",
+    },
+    {
+        "id": LORE_IDS["observatory_key"],
+        "title": "The Observatory Key",
+        "content": "An ornate brass key covered in celestial engravings — constellations that do not match any known sky. It was found inside a hollow stone pillar in the Moonlit Clearing. It presumably opens the old observatory on the ridge above Thornhaven, though no one living has been inside.",
+        "keywords": ["observatory", "key", "brass key", "celestial"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "items",
+    },
+    # --- Monsters (2 entries) ---
+    {
+        "id": LORE_IDS["shadow_wraith"],
+        "title": "Shadow Wraith",
+        "content": "A formless, dark entity that drifts through places where old magic has soured. Shadow wraiths are drawn to fear and confusion. They cannot be struck by ordinary weapons — only light, fire, or magic disperses them. They do not kill outright but drain warmth and will from the living, leaving victims hollow and lost.",
+        "keywords": ["shadow", "wraith", "dark", "darkness", "shade"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "monsters",
+    },
+    {
+        "id": LORE_IDS["moss_golem"],
+        "title": "Moss Golem",
+        "content": "A hulking figure of packed earth, stone, and living moss that guards ancient places in the Whispering Woods. Moss golems are slow but enormously strong. They do not attack unprovoked — they respond to intrusion, particularly near the stone pillars and old ward-lines. Destroying one is difficult; they reassemble unless the core stone at their center is removed.",
+        "keywords": ["golem", "moss", "stone guardian", "earth"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "monsters",
+    },
+    # --- Spells (2 entries) ---
+    {
+        "id": LORE_IDS["starlight_ward"],
+        "title": "Starlight Ward",
+        "content": "A protective enchantment woven from captured starlight. When cast, it creates a faintly luminous barrier that repels dark entities and dampens hostile enchantments within its radius. The ward fades as the captured light is consumed, lasting minutes rather than hours. Rosalina's Lumas can sustain it longer than most casters.",
+        "keywords": ["ward", "starlight", "barrier", "protection", "enchantment"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "spells",
+    },
+    {
+        "id": LORE_IDS["mending_light"],
+        "title": "Mending Light",
+        "content": "A gentle restorative magic that accelerates natural healing. It cannot regrow what is lost or cure disease, but it closes wounds, eases pain, and mends cracked bone over the course of several minutes. The caster's hands glow with a warm, golden light during the process. Exhausting to use repeatedly.",
+        "keywords": ["mending", "heal", "healing", "restore", "light"],
+        "enabled": True,
+        "permanent": False,
+        "cat": "spells",
+    },
+]
 
 # ---------------------------------------------------------------------------
 # Stable IDs for seed catalog items — referenced by equipment dicts below.
@@ -428,6 +544,23 @@ async def seed_defaults():
             sort_order=1,
         )
 
+        # --- Seed lorebook entries ---
+        lore_objects = []
+        for lore_data in SEED_LOREBOOK:
+            lore_objects.append(LorebookEntry(**lore_data))
+
+        # --- Seed lorebook config ---
+        lore_config = LorebookConfig(
+            injection_order={
+                "world": 0, "characters": 10, "items": 20,
+                "monsters": 30, "spells": 40,
+            },
+            injection_position={
+                "world": "top", "characters": "top", "items": "top",
+                "monsters": "top", "spells": "top",
+            },
+        )
+
         session.add_all([
             pc, tifa, rosalina, narrator, scenario, summary,
             inv_draught, inv_lantern, inv_rations,
@@ -435,5 +568,7 @@ async def seed_defaults():
             obj_mc_investigate, obj_mc_pillars, obj_mc_light,
             obj_sf_first, obj_sf_second, obj_sf_purpose,
             obj_re_starlight, obj_re_return,
+            lore_config,
+            *lore_objects,
         ])
         await session.commit()

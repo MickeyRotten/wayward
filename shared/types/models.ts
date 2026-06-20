@@ -125,6 +125,23 @@ export interface Quest {
   relatedLore: string[]
 }
 
+export type LoreCategory = 'world' | 'characters' | 'items' | 'monsters' | 'spells'
+
+export interface LorebookEntry {
+  id: string
+  title: string
+  content: string
+  keywords: string[]
+  enabled: boolean
+  permanent: boolean
+  cat: LoreCategory
+}
+
+export interface LorebookConfig {
+  injectionOrder: Record<LoreCategory, number>
+  injectionPosition: Record<LoreCategory, 'top' | 'bottom' | 'before_input'>
+}
+
 export interface OpenRouterModel {
   id: string
   name: string

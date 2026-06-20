@@ -28,6 +28,11 @@ from server.api.schemas import (
     ItemCatalogUpdate,
     InventoryAddRequest,
     InventoryRemoveRequest,
+    LorebookConfigSchema,
+    LorebookConfigUpdate,
+    LorebookEntryCreate,
+    LorebookEntrySchema,
+    LorebookEntryUpdate,
     NarratorResponse,
     NarratorUpdate,
     OpenRouterSettingsResponse,
@@ -50,6 +55,8 @@ from server.db.models import (
     ChatMessage,
     InventoryStack,
     ItemCatalogEntry,
+    LorebookConfig,
+    LorebookEntry,
     NarratorConfig,
     OpenRouterSettings,
     PartyMember,
@@ -635,6 +642,135 @@ async def delete_objective(
     await session.commit()
 
 
+# ── Lorebook ─────────────────────────────────────────────────────
+
+def _lore_to_schema(entry: LorebookEntry) -> LorebookEntrySchema:
+    return LorebookEntrySchema(
+        id=entry.id,
+        title=entry.title,
+        content=entry.content,
+        keywords=entry.keywords or [],
+        enabled=bool(entry.enabled),
+        permanent=bool(entry.permanent),
+        cat=entry.cat,
+    )
+
+
+@router.get("/lore/config", response_model=LorebookConfigSchema)
+async def get_lore_config(session: AsyncSession = Depends(get_session)):
+    cfg = (await session.execute(select(LorebookConfig))).scalars().first()
+    if not cfg:
+        cfg = LorebookConfig()
+        session.add(cfg)
+        await session.commit()
+        await session.refresh(cfg)
+    return LorebookConfigSchema(
+        injectionOrder=cfg.injection_order,
+        injectionPosition=cfg.injection_position,
+    )
+
+
+@router.put("/lore/config", response_model=LorebookConfigSchema)
+async def update_lore_config(
+    data: LorebookConfigUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    cfg = (await session.execute(select(LorebookConfig))).scalars().first()
+    if not cfg:
+        cfg = LorebookConfig()
+        session.add(cfg)
+    if data.injectionOrder is not None:
+        cfg.injection_order = data.injectionOrder
+    if data.injectionPosition is not None:
+        cfg.injection_position = data.injectionPosition
+    await session.commit()
+    await session.refresh(cfg)
+    return LorebookConfigSchema(
+        injectionOrder=cfg.injection_order,
+        injectionPosition=cfg.injection_position,
+    )
+
+
+@router.get("/lore", response_model=list[LorebookEntrySchema])
+async def list_lore_entries(
+    cat: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(LorebookEntry)
+    if cat:
+        query = query.where(LorebookEntry.cat == cat)
+    entries = (await session.execute(query)).scalars().all()
+    return [_lore_to_schema(e) for e in entries]
+
+
+@router.post("/lore", response_model=LorebookEntrySchema, status_code=201)
+async def create_lore_entry(
+    data: LorebookEntryCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    entry = LorebookEntry(
+        title=data.title,
+        content=data.content,
+        keywords=data.keywords,
+        enabled=data.enabled,
+        permanent=data.permanent,
+        cat=data.cat,
+    )
+    session.add(entry)
+    await session.commit()
+    await session.refresh(entry)
+    return _lore_to_schema(entry)
+
+
+@router.get("/lore/{entry_id}", response_model=LorebookEntrySchema)
+async def get_lore_entry(
+    entry_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    entry = await session.get(LorebookEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Lorebook entry not found")
+    return _lore_to_schema(entry)
+
+
+@router.put("/lore/{entry_id}", response_model=LorebookEntrySchema)
+async def update_lore_entry(
+    entry_id: str,
+    data: LorebookEntryUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    entry = await session.get(LorebookEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Lorebook entry not found")
+    if data.title is not None:
+        entry.title = data.title
+    if data.content is not None:
+        entry.content = data.content
+    if data.keywords is not None:
+        entry.keywords = data.keywords
+    if data.enabled is not None:
+        entry.enabled = data.enabled
+    if data.permanent is not None:
+        entry.permanent = data.permanent
+    if data.cat is not None:
+        entry.cat = data.cat
+    await session.commit()
+    await session.refresh(entry)
+    return _lore_to_schema(entry)
+
+
+@router.delete("/lore/{entry_id}", status_code=204)
+async def delete_lore_entry(
+    entry_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    entry = await session.get(LorebookEntry, entry_id)
+    if not entry:
+        raise HTTPException(404, "Lorebook entry not found")
+    await session.delete(entry)
+    await session.commit()
+
+
 # ── Chat Messages ─────────────────────────────────────────────────
 
 @router.get("/chat/messages", response_model=list[ChatMessageResponse])
@@ -750,6 +886,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
     inventory = (await session.execute(select(InventoryStack))).scalars().all()
     quests = (await session.execute(select(Quest))).scalars().all()
     quest_objectives = (await session.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
+    lore_entries = (await session.execute(select(LorebookEntry))).scalars().all()
+    lore_config = (await session.execute(select(LorebookConfig))).scalars().first()
 
     # Group objectives by quest_id
     obj_by_quest: dict[str, list] = {}
@@ -796,12 +934,30 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             }
             for q in quests
         ],
+        "lorebook": [
+            {
+                "id": e.id,
+                "title": e.title,
+                "content": e.content,
+                "keywords": e.keywords or [],
+                "enabled": bool(e.enabled),
+                "permanent": bool(e.permanent),
+                "cat": e.cat,
+            }
+            for e in lore_entries
+        ],
+        "lorebookConfig": {
+            "injectionOrder": lore_config.injection_order if lore_config else {"world": 0, "characters": 10, "items": 20, "monsters": 30, "spells": 40},
+            "injectionPosition": lore_config.injection_position if lore_config else {"world": "top", "characters": "top", "items": "top", "monsters": "top", "spells": "top"},
+        },
     }
 
 
 @router.post("/adventure/import")
 async def import_adventure(data: dict, session: AsyncSession = Depends(get_session)):
     # Clear everything
+    await session.execute(delete(LorebookEntry))
+    await session.execute(delete(LorebookConfig))
     await session.execute(delete(QuestObjective))
     await session.execute(delete(Quest))
     await session.execute(delete(InventoryStack))
@@ -903,6 +1059,25 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
                 sort_order=obj_data.get("sortOrder", 0),
             ))
 
+    # Restore lorebook entries
+    for le_data in data.get("lorebook", []):
+        session.add(LorebookEntry(
+            id=le_data.get("id"),
+            title=le_data.get("title", ""),
+            content=le_data.get("content", ""),
+            keywords=le_data.get("keywords", []),
+            enabled=le_data.get("enabled", True),
+            permanent=le_data.get("permanent", False),
+            cat=le_data.get("cat", "world"),
+        ))
+
+    # Restore lorebook config
+    lc_data = data.get("lorebookConfig", {})
+    session.add(LorebookConfig(
+        injection_order=lc_data.get("injectionOrder", {"world": 0, "characters": 10, "items": 20, "monsters": 30, "spells": 40}),
+        injection_position=lc_data.get("injectionPosition", {"world": "top", "characters": "top", "items": "top", "monsters": "top", "spells": "top"}),
+    ))
+
     await session.commit()
     return {"ok": True}
 
@@ -913,6 +1088,8 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     old_api_key = settings.api_key if settings else ""
 
+    await session.execute(delete(LorebookEntry))
+    await session.execute(delete(LorebookConfig))
     await session.execute(delete(QuestObjective))
     await session.execute(delete(Quest))
     await session.execute(delete(InventoryStack))
@@ -1005,8 +1182,14 @@ async def _load_game_context(session: AsyncSession):
     quest_objectives = list(
         (await session.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
     )
+    lore_entries = list((await session.execute(select(LorebookEntry))).scalars().all())
+    lore_config = (await session.execute(select(LorebookConfig))).scalars().first()
+    if not lore_config:
+        lore_config = LorebookConfig()
+        session.add(lore_config)
+        await session.commit()
 
-    return settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives
+    return settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config
 
 
 async def _maybe_summarize_and_build(
@@ -1019,6 +1202,8 @@ async def _maybe_summarize_and_build(
     item_catalog: list[ItemCatalogEntry] | None = None,
     quests: list[Quest] | None = None,
     quest_objectives: list[QuestObjective] | None = None,
+    lore_entries: list[LorebookEntry] | None = None,
+    lore_config: LorebookConfig | None = None,
 ):
     """Check if summarization is needed, do it, then build the prompt.
     Returns (prompt_messages, did_summarize)."""
@@ -1052,6 +1237,8 @@ async def _maybe_summarize_and_build(
         item_catalog=item_catalog,
         quests=quests,
         quest_objectives=quest_objectives,
+        lore_entries=lore_entries,
+        lore_config=lore_config,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
     )
@@ -1086,6 +1273,8 @@ async def _maybe_summarize_and_build(
         item_catalog=item_catalog,
         quests=quests,
         quest_objectives=quest_objectives,
+        lore_entries=lore_entries,
+        lore_config=lore_config,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
     )
@@ -1098,7 +1287,7 @@ async def chat_turn(
     data: ChatTurnRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives = await _load_game_context(session)
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
@@ -1117,6 +1306,8 @@ async def chat_turn(
         item_catalog=catalog,
         quests=quests,
         quest_objectives=quest_objectives,
+        lore_entries=lore_entries,
+        lore_config=lore_config,
     )
 
     variant_count = sum(
@@ -1137,7 +1328,7 @@ async def chat_turn(
 
 @router.post("/chat/regenerate")
 async def regenerate(session: AsyncSession = Depends(get_session)):
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives = await _load_game_context(session)
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     if not all_messages:
         raise HTTPException(400, "No messages to regenerate")
@@ -1162,6 +1353,8 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         item_catalog=catalog,
         quests=quests,
         quest_objectives=quest_objectives,
+        lore_entries=lore_entries,
+        lore_config=lore_config,
     )
 
     variant_count = sum(

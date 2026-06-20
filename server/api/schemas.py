@@ -236,3 +236,49 @@ class QuestObjectiveCreate(BaseModel):
 class QuestObjectiveUpdate(BaseModel):
     text: str | None = None
     done: bool | None = None
+
+
+# --- Lorebook ---
+
+class LorebookEntrySchema(BaseModel):
+    id: str
+    title: str
+    content: str
+    keywords: list[str] = []
+    enabled: bool = True
+    permanent: bool = False
+    cat: str = "world"
+
+
+class LorebookEntryCreate(BaseModel):
+    title: str
+    content: str = ""
+    keywords: list[str] = []
+    enabled: bool = True
+    permanent: bool = False
+    cat: str = "world"
+
+
+class LorebookEntryUpdate(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    keywords: list[str] | None = None
+    enabled: bool | None = None
+    permanent: bool | None = None
+    cat: str | None = None
+
+
+class LorebookConfigSchema(BaseModel):
+    injectionOrder: dict[str, int] = {
+        "world": 0, "characters": 10, "items": 20,
+        "monsters": 30, "spells": 40,
+    }
+    injectionPosition: dict[str, str] = {
+        "world": "top", "characters": "top", "items": "top",
+        "monsters": "top", "spells": "top",
+    }
+
+
+class LorebookConfigUpdate(BaseModel):
+    injectionOrder: dict[str, int] | None = None
+    injectionPosition: dict[str, str] | None = None

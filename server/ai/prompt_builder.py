@@ -1,6 +1,9 @@
+from server.ai.lore_injector import format_lore_block, group_by_position, match_entries
 from server.db.models import (
     ChatMessage,
     ItemCatalogEntry,
+    LorebookConfig,
+    LorebookEntry,
     NarratorConfig,
     PartyMember,
     PlayerCharacter,
@@ -33,6 +36,8 @@ def build_prompt(
     item_catalog: list[ItemCatalogEntry] | None = None,
     quests: list[Quest] | None = None,
     quest_objectives: list[QuestObjective] | None = None,
+    lore_entries: list[LorebookEntry] | None = None,
+    lore_config: LorebookConfig | None = None,
     max_context_tokens: int = 128000,
     max_response_tokens: int = 1000,
 ) -> list[dict]:
@@ -134,10 +139,26 @@ def build_prompt(
     if spotlight_block:
         messages.append({"role": "system", "content": spotlight_block})
 
-    # 6. Chat history (with context trimming)
+    # 7. Lorebook — match entries and group by injection position
+    lore_groups: dict[str, list[LorebookEntry]] = {"top": [], "before_input": [], "bottom": []}
+    if lore_entries and lore_config:
+        matched = match_entries(player_message, lore_entries)
+        if matched:
+            lore_groups = group_by_position(matched, lore_config)
+
+    # 8. Lorebook entries with injectionPosition = 'top'
+    if lore_groups["top"]:
+        messages.append({"role": "system", "content": format_lore_block(lore_groups["top"])})
+
+    # 9. Chat history (with context trimming)
     preamble_tokens = _estimate_tokens(messages)
     player_msg_tokens = len(player_message) // 4 + 10
-    budget = max_context_tokens - max_response_tokens - preamble_tokens - player_msg_tokens
+    # Reserve space for before_input and bottom lore blocks
+    lore_extra_tokens = 0
+    for pos in ("before_input", "bottom"):
+        if lore_groups[pos]:
+            lore_extra_tokens += len(format_lore_block(lore_groups[pos])) // 4 + 4
+    budget = max_context_tokens - max_response_tokens - preamble_tokens - player_msg_tokens - lore_extra_tokens
 
     history_messages = [
         {"role": m.role, "content": m.content}
@@ -146,8 +167,16 @@ def build_prompt(
     history_messages = _trim_to_budget(history_messages, budget)
     messages.extend(history_messages)
 
-    # 7. Player's new message
+    # 10. Lorebook entries with injectionPosition = 'before_input'
+    if lore_groups["before_input"]:
+        messages.append({"role": "system", "content": format_lore_block(lore_groups["before_input"])})
+
+    # 11. Player's new message
     messages.append({"role": "user", "content": player_message})
+
+    # 12. Lorebook entries with injectionPosition = 'bottom'
+    if lore_groups["bottom"]:
+        messages.append({"role": "system", "content": format_lore_block(lore_groups["bottom"])})
 
     return messages
 

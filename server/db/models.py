@@ -107,6 +107,38 @@ class InventoryStack(Base):
     count: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class LorebookEntry(Base):
+    __tablename__ = "lorebook_entries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    title: Mapped[str] = mapped_column(String, default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    keywords: Mapped[list] = mapped_column(JSON, default=list)
+    enabled: Mapped[bool] = mapped_column(Integer, default=True)
+    permanent: Mapped[bool] = mapped_column(Integer, default=False)
+    cat: Mapped[str] = mapped_column(String, default="world")
+
+
+class LorebookConfig(Base):
+    __tablename__ = "lorebook_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    injection_order: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "world": 0, "characters": 10, "items": 20,
+            "monsters": 30, "spells": 40,
+        },
+    )
+    injection_position: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "world": "top", "characters": "top", "items": "top",
+            "monsters": "top", "spells": "top",
+        },
+    )
+
+
 class Quest(Base):
     __tablename__ = "quests"
 

@@ -787,8 +787,9 @@ async def _load_game_context(session: AsyncSession):
     if not summary:
         summary = StorySummary(content="", summary_up_to_turn=0)
         session.add(summary)
+    catalog = list((await session.execute(select(ItemCatalogEntry))).scalars().all())
 
-    return settings, narrator, scenario, pc, party, all_messages, summary
+    return settings, narrator, scenario, pc, party, all_messages, summary, catalog
 
 
 async def _maybe_summarize_and_build(
@@ -798,6 +799,7 @@ async def _maybe_summarize_and_build(
     player_message: str,
     current_turn: int,
     session: AsyncSession,
+    item_catalog: list[ItemCatalogEntry] | None = None,
 ):
     """Check if summarization is needed, do it, then build the prompt.
     Returns (prompt_messages, did_summarize)."""
@@ -828,6 +830,7 @@ async def _maybe_summarize_and_build(
         player_message=player_message,
         spotlight_block=spotlight_block,
         story_summary=summary.content or None,
+        item_catalog=item_catalog,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
     )
@@ -859,6 +862,7 @@ async def _maybe_summarize_and_build(
         player_message=player_message,
         spotlight_block=spotlight_block,
         story_summary=summary.content or None,
+        item_catalog=item_catalog,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
     )
@@ -871,7 +875,7 @@ async def chat_turn(
     data: ChatTurnRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    settings, narrator, scenario, pc, party, all_messages, summary = await _load_game_context(session)
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog = await _load_game_context(session)
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
@@ -887,6 +891,7 @@ async def chat_turn(
         player_message=data.message,
         current_turn=current_turn,
         session=session,
+        item_catalog=catalog,
     )
 
     variant_count = sum(
@@ -907,7 +912,7 @@ async def chat_turn(
 
 @router.post("/chat/regenerate")
 async def regenerate(session: AsyncSession = Depends(get_session)):
-    settings, narrator, scenario, pc, party, all_messages, summary = await _load_game_context(session)
+    settings, narrator, scenario, pc, party, all_messages, summary, catalog = await _load_game_context(session)
 
     if not all_messages:
         raise HTTPException(400, "No messages to regenerate")
@@ -929,6 +934,7 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         player_message=last_user_msg.content,
         current_turn=last_turn,
         session=session,
+        item_catalog=catalog,
     )
 
     variant_count = sum(

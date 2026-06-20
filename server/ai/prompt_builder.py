@@ -1,10 +1,22 @@
 from server.db.models import (
     ChatMessage,
+    ItemCatalogEntry,
     NarratorConfig,
     PartyMember,
     PlayerCharacter,
     Scenario,
 )
+
+
+def _resolve_equip_name(item_id: str | None, catalog_lookup: dict[str, str]) -> str | None:
+    """Resolve an equipment slot value to an item name using the catalog lookup dict.
+
+    Returns the item name if found, the raw value as fallback (backwards compat),
+    or None if the slot is empty.
+    """
+    if not item_id:
+        return None
+    return catalog_lookup.get(item_id, item_id)
 
 
 def build_prompt(
@@ -16,10 +28,17 @@ def build_prompt(
     player_message: str,
     spotlight_block: str | None = None,
     story_summary: str | None = None,
+    item_catalog: list[ItemCatalogEntry] | None = None,
     max_context_tokens: int = 128000,
     max_response_tokens: int = 1000,
 ) -> list[dict]:
     messages: list[dict] = []
+
+    # Build catalog lookup: id -> name
+    catalog_lookup: dict[str, str] = {}
+    if item_catalog:
+        for cat_item in item_catalog:
+            catalog_lookup[cat_item.id] = cat_item.name
 
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})
@@ -36,9 +55,11 @@ def build_prompt(
     pc_equip = player_character.equipment
 
     equipped = [
-        f"{slot}: {item}"
-        for slot, item in pc_equip.items()
-        if item
+        f"{slot}: {resolved}"
+        for slot, item_id in pc_equip.items()
+        if item_id
+        for resolved in [_resolve_equip_name(item_id, catalog_lookup)]
+        if resolved
     ]
     equip_str = ", ".join(equipped) if equipped else "nothing equipped"
 
@@ -57,9 +78,11 @@ def build_prompt(
             info = pm.basic_info
             skill = pm.field_skill
             equipped_pm = [
-                f"{slot}: {item}"
-                for slot, item in pm.equipment.items()
-                if item
+                f"{slot}: {resolved}"
+                for slot, item_id in pm.equipment.items()
+                if item_id
+                for resolved in [_resolve_equip_name(item_id, catalog_lookup)]
+                if resolved
             ]
             equip_pm_str = ", ".join(equipped_pm) if equipped_pm else "nothing equipped"
             lines = [

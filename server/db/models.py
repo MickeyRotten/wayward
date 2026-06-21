@@ -83,6 +83,8 @@ class ChatMessage(Base):
     variant: Mapped[int] = mapped_column(Integer, default=0)
     speaker: Mapped[str] = mapped_column(String, default="narrator")
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

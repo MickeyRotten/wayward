@@ -1,4 +1,5 @@
 from server.ai.lore_injector import format_lore_block, group_by_position, match_entries
+from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.db.models import (
     ChatMessage,
     ItemCatalogEntry,
@@ -51,6 +52,9 @@ def build_prompt(
 
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})
+
+    # 1b. System: Narrator action protocol (not user-editable)
+    messages.append({"role": "system", "content": ACTION_INSTRUCTION})
 
     # 2. Scenario context
     if scenario.description:

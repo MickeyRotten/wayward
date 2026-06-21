@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 PORTRAITS_DIR = Path(__file__).resolve().parent.parent / "portraits"
 
+from server.ai.narrator_actions import execute_actions, parse_action_block
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
 from server.ai.spotlight import SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -787,6 +788,8 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             variant=m.variant,
             speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
             spotlightReason=m.spotlight_reason,
+            appliedInventoryDeltas=m.applied_inventory_deltas,
+            appliedEquipmentChanges=m.applied_equipment_changes,
             createdAt=m.created_at.isoformat() if m.created_at else "",
         )
         for m in result.scalars().all()
@@ -813,6 +816,8 @@ async def edit_message(
         variant=msg.variant,
         speaker=msg.speaker or ("narrator" if msg.role == "assistant" else "player"),
         spotlightReason=msg.spotlight_reason,
+        appliedInventoryDeltas=msg.applied_inventory_deltas,
+        appliedEquipmentChanges=msg.applied_equipment_changes,
         createdAt=msg.created_at.isoformat() if msg.created_at else "",
     )
 
@@ -913,6 +918,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
                 "turnNumber": m.turn_number, "variant": m.variant,
                 "speaker": m.speaker or ("narrator" if m.role == "assistant" else "player"),
                 "spotlightReason": m.spotlight_reason,
+                "appliedInventoryDeltas": m.applied_inventory_deltas,
+                "appliedEquipmentChanges": m.applied_equipment_changes,
             }
             for m in messages
         ],
@@ -1006,6 +1013,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
             speaker=msg.get("speaker", "narrator" if msg["role"] == "assistant" else "player"),
             spotlight_reason=msg.get("spotlightReason"),
+            applied_inventory_deltas=msg.get("appliedInventoryDeltas"),
+            applied_equipment_changes=msg.get("appliedEquipmentChanges"),
         ))
 
     # Restore summary
@@ -1501,6 +1510,11 @@ def _stream_llm_response(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             return
 
+        # Parse and strip the action block before saving
+        clean_text, actions = parse_action_block(full_text)
+        inv_deltas: list[dict] = []
+        equip_changes: list[dict] = []
+
         try:
             async with async_session() as save_session:
                 speaker_ids: list[str] = []
@@ -1527,18 +1541,35 @@ def _stream_llm_response(
                                 spot_reason = "Hasn't spoken in a while"
                             break
 
+                # Execute narrator actions if present
+                if actions:
+                    inv_deltas, equip_changes = await execute_actions(
+                        actions, save_session
+                    )
+
                 assistant_msg = ChatMessage(
-                    role="assistant", content=full_text,
+                    role="assistant", content=clean_text,
                     turn_number=current_turn, variant=variant,
                     speaker="narrator",
                     spotlight_reason=spot_reason,
+                    applied_inventory_deltas=inv_deltas if inv_deltas else None,
+                    applied_equipment_changes=equip_changes if equip_changes else None,
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()
         except Exception as e:
             log.exception("Failed to save response to DB")
 
-        response_tokens = len(full_text) // 4
-        yield f"data: {json.dumps({'type': 'done', 'contextTokens': context_tokens + response_tokens, 'maxContextTokens': max_context})}\n\n"
+        response_tokens = len(clean_text) // 4
+        done_payload: dict = {
+            'type': 'done',
+            'contextTokens': context_tokens + response_tokens,
+            'maxContextTokens': max_context,
+        }
+        if inv_deltas:
+            done_payload['appliedInventoryDeltas'] = inv_deltas
+        if equip_changes:
+            done_payload['appliedEquipmentChanges'] = equip_changes
+        yield f"data: {json.dumps(done_payload)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")

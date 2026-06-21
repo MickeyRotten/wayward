@@ -93,6 +93,19 @@ export interface OpenRouterSettingsUpdate extends OpenRouterSettings {
   apiKey?: string
 }
 
+export interface InventoryDelta {
+  itemId: string
+  delta: number
+  source: 'player_action' | 'narrator_grant'
+}
+
+export interface EquipmentChange {
+  characterId: string
+  slot: string
+  previousItemId: string | null
+  newItemId: string | null
+}
+
 export interface ChatMessage {
   id: number
   role: 'user' | 'assistant' | 'system'
@@ -101,6 +114,8 @@ export interface ChatMessage {
   variant: number
   speaker: string
   spotlightReason?: string | null
+  appliedInventoryDeltas?: InventoryDelta[] | null
+  appliedEquipmentChanges?: EquipmentChange[] | null
   createdAt: string
 }
 

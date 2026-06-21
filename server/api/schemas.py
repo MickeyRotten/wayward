@@ -134,6 +134,8 @@ class ChatMessageResponse(BaseModel):
     variant: int
     speaker: str = "narrator"
     spotlightReason: str | None = None
+    appliedInventoryDeltas: list[dict] | None = None
+    appliedEquipmentChanges: list[dict] | None = None
     createdAt: str
 
 

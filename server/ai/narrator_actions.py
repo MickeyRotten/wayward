@@ -268,6 +268,45 @@ async def execute_actions(
     return inv_deltas, equip_changes
 
 
+async def reverse_equipment_changes(
+    changes: list[dict],
+    session: AsyncSession,
+) -> None:
+    """Reverse a list of previously-applied equipment changes.
+
+    Each change is ``{characterId, slot, previousItemId, newItemId}``. Reversing
+    means restoring the slot to ``previousItemId`` (whatever was there before the
+    narrator's change). The inventory side of an unequip (the returned item) is
+    handled separately by reversing the inventory deltas — see
+    item_detection.reverse_inventory_deltas — so this only restores slot state.
+
+    Changes are reversed in reverse order so that multiple changes to the same
+    slot in one turn unwind correctly.
+    """
+    for change in reversed(changes):
+        char_id = change.get("characterId")
+        slot = change.get("slot")
+        previous_item_id = change.get("previousItemId")
+        if not char_id or not slot:
+            continue
+        if slot not in VALID_EQUIPMENT_SLOTS:
+            continue
+
+        character = await session.get(PlayerCharacter, char_id)
+        if character is None:
+            character = await session.get(PartyMember, char_id)
+        if character is None:
+            log.info(
+                "reverse_equipment_changes: unresolved character '%s', skipping",
+                char_id,
+            )
+            continue
+
+        equipment = dict(character.equipment) if character.equipment else {}
+        equipment[slot] = previous_item_id
+        character.equipment = equipment
+
+
 async def _resolve_character(
     session: AsyncSession, name: str
 ) -> tuple[PlayerCharacter | PartyMember | None, str | None]:

@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 PORTRAITS_DIR = Path(__file__).resolve().parent.parent / "portraits"
 
-from server.ai.narrator_actions import execute_actions, parse_action_block
+from server.ai.narrator_actions import execute_actions, parse_action_block, reverse_equipment_changes
+from server.ai.item_detection import (
+    apply_inventory_deltas,
+    detect_item_use,
+    reverse_inventory_deltas,
+)
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
 from server.ai.spotlight import SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -408,8 +413,12 @@ async def delete_item(
 MAX_CARRY_SLOTS_DEFAULT = 12
 
 
-@router.get("/inventory")
-async def list_inventory(session: AsyncSession = Depends(get_session)):
+async def _list_inventory_dicts(session: AsyncSession) -> list[dict]:
+    """Return the current inventory as a list of stack dicts.
+
+    Shape: ``{"itemId", "count", "item": {...} | None}`` — the same shape the
+    /inventory route returns and that detect_item_use expects.
+    """
     stacks = (await session.execute(select(InventoryStack))).scalars().all()
     result = []
     for s in stacks:
@@ -420,6 +429,11 @@ async def list_inventory(session: AsyncSession = Depends(get_session)):
             "item": _item_to_dict(item) if item else None,
         })
     return result
+
+
+@router.get("/inventory")
+async def list_inventory(session: AsyncSession = Depends(get_session)):
+    return await _list_inventory_dicts(session)
 
 
 @router.post("/inventory/add")
@@ -830,6 +844,23 @@ async def delete_message_and_after(
     msg = await session.get(ChatMessage, msg_id)
     if not msg:
         raise HTTPException(404, "Message not found")
+
+    # Reverse the effects of the most-recent message in the deleted range only
+    # (the live state reflects the latest assistant message's combined deltas).
+    # Per Task 6.2: don't walk back older messages — just the most recent one.
+    latest_with_effects = (
+        await session.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.id >= msg.id,
+                ChatMessage.role == "assistant",
+            )
+            .order_by(ChatMessage.id.desc())
+        )
+    ).scalars().first()
+    if latest_with_effects:
+        await _reverse_message_effects(latest_with_effects, session)
+
     await session.execute(
         delete(ChatMessage).where(ChatMessage.id >= msg.id)
     )
@@ -1173,6 +1204,36 @@ async def get_prompt_log():
 log = logging.getLogger("wayward.chat")
 
 
+async def _reverse_message_effects(msg: ChatMessage, session: AsyncSession) -> None:
+    """Reverse the inventory deltas and equipment changes applied by a message.
+
+    Used before re-generating a turn (swipe/regenerate) or when truncating
+    (delete-and-after) so the world state doesn't accumulate stale effects.
+    Reverses equipment first, then inventory: the inventory deltas already
+    account for any item returned to the bag by a narrator unequip, so reversing
+    them removes that returned item — keep both in sync by reversing both.
+    """
+    if msg.applied_equipment_changes:
+        await reverse_equipment_changes(msg.applied_equipment_changes, session)
+    if msg.applied_inventory_deltas:
+        await reverse_inventory_deltas(msg.applied_inventory_deltas, session)
+
+
+async def _detect_and_apply_player_deltas(
+    player_message: str, session: AsyncSession
+) -> list[dict]:
+    """Run deterministic item-use detection on a player message and apply it.
+
+    Returns the player-action inventory deltas (so they can be merged into the
+    narrator message's combined delta record).
+    """
+    inventory = await _list_inventory_dicts(session)
+    player_deltas = detect_item_use(player_message, inventory)
+    if player_deltas:
+        await apply_inventory_deltas(player_deltas, session)
+    return player_deltas
+
+
 async def _load_game_context(session: AsyncSession):
     """Load all game state needed for a chat turn."""
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
@@ -1313,6 +1374,11 @@ async def chat_turn(
 
     user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn, speaker=pc.id)
     session.add(user_msg)
+
+    # Deterministic item-use detection on the player's message — decrement
+    # consumed items before the narrator generates so narration is grounded in
+    # the post-use state and the UI can surface the change.
+    player_deltas = await _detect_and_apply_player_deltas(data.message, session)
     await session.commit()
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
@@ -1341,6 +1407,7 @@ async def chat_turn(
         variant=variant_count,
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
+        player_deltas=player_deltas,
     )
 
 
@@ -1361,6 +1428,19 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
 
     # Build history up to (but not including) this turn
     history = [m for m in all_messages if m.turn_number < turn]
+
+    # Reverse the effects of the currently-live variant for this turn (the most
+    # recent assistant variant carries the combined deltas reflected in state),
+    # then re-run detection on the same player message and apply fresh. This
+    # keeps inventory idempotent across repeated swipes.
+    turn_variants = [
+        m for m in all_messages if m.turn_number == turn and m.role == "assistant"
+    ]
+    if turn_variants:
+        latest_variant = max(turn_variants, key=lambda m: m.variant)
+        await _reverse_message_effects(latest_variant, session)
+    player_deltas = await _detect_and_apply_player_deltas(user_msg.content, session)
+    await session.commit()
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, scenario, pc, party,
@@ -1389,6 +1469,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         variant=variant_count,
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
+        player_deltas=player_deltas,
     )
 
 
@@ -1409,6 +1490,16 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
     if not last_user_msg:
         raise HTTPException(400, "No user message found for last turn")
 
+    # Reverse the effects of the live (latest) variant before wiping. Only the
+    # latest variant's deltas are reflected in current state; earlier variants
+    # were each reversed when superseded by a swipe.
+    turn_variants = [
+        m for m in all_messages if m.turn_number == last_turn and m.role == "assistant"
+    ]
+    if turn_variants:
+        latest_variant = max(turn_variants, key=lambda m: m.variant)
+        await _reverse_message_effects(latest_variant, session)
+
     # REGENERATE wipes all existing assistant variants for this turn
     await session.execute(
         delete(ChatMessage).where(
@@ -1416,6 +1507,9 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
             ChatMessage.role == "assistant",
         )
     )
+
+    # Re-run detection on the same player message and apply fresh player deltas.
+    player_deltas = await _detect_and_apply_player_deltas(last_user_msg.content, session)
     await session.commit()
 
     history = [m for m in all_messages if m.turn_number < last_turn]
@@ -1443,6 +1537,7 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         variant=0,
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
+        player_deltas=player_deltas,
     )
 
 
@@ -1466,7 +1561,9 @@ def _stream_llm_response(
     variant: int,
     did_summarize: bool = False,
     spotlight_signals: list[SpotlightSignal] | None = None,
+    player_deltas: list[dict] | None = None,
 ):
+    player_deltas = player_deltas or []
     _save_prompt_log(messages)
 
     context_tokens = estimate_prompt_tokens(messages)
@@ -1547,12 +1644,18 @@ def _stream_llm_response(
                         actions, save_session
                     )
 
+                # Merge the player's item-use deltas (already applied before the
+                # call) with the narrator-granted deltas. Both are stored on the
+                # narrator message so swipe/regenerate/delete can reverse the
+                # full combined effect of this turn.
+                combined_inv_deltas = [*player_deltas, *inv_deltas]
+
                 assistant_msg = ChatMessage(
                     role="assistant", content=clean_text,
                     turn_number=current_turn, variant=variant,
                     speaker="narrator",
                     spotlight_reason=spot_reason,
-                    applied_inventory_deltas=inv_deltas if inv_deltas else None,
+                    applied_inventory_deltas=combined_inv_deltas if combined_inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,
                 )
                 save_session.add(assistant_msg)
@@ -1561,13 +1664,14 @@ def _stream_llm_response(
             log.exception("Failed to save response to DB")
 
         response_tokens = len(clean_text) // 4
+        combined_inv_deltas = [*player_deltas, *inv_deltas]
         done_payload: dict = {
             'type': 'done',
             'contextTokens': context_tokens + response_tokens,
             'maxContextTokens': max_context,
         }
-        if inv_deltas:
-            done_payload['appliedInventoryDeltas'] = inv_deltas
+        if combined_inv_deltas:
+            done_payload['appliedInventoryDeltas'] = combined_inv_deltas
         if equip_changes:
             done_payload['appliedEquipmentChanges'] = equip_changes
         yield f"data: {json.dumps(done_payload)}\n\n"

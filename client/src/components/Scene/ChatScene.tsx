@@ -5,7 +5,7 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
-import type { ChatMessage } from '@shared/types/models'
+import type { ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
 
 interface PromptLogMessage {
   role: string
@@ -104,6 +104,20 @@ export function ChatScene() {
   // Item names for inline chip rendering
   const itemNames = catalog.map((item) => item.name).filter(Boolean)
 
+  // Item id -> catalog entry, for resolving names in inventory/equipment notices
+  const catalogMap = new Map(catalog.map((item) => [item.id, item]))
+
+  // Resolve a character id to a display name (player character or party member)
+  const resolveCharName = useCallback(
+    (id: string): string => {
+      if (playerCharacter && id === playerCharacter.id) {
+        return playerCharacter.basicInfo?.name || 'Player'
+      }
+      return partyMemberMap.get(id)?.basicInfo?.name || 'Someone'
+    },
+    [playerCharacter, partyMemberMap],
+  )
+
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
@@ -139,6 +153,8 @@ export function ChatScene() {
             pcPortrait={pcPortrait}
             partyMemberMap={partyMemberMap}
             itemNames={itemNames}
+            catalogMap={catalogMap}
+            resolveCharName={resolveCharName}
           />
         ))}
 
@@ -334,6 +350,8 @@ function MessageBubble({
   pcPortrait,
   partyMemberMap,
   itemNames,
+  catalogMap,
+  resolveCharName,
 }: {
   message: ChatMessage
   variantCount: number
@@ -348,6 +366,8 @@ function MessageBubble({
   pcPortrait: string
   partyMemberMap: Map<string, { id: string; basicInfo: { name: string; portrait?: string } }>
   itemNames: string[]
+  catalogMap: Map<string, ItemCatalogEntry>
+  resolveCharName: (id: string) => string
 }) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
@@ -504,6 +524,13 @@ function MessageBubble({
           </div>
         </div>
 
+        {/* Inventory / equipment change notices */}
+        <ChangeNotices
+          message={message}
+          catalogMap={catalogMap}
+          resolveCharName={resolveCharName}
+        />
+
         {/* Actions bar */}
         <ActionsBar
           editing={editing}
@@ -554,6 +581,13 @@ function MessageBubble({
         )}
       </div>
 
+      {/* Inventory / equipment change notices */}
+      <ChangeNotices
+        message={message}
+        catalogMap={catalogMap}
+        resolveCharName={resolveCharName}
+      />
+
       {/* Actions bar */}
       <ActionsBar
         editing={editing}
@@ -565,6 +599,84 @@ function MessageBubble({
         onRegenerate={onRegenerate}
         onDelete={onDelete}
       />
+    </div>
+  )
+}
+
+// ── Inventory / Equipment change notices ───────────────────────────
+
+const SLOT_LABELS: Record<string, string> = {
+  head: 'Head', neck: 'Neck', torsoOver: 'Torso (over)', torsoUnder: 'Torso (under)',
+  leftHand: 'Left Hand', rightHand: 'Right Hand', waist: 'Waist',
+  legsOver: 'Legs (over)', legsUnder: 'Legs (under)', feet: 'Feet',
+  accessory1: 'Accessory', accessory2: 'Accessory',
+}
+
+function ChangeNotices({
+  message,
+  catalogMap,
+  resolveCharName,
+}: {
+  message: ChatMessage
+  catalogMap: Map<string, ItemCatalogEntry>
+  resolveCharName: (id: string) => string
+}) {
+  const invDeltas = (message.appliedInventoryDeltas ?? []) as InventoryDelta[]
+  const equipChanges = (message.appliedEquipmentChanges ?? []) as EquipmentChange[]
+
+  if (invDeltas.length === 0 && equipChanges.length === 0) return null
+
+  const itemName = (id: string | null) =>
+    id ? (catalogMap.get(id)?.name ?? 'Unknown item') : 'nothing'
+
+  return (
+    <div className="px-4 mt-1 space-y-1.5">
+      {invDeltas.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-ui text-xs text-textsec tracking-wider">Inventory</span>
+          {invDeltas.map((d, i) => {
+            const name = catalogMap.get(d.itemId)?.name ?? 'Unknown item'
+            const positive = d.delta > 0
+            const sign = positive ? '+' : '−' // − minus sign
+            return (
+              <span
+                key={`${d.itemId}-${i}`}
+                className="inline-flex items-center gap-1 text-sm"
+              >
+                <span className="text-gold2 bg-gold/10 px-1 rounded font-ui text-sm">
+                  {name}
+                </span>
+                <span
+                  className={`font-ui text-xs ${positive ? 'text-emerald-400' : 'text-rose-400'}`}
+                >
+                  {sign}{Math.abs(d.delta)}
+                </span>
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {equipChanges.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {equipChanges.map((c, i) => (
+            <div key={`${c.characterId}-${c.slot}-${i}`} className="flex items-center gap-2 flex-wrap text-sm">
+              <span className="font-ui text-xs text-textsec tracking-wider">Equipment</span>
+              <span className="font-disp text-[12px] text-gold pt-[2px]">
+                {resolveCharName(c.characterId)}
+              </span>
+              <span className="font-ui text-[10px] text-textdim tracking-wider">
+                {SLOT_LABELS[c.slot] ?? c.slot}
+              </span>
+              <span className="text-textdim line-through">{itemName(c.previousItemId)}</span>
+              <span className="font-ui text-[10px] text-textdim">&#8594;</span>
+              <span className="text-gold2 bg-gold/10 px-1 rounded font-ui text-sm">
+                {itemName(c.newItemId)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

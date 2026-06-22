@@ -15,3 +15,4 @@ Task 5.1: complete (commits 56a594e..cc6b023, review approved — reviewer's Cri
 Task 5.2: complete (commits cc6b023..b273de1, review approved)
 Task 5.3: complete (commits b273de1..190f064, review approved)
 Task 6.1: complete (commits 190f064..44e8145, review approved)
+Task 6.2: complete (commits 44e8145..0614f99, review found 1 Critical [C1] fixed — player deltas now deferred to save transaction so failed/cancelled generation can't orphan/double-apply. Minor ledger notes: M1 non-active variant notice can show non-live deltas; M2 delete-truncate reverses only most-recent msg [spec-sanctioned]; M3 substring/global-verb matching in detect_item_use; M4 done-event delta payload unused client-side; M5 items panel not refreshed after turn. Client TS build unverified — node not installed in env; types/imports manually confirmed consistent.)

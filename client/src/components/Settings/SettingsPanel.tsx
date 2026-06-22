@@ -3,16 +3,27 @@ import { useSettingsStore } from '../../state/settingsStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useChatStore } from '../../state/chatStore'
+import { useLoreStore } from '../../state/loreStore'
+import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
+import type { LoreCategory, LorebookConfig } from '@shared/types/models'
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+const LORE_CATEGORIES: { id: LoreCategory; label: string }[] = [
+  { id: 'world', label: 'World' },
+  { id: 'characters', label: 'Characters' },
+  { id: 'items', label: 'Items' },
+  { id: 'monsters', label: 'Monsters' },
+  { id: 'spells', label: 'Spells' },
+]
 
+const INJECTION_POSITIONS: LorebookConfig['injectionPosition'][LoreCategory][] = [
+  'top',
+  'bottom',
+  'before_input',
+]
+
+export function SettingsPanel() {
   const settings = useSettingsStore()
   const narrator = useNarratorStore()
 
@@ -26,8 +37,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [presPen, setPresPen] = useState(settings.presencePenalty)
   const [repPen, setRepPen] = useState(settings.repetitionPenalty)
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
+  const [maxCarrySlots, setMaxCarrySlots] = useState(settings.maxCarrySlots)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [scenario, setScenario] = useState(narrator.scenario)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     setModelId(settings.modelId)
@@ -39,7 +52,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setPresPen(settings.presencePenalty)
     setRepPen(settings.repetitionPenalty)
     setMaxTokens(settings.maxTokensResponse)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse])
+    setMaxCarrySlots(settings.maxCarrySlots)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -59,28 +73,31 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       repetitionPenalty: repPen,
       maxTokensResponse: maxTokens,
       maxContextTokens: settings.maxContextTokens,
+      maxCarrySlots,
     })
     await narrator.saveInstructions(instructions)
     await narrator.saveScenario(scenario)
-    onClose()
+    // Carry-slot capacity is derived server-side; refetch inventory so the
+    // Items panel reflects the new max immediately.
+    await useItemsStore.getState().fetchInventory()
+    setApiKey('')
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg0/80">
-      <div className="bg-bg1 border-[1.5px] border-line2 w-[560px] max-h-[85vh] overflow-y-auto p-6 space-y-5">
-        <div className="flex items-start justify-between">
-          <h2 className="font-disp text-[28px] pt-[4px]">Settings</h2>
-          <button className="font-ui text-[10px] text-textdim hover:text-text" onClick={onClose}>
-            CLOSE
-          </button>
-        </div>
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-5 pt-5 pb-3">
+        <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">CONFIG</h2>
+      </div>
 
-        {/* API Key */}
-        <section className="space-y-2">
-          <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase">OpenRouter</h3>
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+        {/* API */}
+        <Section title="API" defaultOpen>
           <label className="block">
             <span className="text-[11px] text-textdim font-body">
-              API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
+              OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
             </span>
             <input
               type="password"
@@ -90,8 +107,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               onChange={(e) => setApiKey(e.target.value)}
             />
           </label>
+          {settings.apiKeySet && settings.availableModels.length === 0 && (
+            <button
+              type="button"
+              className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1 hover:border-line2"
+              onClick={() => settings.fetchModels()}
+            >
+              LOAD MODELS
+            </button>
+          )}
+        </Section>
 
-          {/* Model picker */}
+        {/* Model */}
+        <Section title="Model" defaultOpen>
           <label className="block">
             <span className="text-[11px] text-textdim font-body">Model</span>
             {settings.availableModels.length > 0 ? (
@@ -152,40 +180,53 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <p className="text-[10px] text-textdim font-body">
             Max context: {settings.maxContextTokens.toLocaleString()} tokens
           </p>
+        </Section>
 
-          {settings.apiKeySet && settings.availableModels.length === 0 && (
-            <button
-              className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1 hover:border-line2"
-              onClick={() => settings.fetchModels()}
-            >
-              LOAD MODELS
-            </button>
-          )}
-        </section>
+        {/* Narration */}
+        <Section title="Narration">
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Narrator Instructions</span>
+            <textarea
+              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
+              rows={5}
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Scenario</span>
+            <textarea
+              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
+              rows={5}
+              value={scenario}
+              onChange={(e) => setScenario(e.target.value)}
+            />
+          </label>
+        </Section>
 
-        {/* Narrator Instructions */}
-        <section className="space-y-2">
-          <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase">Narrator Instructions</h3>
-          <textarea
-            className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
-            rows={5}
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-          />
-        </section>
+        {/* Inventory */}
+        <Section title="Inventory">
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Max Carry Slots</span>
+            <input
+              type="number"
+              min={1}
+              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+              value={maxCarrySlots}
+              onChange={(e) => setMaxCarrySlots(Math.max(1, Number(e.target.value) || 12))}
+            />
+          </label>
+          <p className="text-[10px] text-textdim font-body">
+            How many distinct item stacks the party can carry.
+          </p>
+        </Section>
 
-        {/* Scenario */}
-        <section className="space-y-2">
-          <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase">Scenario</h3>
-          <textarea
-            className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
-            rows={5}
-            value={scenario}
-            onChange={(e) => setScenario(e.target.value)}
-          />
-        </section>
+        {/* Lorebook Injection */}
+        <Section title="Lorebook Injection">
+          <LorebookInjectionConfig />
+        </Section>
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex items-center gap-3 pt-2">
           <button
             type="button"
             className="font-ui text-[10px] bg-golddeep text-bg0 px-4 py-2 hover:bg-gold transition-colors"
@@ -193,32 +234,144 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           >
             SAVE
           </button>
-          <button
-            type="button"
-            className="font-ui text-[10px] text-textdim border-[1.5px] border-line px-4 py-2 hover:border-line2"
-            onClick={onClose}
-          >
-            CANCEL
-          </button>
+          {saved && <span className="font-ui text-[10px] text-gold">SAVED</span>}
         </div>
 
         {/* Adventure Management */}
-        <AdventureManagement onClose={onClose} />
+        <AdventureManagement />
       </div>
     </div>
   )
 }
 
-function AdventureManagement({ onClose }: { onClose: () => void }) {
+function LorebookInjectionConfig() {
+  const config = useLoreStore((s) => s.config)
+  const saveConfig = useLoreStore((s) => s.saveConfig)
+
+  if (!config) {
+    return <p className="text-[11px] text-textdim font-body">Loading…</p>
+  }
+
+  const handleOrder = (cat: LoreCategory, value: number) => {
+    saveConfig({
+      injectionOrder: { ...config.injectionOrder, [cat]: value },
+    })
+  }
+
+  const handlePosition = (
+    cat: LoreCategory,
+    value: LorebookConfig['injectionPosition'][LoreCategory],
+  ) => {
+    saveConfig({
+      injectionPosition: { ...config.injectionPosition, [cat]: value },
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase">Category</span>
+        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase text-center w-[64px]">Order</span>
+        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase text-center w-[110px]">Position</span>
+        {LORE_CATEGORIES.map(({ id, label }) => (
+          <FragmentRow
+            key={id}
+            label={label}
+            order={config.injectionOrder[id] ?? 0}
+            position={config.injectionPosition[id] ?? 'top'}
+            onOrder={(v) => handleOrder(id, v)}
+            onPosition={(v) => handlePosition(id, v)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function FragmentRow({
+  label,
+  order,
+  position,
+  onOrder,
+  onPosition,
+}: {
+  label: string
+  order: number
+  position: LorebookConfig['injectionPosition'][LoreCategory]
+  onOrder: (v: number) => void
+  onPosition: (v: LorebookConfig['injectionPosition'][LoreCategory]) => void
+}) {
+  return (
+    <>
+      <span className="font-body text-sm text-text">{label}</span>
+      <input
+        type="number"
+        title={`${label} injection order`}
+        className="w-[64px] border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+        value={order}
+        onChange={(e) => onOrder(Number(e.target.value) || 0)}
+      />
+      <select
+        title={`${label} injection position`}
+        className="w-[110px] border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2"
+        value={position}
+        onChange={(e) => onPosition(e.target.value as LorebookConfig['injectionPosition'][LoreCategory])}
+      >
+        {INJECTION_POSITIONS.map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+    </>
+  )
+}
+
+function Section({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="border-[1.5px] border-line">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-bg2 transition-colors"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">{title}</span>
+        <span className="font-ui text-[10px] text-textdim">{open ? '−' : '+'}</span>
+      </button>
+      {open && <div className="px-3 pb-3 pt-1 space-y-2">{children}</div>}
+    </section>
+  )
+}
+
+function AdventureManagement() {
   const fetchParty = usePartyStore((s) => s.fetchAll)
   const fetchNarrator = useNarratorStore((s) => s.fetchConfig)
   const fetchChat = useChatStore((s) => s.fetchHistory)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
+  const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
+  const fetchLoreEntries = useLoreStore((s) => s.fetchEntries)
+  const fetchInventory = useItemsStore((s) => s.fetchInventory)
   const importRef = useRef<HTMLInputElement>(null)
   const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
 
   const refetchAll = async () => {
-    await Promise.all([fetchParty(), fetchNarrator(), fetchChat(), fetchSettings()])
+    await Promise.all([
+      fetchParty(),
+      fetchNarrator(),
+      fetchChat(),
+      fetchSettings(),
+      fetchLoreConfig(),
+      fetchLoreEntries(),
+      fetchInventory(),
+    ])
   }
 
   const handleExport = async () => {
@@ -240,7 +393,6 @@ function AdventureManagement({ onClose }: { onClose: () => void }) {
       action: async () => {
         await api.post('/adventure/import', data)
         await refetchAll()
-        onClose()
       },
     })
   }
@@ -251,14 +403,13 @@ function AdventureManagement({ onClose }: { onClose: () => void }) {
       action: async () => {
         await api.post('/adventure/reset', {})
         await refetchAll()
-        onClose()
       },
     })
   }
 
   return (
     <>
-      <section className="space-y-2 border-t-[1.5px] border-line pt-4">
+      <section className="space-y-2 border-t-[1.5px] border-line pt-4 mt-2">
         <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase">Adventure</h3>
         <div className="flex flex-wrap gap-2">
           <button

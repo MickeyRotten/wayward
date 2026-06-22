@@ -87,6 +87,7 @@ export interface OpenRouterSettings {
   repetitionPenalty: number
   maxTokensResponse: number
   maxContextTokens: number
+  maxCarrySlots: number
 }
 
 export interface OpenRouterSettingsUpdate extends OpenRouterSettings {

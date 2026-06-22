@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { AppShell } from './components/Layout/AppShell'
 import { IconRail } from './components/IconRail/IconRail'
 import { PartyView } from './components/PartyView/PartyView'
@@ -19,7 +19,6 @@ import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 
 function App() {
-  const [showSettings, setShowSettings] = useState(false)
   const activeTab = useUiStore((s) => s.activeTab)
   const setActiveTab = useUiStore((s) => s.setActiveTab)
   const prevTabRef = useRef<TabId>('party')
@@ -47,11 +46,6 @@ function App() {
   }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig])
 
   const handleTabChange = (tab: TabId) => {
-    if (tab === 'config') {
-      setShowSettings(true)
-      // Don't change the active tab — stay on whatever was active before
-      return
-    }
     prevTabRef.current = tab
     setActiveTab(tab)
   }
@@ -68,21 +62,20 @@ function App() {
         return <QuestsPanel />
       case 'lore':
         return <LorePanel />
+      case 'config':
+        return <SettingsPanel />
       default:
         return <PartyView />
     }
   })()
 
   return (
-    <>
-      <AppShell
-        iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
-        left={leftPanel}
-        middle={<ChatScene />}
-        right={<PartyInspector />}
-      />
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
-    </>
+    <AppShell
+      iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
+      left={leftPanel}
+      middle={<ChatScene />}
+      right={<PartyInspector />}
+    />
   )
 }
 

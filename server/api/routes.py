@@ -1219,19 +1219,23 @@ async def _reverse_message_effects(msg: ChatMessage, session: AsyncSession) -> N
         await reverse_inventory_deltas(msg.applied_inventory_deltas, session)
 
 
-async def _detect_and_apply_player_deltas(
+async def _detect_player_deltas(
     player_message: str, session: AsyncSession
 ) -> list[dict]:
-    """Run deterministic item-use detection on a player message and apply it.
+    """Run deterministic item-use detection on a player message.
 
-    Returns the player-action inventory deltas (so they can be merged into the
-    narrator message's combined delta record).
+    Detection only — the deltas are *not* applied here. They are applied inside
+    the streaming save transaction once the narrator message is successfully
+    persisted, so a failed/cancelled generation never leaves the inventory
+    decremented with no message to reverse it from (which would otherwise
+    double-decrement on retry). Live inventory is not part of the prompt, so
+    deferring application costs nothing in narration grounding.
+
+    Returns the player-action inventory deltas (so they can be applied and merged
+    into the narrator message's combined delta record).
     """
     inventory = await _list_inventory_dicts(session)
-    player_deltas = detect_item_use(player_message, inventory)
-    if player_deltas:
-        await apply_inventory_deltas(player_deltas, session)
-    return player_deltas
+    return detect_item_use(player_message, inventory)
 
 
 async def _load_game_context(session: AsyncSession):
@@ -1375,10 +1379,10 @@ async def chat_turn(
     user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn, speaker=pc.id)
     session.add(user_msg)
 
-    # Deterministic item-use detection on the player's message — decrement
-    # consumed items before the narrator generates so narration is grounded in
-    # the post-use state and the UI can surface the change.
-    player_deltas = await _detect_and_apply_player_deltas(data.message, session)
+    # Deterministic item-use detection on the player's message. Detection runs
+    # now (against current inventory) but the decrement is deferred to the save
+    # transaction so a failed generation can't orphan the delta.
+    player_deltas = await _detect_player_deltas(data.message, session)
     await session.commit()
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
@@ -1439,8 +1443,10 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     if turn_variants:
         latest_variant = max(turn_variants, key=lambda m: m.variant)
         await _reverse_message_effects(latest_variant, session)
-    player_deltas = await _detect_and_apply_player_deltas(user_msg.content, session)
     await session.commit()
+    # Re-detect against the now-restored inventory; application is deferred to
+    # the save transaction (see _detect_player_deltas).
+    player_deltas = await _detect_player_deltas(user_msg.content, session)
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, scenario, pc, party,
@@ -1508,9 +1514,10 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         )
     )
 
-    # Re-run detection on the same player message and apply fresh player deltas.
-    player_deltas = await _detect_and_apply_player_deltas(last_user_msg.content, session)
     await session.commit()
+    # Re-run detection on the same player message against the restored inventory.
+    # Application is deferred to the save transaction (see _detect_player_deltas).
+    player_deltas = await _detect_player_deltas(last_user_msg.content, session)
 
     history = [m for m in all_messages if m.turn_number < last_turn]
 
@@ -1644,10 +1651,14 @@ def _stream_llm_response(
                         actions, save_session
                     )
 
-                # Merge the player's item-use deltas (already applied before the
-                # call) with the narrator-granted deltas. Both are stored on the
-                # narrator message so swipe/regenerate/delete can reverse the
-                # full combined effect of this turn.
+                # Apply the player's item-use deltas now (deferred from detection
+                # time) so they only ever hit the DB when the narrator message is
+                # actually persisted — a failed/cancelled generation leaves the
+                # inventory untouched. Merge them with the narrator-granted deltas
+                # and store both on the narrator message so swipe/regenerate/delete
+                # can reverse the full combined effect of this turn.
+                if player_deltas:
+                    await apply_inventory_deltas(player_deltas, save_session)
                 combined_inv_deltas = [*player_deltas, *inv_deltas]
 
                 assistant_msg = ChatMessage(

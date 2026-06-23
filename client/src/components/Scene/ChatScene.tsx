@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
+import { useNarratorStore } from '../../state/narratorStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -30,12 +31,14 @@ export function ChatScene() {
   const activeVariants = useChatStore((s) => s.activeVariants)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
+  const scenario = useNarratorStore((s) => s.scenario)
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
   const catalog = useItemsStore((s) => s.catalog)
 
   const [input, setInput] = useState('')
+  const [headerTab, setHeaderTab] = useState<'scenario' | 'history'>('history')
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -118,10 +121,60 @@ export function ChatScene() {
     [playerCharacter, partyMemberMap],
   )
 
+  const locationName = deriveLocationName(scenario)
+
   return (
     <div className="flex flex-col h-full">
+      {/* Chat header — location banner + view tabs (does not scroll) */}
+      <div
+        className="flex-shrink-0 border-b-[1.5px] border-line2 bg-bg2 px-4 pt-3 pb-2"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle, rgba(201,165,88,0.08) 1px, transparent 1px)',
+          backgroundSize: '4px 4px',
+        }}
+      >
+        <h1 className="font-disp text-[22px] leading-none text-gold pt-[3px]">
+          {locationName}
+        </h1>
+        <div className="flex gap-1.5 mt-2">
+          {(['scenario', 'history'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`font-ui text-[9px] tracking-wider uppercase px-2.5 py-1 rounded-full border-[1.5px] transition-colors ${
+                headerTab === tab
+                  ? 'border-gold text-gold bg-gold/10'
+                  : 'border-line text-textdim hover:text-text'
+              }`}
+              onClick={() => setHeaderTab(tab)}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Scenario view */}
+      {headerTab === 'scenario' && (
+        <div className="flex-1 overflow-y-auto p-4">
+          {scenario.trim() ? (
+            <p className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap">
+              {scenario}
+            </p>
+          ) : (
+            <p className="font-ui text-[10px] text-textdim tracking-wider">
+              NO SCENARIO SET
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Messages */}
-      <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        ref={listRef}
+        className={`flex-1 overflow-y-auto p-4 space-y-4 ${headerTab === 'history' ? '' : 'hidden'}`}
+      >
         {messages.length === 0 && !isLoading && (
           <div className="flex items-center justify-center h-full">
             <p className="font-ui text-[10px] text-textdim tracking-wider">
@@ -809,6 +862,18 @@ const EditArea = forwardRef<
 })
 
 // ── Helpers ──────────────────────────────────────────────────────
+
+// Derive a short location name from the scenario text (first sentence up to a
+// period within ~60 chars, else truncate). Mirrors ScenePOIList for consistency.
+function deriveLocationName(scenario: string): string {
+  const trimmed = scenario.trim()
+  if (!trimmed) return 'Unknown location'
+  const periodIdx = trimmed.indexOf('.')
+  const firstSentence =
+    periodIdx >= 0 && periodIdx <= 60 ? trimmed.slice(0, periodIdx) : trimmed
+  if (firstSentence.length <= 60) return firstSentence
+  return firstSentence.slice(0, 60).trimEnd() + '…'
+}
 
 function buildVisibleMessages(
   messages: ChatMessage[],

@@ -22,7 +22,21 @@ import type { TabId } from './state/uiStore'
 function App() {
   const activeTab = useUiStore((s) => s.activeTab)
   const setActiveTab = useUiStore((s) => s.setActiveTab)
+  const select = useUiStore((s) => s.select)
   const prevTabRef = useRef<TabId>('party')
+
+  // Esc clears the inspector selection (back to the default inspector view),
+  // unless the user is typing in a field (let that field handle Escape).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      select(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [select])
 
   const fetchParty = usePartyStore((s) => s.fetchAll)
   const fetchNarrator = useNarratorStore((s) => s.fetchConfig)

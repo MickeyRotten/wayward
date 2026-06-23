@@ -44,7 +44,36 @@ async def chat_completion_stream(
     messages: list[dict],
     temperature: float,
     max_tokens: int,
+    top_p: float | None = None,
+    min_p: float | None = None,
+    top_k: int | None = None,
+    frequency_penalty: float | None = None,
+    presence_penalty: float | None = None,
+    repetition_penalty: float | None = None,
 ) -> AsyncGenerator[str, None]:
+    body: dict = {
+        "model": model_id,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": True,
+    }
+    # Forward optional sampling params only when set to a meaningful (non-no-op)
+    # value, so default settings don't constrain providers that reject e.g.
+    # top_k=0. OpenRouter passes these through to the underlying model.
+    if top_p is not None and top_p < 1.0:
+        body["top_p"] = top_p
+    if min_p is not None and min_p > 0:
+        body["min_p"] = min_p
+    if top_k is not None and top_k > 0:
+        body["top_k"] = top_k
+    if frequency_penalty:
+        body["frequency_penalty"] = frequency_penalty
+    if presence_penalty:
+        body["presence_penalty"] = presence_penalty
+    if repetition_penalty is not None and repetition_penalty != 1.0:
+        body["repetition_penalty"] = repetition_penalty
+
     async with httpx.AsyncClient() as client:
         async with client.stream(
             "POST",
@@ -53,13 +82,7 @@ async def chat_completion_stream(
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": model_id,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "stream": True,
-            },
+            json=body,
             timeout=120,
         ) as res:
             res.raise_for_status()

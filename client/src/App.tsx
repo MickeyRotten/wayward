@@ -5,6 +5,7 @@ import { PartyView } from './components/PartyView/PartyView'
 import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
 import { QuestsPanel } from './components/QuestsPanel/QuestsPanel'
 import { LorePanel } from './components/LorePanel/LorePanel'
+import { ScenePOIList } from './components/ScenePOIList/ScenePOIList'
 import { ChatScene } from './components/Scene/ChatScene'
 import { PartyInspector } from './components/Inspector/PartyInspector'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
@@ -55,7 +56,7 @@ function App() {
       case 'party':
         return <PartyView />
       case 'scene':
-        return <TabPlaceholder label="SCENE" description="Points of interest in the current location" />
+        return <ScenePOIList />
       case 'items':
         return <ItemsPanel />
       case 'quests':
@@ -76,22 +77,6 @@ function App() {
       middle={<ChatScene />}
       right={<PartyInspector />}
     />
-  )
-}
-
-function TabPlaceholder({ label, description }: { label: string; description: string }) {
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-5 pt-5 pb-4">
-        <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">{label}</h2>
-        <p className="text-[11px] text-textdim font-body mt-2">{description}</p>
-      </div>
-      <div className="flex-1 flex items-center justify-center px-6">
-        <p className="font-ui text-[10px] text-textdim tracking-wider text-center">
-          COMING SOON
-        </p>
-      </div>
-    </div>
   )
 }
 

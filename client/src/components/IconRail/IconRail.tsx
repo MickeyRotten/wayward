@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react'
 import type { TabId } from '../../state/uiStore'
 
-const TABS: { id: TabId; label: string; icon: JSX.Element }[] = [
+const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   {
     id: 'scene',
     label: 'Scene',

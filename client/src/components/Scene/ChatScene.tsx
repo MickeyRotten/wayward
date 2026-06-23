@@ -146,7 +146,6 @@ export function ChatScene() {
             } : undefined}
             onSwipeNew={m.role === 'assistant' && !isLoading ? () => swipe(m.turnNumber) : undefined}
             isLastAssistant={m.role === 'assistant' && m.turnNumber === lastTurn}
-            onRegenerate={!isLoading ? regenerate : undefined}
             onDelete={!isLoading && m.id > 0 ? () => setConfirmAction({ message: 'Delete this message and everything after it?', action: () => deleteMessageAndAfter(m.id) }) : undefined}
             isFirstNarrator={idx === firstNarratorIdx}
             pcName={pcName}
@@ -343,7 +342,6 @@ function MessageBubble({
   onSwipe,
   onSwipeNew,
   isLastAssistant,
-  onRegenerate,
   onDelete,
   isFirstNarrator,
   pcName,
@@ -359,7 +357,6 @@ function MessageBubble({
   onSwipe?: (dir: 'left' | 'right') => void
   onSwipeNew?: () => void
   isLastAssistant?: boolean
-  onRegenerate?: () => void
   onDelete?: () => void
   isFirstNarrator?: boolean
   pcName: string
@@ -540,7 +537,6 @@ function MessageBubble({
           onSwipe={onSwipe}
           onSwipeNew={onSwipeNew}
           isLastAssistant={isLastAssistant}
-          onRegenerate={onRegenerate}
           onDelete={onDelete}
         />
       </div>
@@ -596,7 +592,6 @@ function MessageBubble({
         activeVariant={activeVariant}
         onSwipe={onSwipe}
         isLastAssistant={isLastAssistant}
-        onRegenerate={onRegenerate}
         onDelete={onDelete}
       />
     </div>
@@ -691,7 +686,6 @@ function ActionsBar({
   onSwipe,
   onSwipeNew,
   isLastAssistant,
-  onRegenerate,
   onDelete,
 }: {
   editing: boolean
@@ -701,7 +695,6 @@ function ActionsBar({
   onSwipe?: (dir: 'left' | 'right') => void
   onSwipeNew?: () => void
   isLastAssistant?: boolean
-  onRegenerate?: () => void
   onDelete?: () => void
 }) {
   if (editing) return null

@@ -159,14 +159,6 @@ function SaveIndicator() {
 
 // ── Item Inspector ──────────────────────────────────────────────
 
-const RARITY_COLORS: Record<Rarity, string> = {
-  c: 'bg-[#6c654f]',
-  u: 'bg-[#5a9e6f]',
-  r: 'bg-[#7aa6cf]',
-  e: 'bg-[#a67ecf]',
-  l: 'bg-gold',
-}
-
 const RARITY_LABELS: Record<Rarity, string> = {
   c: 'Common',
   u: 'Uncommon',

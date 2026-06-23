@@ -72,16 +72,6 @@ class PartyMemberResponse(BaseModel):
     lastSpokeTurn: int
 
 
-# --- Scenario ---
-
-class ScenarioUpdate(BaseModel):
-    description: str
-
-
-class ScenarioResponse(BaseModel):
-    description: str
-
-
 # --- Narrator ---
 
 class NarratorUpdate(BaseModel):
@@ -133,6 +123,7 @@ class ChatMessageResponse(BaseModel):
     turnNumber: int
     variant: int
     speaker: str = "narrator"
+    location: str | None = None
     spotlightReason: str | None = None
     appliedInventoryDeltas: list[dict] | None = None
     appliedEquipmentChanges: list[dict] | None = None
@@ -251,6 +242,7 @@ class LorebookEntrySchema(BaseModel):
     keywords: list[str] = []
     enabled: bool = True
     permanent: bool = False
+    locked: bool = False
     cat: str = "world"
 
 

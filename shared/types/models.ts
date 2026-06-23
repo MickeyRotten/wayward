@@ -68,10 +68,6 @@ export interface PartyMember {
   lastSpokeTurn: number
 }
 
-export interface Scenario {
-  description: string
-}
-
 export interface NarratorConfig {
   instructions: string
 }
@@ -114,6 +110,7 @@ export interface ChatMessage {
   turnNumber: number
   variant: number
   speaker: string
+  location?: string | null
   spotlightReason?: string | null
   appliedInventoryDeltas?: InventoryDelta[] | null
   appliedEquipmentChanges?: EquipmentChange[] | null
@@ -152,6 +149,7 @@ export interface LorebookEntry {
   keywords: string[]
   enabled: boolean
   permanent: boolean
+  locked?: boolean
   cat: LoreCategory
 }
 

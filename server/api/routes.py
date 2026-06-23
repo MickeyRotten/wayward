@@ -53,8 +53,6 @@ from server.api.schemas import (
     QuestObjectiveUpdate,
     QuestSchema,
     QuestUpdate,
-    ScenarioResponse,
-    ScenarioUpdate,
 )
 from server.db.database import get_session
 from server.db.models import (
@@ -70,7 +68,6 @@ from server.db.models import (
     Quest,
     QuestObjective,
     StorySummary,
-    Scenario,
 )
 
 router = APIRouter(prefix="/api")
@@ -187,32 +184,6 @@ async def remove_party_member(
         raise HTTPException(404, "Party member not found")
     await session.delete(pm)
     await session.commit()
-
-
-# ── Scenario ──────────────────────────────────────────────────────
-
-@router.get("/scenario", response_model=ScenarioResponse)
-async def get_scenario(session: AsyncSession = Depends(get_session)):
-    s = (await session.execute(select(Scenario))).scalars().first()
-    if not s:
-        s = Scenario(description="")
-        session.add(s)
-        await session.commit()
-    return ScenarioResponse(description=s.description)
-
-
-@router.put("/scenario", response_model=ScenarioResponse)
-async def update_scenario(
-    data: ScenarioUpdate,
-    session: AsyncSession = Depends(get_session),
-):
-    s = (await session.execute(select(Scenario))).scalars().first()
-    if not s:
-        s = Scenario()
-        session.add(s)
-    s.description = data.description
-    await session.commit()
-    return ScenarioResponse(description=s.description)
 
 
 # ── Narrator Config ───────────────────────────────────────────────
@@ -667,6 +638,7 @@ def _lore_to_schema(entry: LorebookEntry) -> LorebookEntrySchema:
         keywords=entry.keywords or [],
         enabled=bool(entry.enabled),
         permanent=bool(entry.permanent),
+        locked=bool(entry.locked),
         cat=entry.cat,
     )
 
@@ -782,6 +754,8 @@ async def delete_lore_entry(
     entry = await session.get(LorebookEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Lorebook entry not found")
+    if entry.locked:
+        raise HTTPException(403, "This entry is locked and cannot be deleted")
     await session.delete(entry)
     await session.commit()
 
@@ -801,6 +775,7 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             turnNumber=m.turn_number,
             variant=m.variant,
             speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
+            location=m.location,
             spotlightReason=m.spotlight_reason,
             appliedInventoryDeltas=m.applied_inventory_deltas,
             appliedEquipmentChanges=m.applied_equipment_changes,
@@ -919,7 +894,6 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
     pc = (await session.execute(select(PlayerCharacter))).scalars().first()
     members = (await session.execute(select(PartyMember))).scalars().all()
     narrator = (await session.execute(select(NarratorConfig))).scalars().first()
-    scenario_obj = (await session.execute(select(Scenario))).scalars().first()
     messages = (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
     summary = (await session.execute(select(StorySummary))).scalars().first()
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
@@ -942,12 +916,12 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
         "playerCharacter": _pc_to_response(pc).model_dump() if pc else None,
         "partyMembers": [_pm_to_response(m).model_dump() for m in members],
         "narrator": {"instructions": narrator.instructions} if narrator else {"instructions": ""},
-        "scenario": {"description": scenario_obj.description} if scenario_obj else {"description": ""},
         "chatMessages": [
             {
                 "role": m.role, "content": m.content,
                 "turnNumber": m.turn_number, "variant": m.variant,
                 "speaker": m.speaker or ("narrator" if m.role == "assistant" else "player"),
+                "location": m.location,
                 "spotlightReason": m.spotlight_reason,
                 "appliedInventoryDeltas": m.applied_inventory_deltas,
                 "appliedEquipmentChanges": m.applied_equipment_changes,
@@ -987,6 +961,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
                 "keywords": e.keywords or [],
                 "enabled": bool(e.enabled),
                 "permanent": bool(e.permanent),
+                "locked": bool(e.locked),
                 "cat": e.cat,
             }
             for e in lore_entries
@@ -1011,7 +986,6 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
     await session.execute(delete(PartyMember))
     await session.execute(delete(PlayerCharacter))
     await session.execute(delete(NarratorConfig))
-    await session.execute(delete(Scenario))
     await session.execute(delete(StorySummary))
     await session.execute(delete(OpenRouterSettings))
 
@@ -1033,9 +1007,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         )
         session.add(pm)
 
-    # Restore narrator + scenario
+    # Restore narrator
     session.add(NarratorConfig(instructions=data.get("narrator", {}).get("instructions", "")))
-    session.add(Scenario(description=data.get("scenario", {}).get("description", "")))
 
     # Restore chat
     for msg in data.get("chatMessages", []):
@@ -1043,6 +1016,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             role=msg["role"], content=msg["content"],
             turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
             speaker=msg.get("speaker", "narrator" if msg["role"] == "assistant" else "player"),
+            location=msg.get("location"),
             spotlight_reason=msg.get("spotlightReason"),
             applied_inventory_deltas=msg.get("appliedInventoryDeltas"),
             applied_equipment_changes=msg.get("appliedEquipmentChanges"),
@@ -1117,6 +1091,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             keywords=le_data.get("keywords", []),
             enabled=le_data.get("enabled", True),
             permanent=le_data.get("permanent", False),
+            locked=le_data.get("locked", False),
             cat=le_data.get("cat", "world"),
         ))
 
@@ -1146,7 +1121,6 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(PartyMember))
     await session.execute(delete(PlayerCharacter))
     await session.execute(delete(NarratorConfig))
-    await session.execute(delete(Scenario))
     await session.execute(delete(StorySummary))
     await session.commit()
 
@@ -1237,7 +1211,6 @@ async def _load_game_context(session: AsyncSession):
         raise HTTPException(400, "No model selected")
 
     narrator = (await session.execute(select(NarratorConfig))).scalars().first() or NarratorConfig(instructions="")
-    scenario = (await session.execute(select(Scenario))).scalars().first() or Scenario(description="")
     pc = (await session.execute(select(PlayerCharacter))).scalars().first()
     if not pc:
         raise HTTPException(400, "No player character created")
@@ -1262,11 +1235,11 @@ async def _load_game_context(session: AsyncSession):
         session.add(lore_config)
         await session.commit()
 
-    return settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config
+    return settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config
 
 
 async def _maybe_summarize_and_build(
-    settings, narrator, scenario, pc, party_list,
+    settings, narrator, pc, party_list,
     history: list[ChatMessage],
     summary: StorySummary,
     player_message: str,
@@ -1301,7 +1274,6 @@ async def _maybe_summarize_and_build(
     # Build a test prompt to check size
     test_prompt = build_prompt(
         narrator_config=narrator,
-        scenario=scenario,
         player_character=pc,
         party_members=party_list,
         chat_history=filtered,
@@ -1337,7 +1309,6 @@ async def _maybe_summarize_and_build(
 
     messages = build_prompt(
         narrator_config=narrator,
-        scenario=scenario,
         player_character=pc,
         party_members=party_list,
         chat_history=filtered,
@@ -1361,7 +1332,7 @@ async def chat_turn(
     data: ChatTurnRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
@@ -1376,7 +1347,7 @@ async def chat_turn(
     await session.commit()
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
-        settings, narrator, scenario, pc, party,
+        settings, narrator, pc, party,
         history=all_messages,
         summary=summary,
         player_message=data.message,
@@ -1410,7 +1381,7 @@ async def chat_turn(
 @router.post("/chat/messages/{turn}/swipe")
 async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     """Generate a new variant for a specific turn. Appends to existing variants."""
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     # Find the user message for this turn
     user_msg = next(
@@ -1439,7 +1410,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     player_deltas = await _detect_player_deltas(user_msg.content, session)
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
-        settings, narrator, scenario, pc, party,
+        settings, narrator, pc, party,
         history=history,
         summary=summary,
         player_message=user_msg.content,
@@ -1473,7 +1444,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
 
 @router.post("/chat/regenerate")
 async def regenerate(session: AsyncSession = Depends(get_session)):
-    settings, narrator, scenario, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     if not all_messages:
         raise HTTPException(400, "No messages to regenerate")
@@ -1512,7 +1483,7 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
     history = [m for m in all_messages if m.turn_number < last_turn]
 
     messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
-        settings, narrator, scenario, pc, party,
+        settings, narrator, pc, party,
         history=history,
         summary=summary,
         player_message=last_user_msg.content,
@@ -1635,6 +1606,13 @@ def _stream_llm_response(
                                 spot_reason = "Hasn't spoken in a while"
                             break
 
+                # Narrator-declared location (parsed from the action block).
+                location: str | None = None
+                if actions:
+                    loc = actions.get("location")
+                    if isinstance(loc, str) and loc.strip():
+                        location = loc.strip()
+
                 # Execute narrator actions if present
                 if actions:
                     inv_deltas, equip_changes = await execute_actions(
@@ -1655,6 +1633,7 @@ def _stream_llm_response(
                     role="assistant", content=clean_text,
                     turn_number=current_turn, variant=variant,
                     speaker="narrator",
+                    location=location,
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=combined_inv_deltas if combined_inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,

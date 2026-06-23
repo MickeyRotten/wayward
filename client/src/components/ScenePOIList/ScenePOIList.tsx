@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNarratorStore } from '../../state/narratorStore'
+import { useChatStore } from '../../state/chatStore'
+import { deriveCurrentLocation } from '../../lib/location'
 
 interface Poi {
   id: string
@@ -25,21 +26,11 @@ const POIS: Poi[] = [
   },
 ]
 
-function deriveLocationName(scenario: string): string {
-  const trimmed = scenario.trim()
-  if (!trimmed) return 'Unknown location'
-  const periodIdx = trimmed.indexOf('.')
-  const firstSentence =
-    periodIdx >= 0 && periodIdx <= 60 ? trimmed.slice(0, periodIdx) : trimmed
-  if (firstSentence.length <= 60) return firstSentence
-  return firstSentence.slice(0, 60).trimEnd() + '…'
-}
-
 export function ScenePOIList() {
-  const scenario = useNarratorStore((s) => s.scenario)
+  const messages = useChatStore((s) => s.messages)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const locationName = deriveLocationName(scenario)
+  const locationName = deriveCurrentLocation(messages)
 
   return (
     <div className="flex flex-col h-full">

@@ -979,6 +979,12 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
               PERMANENT
             </span>
           )}
+          {/* Locked badge */}
+          {entry.locked && (
+            <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold2">
+              LOCKED
+            </span>
+          )}
         </div>
 
         {/* Content */}
@@ -1013,15 +1019,21 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
   const d = draft.current
   return (
     <div className="space-y-6 p-6">
-      {/* Delete button */}
+      {/* Delete button — hidden for locked entries (e.g. the Scenario) */}
       <div className="flex items-start justify-end">
-        <button
-          type="button"
-          className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
-          onClick={() => setShowDeleteConfirm(true)}
-        >
-          DELETE ENTRY
-        </button>
+        {entry.locked ? (
+          <span className="font-ui text-[9px] tracking-wider uppercase text-textdim border-[1.5px] border-line px-2 py-1 shrink-0">
+            Locked · cannot delete
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            DELETE ENTRY
+          </button>
+        )}
         {showDeleteConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
             <div className="bg-bg2 border border-line p-5 max-w-xs space-y-4">

@@ -11,7 +11,6 @@ from server.db.models import (
     PlayerCharacter,
     Quest,
     QuestObjective,
-    Scenario,
     StorySummary,
 )
 
@@ -45,6 +44,7 @@ OBJECTIVE_IDS = {
 # Stable IDs for seed lorebook entries
 # ---------------------------------------------------------------------------
 LORE_IDS = {
+    "scenario":            "d0000001-0001-4000-8000-000000000000",
     "whispering_woods":    "d0000001-0001-4000-8000-000000000001",
     "moonlit_clearing":    "d0000001-0001-4000-8000-000000000002",
     "tifa_lore":           "d0000001-0001-4000-8000-000000000003",
@@ -58,6 +58,23 @@ LORE_IDS = {
 }
 
 SEED_LOREBOOK = [
+    # --- Scenario (locked, permanent World entry — the freeform setting that
+    #     frames every turn; cannot be deleted, always injected) ---
+    {
+        "id": LORE_IDS["scenario"],
+        "title": "Scenario",
+        "content": (
+            "The party stands at the edge of a moonlit clearing deep in the Whispering Woods. "
+            "Ancient stone pillars, half-swallowed by moss and vine, ring a shallow depression "
+            "in the earth where faint silver light pools like water. The air hums with something "
+            "old. Behind them, the trail back to the village is already swallowed by mist."
+        ),
+        "keywords": [],
+        "enabled": True,
+        "permanent": True,
+        "locked": True,
+        "cat": "world",
+    },
     # --- World (2 entries) ---
     {
         "id": LORE_IDS["whispering_woods"],
@@ -446,15 +463,6 @@ async def seed_defaults():
             ),
         )
 
-        scenario = Scenario(
-            description=(
-                "The party stands at the edge of a moonlit clearing deep in the Whispering Woods. "
-                "Ancient stone pillars, half-swallowed by moss and vine, ring a shallow depression "
-                "in the earth where faint silver light pools like water. The air hums with something "
-                "old. Behind them, the trail back to the village is already swallowed by mist."
-            ),
-        )
-
         summary = StorySummary(content="", summary_up_to_turn=0)
 
         # --- Seed starter inventory ---
@@ -562,7 +570,7 @@ async def seed_defaults():
         )
 
         session.add_all([
-            pc, tifa, rosalina, narrator, scenario, summary,
+            pc, tifa, rosalina, narrator, summary,
             inv_draught, inv_lantern, inv_rations,
             quest_clearing, quest_sigils, quest_errand,
             obj_mc_investigate, obj_mc_pillars, obj_mc_light,

@@ -115,6 +115,11 @@ export function LorePanel() {
                 <span className="font-body text-sm text-text truncate flex-1">
                   {entry.title || 'Untitled'}
                 </span>
+                {entry.locked && (
+                  <span className="font-ui text-[10px] text-gold2 shrink-0" title="Locked">
+                    &#128274;
+                  </span>
+                )}
                 {entry.keywords.length > 0 && (
                   <span className="font-ui text-[10px] text-textsec shrink-0">
                     {entry.keywords.length} kw

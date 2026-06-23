@@ -10,7 +10,6 @@ from server.db.models import (
     PlayerCharacter,
     Quest,
     QuestObjective,
-    Scenario,
 )
 
 
@@ -27,7 +26,6 @@ def _resolve_equip_name(item_id: str | None, catalog_lookup: dict[str, str]) -> 
 
 def build_prompt(
     narrator_config: NarratorConfig,
-    scenario: Scenario,
     player_character: PlayerCharacter,
     party_members: list[PartyMember],
     chat_history: list[ChatMessage],
@@ -56,12 +54,8 @@ def build_prompt(
     # 1b. System: Narrator action protocol (not user-editable)
     messages.append({"role": "system", "content": ACTION_INSTRUCTION})
 
-    # 2. Scenario context
-    if scenario.description:
-        messages.append({
-            "role": "system",
-            "content": f"CURRENT SCENARIO:\n{scenario.description}",
-        })
+    # 2. Scenario context now lives as a permanent World lorebook entry and is
+    #    injected through the lorebook (see steps 7–8).
 
     # 3. Player character summary
     pc_info = player_character.basic_info

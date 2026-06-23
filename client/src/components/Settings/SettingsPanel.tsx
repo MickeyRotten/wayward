@@ -39,7 +39,6 @@ export function SettingsPanel() {
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
   const [maxCarrySlots, setMaxCarrySlots] = useState(settings.maxCarrySlots)
   const [instructions, setInstructions] = useState(narrator.instructions)
-  const [scenario, setScenario] = useState(narrator.scenario)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -57,8 +56,7 @@ export function SettingsPanel() {
 
   useEffect(() => {
     setInstructions(narrator.instructions)
-    setScenario(narrator.scenario)
-  }, [narrator.instructions, narrator.scenario])
+  }, [narrator.instructions])
 
   // Load the model list automatically when Config opens (once an API key is
   // set) so the model dropdown is ready to pick from without a manual click.
@@ -85,7 +83,6 @@ export function SettingsPanel() {
       maxCarrySlots,
     })
     await narrator.saveInstructions(instructions)
-    await narrator.saveScenario(scenario)
     // Carry-slot capacity is derived server-side; refetch inventory so the
     // Items panel reflects the new max immediately.
     await useItemsStore.getState().fetchInventory()
@@ -202,15 +199,9 @@ export function SettingsPanel() {
               onChange={(e) => setInstructions(e.target.value)}
             />
           </label>
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Scenario</span>
-            <textarea
-              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
-              rows={5}
-              value={scenario}
-              onChange={(e) => setScenario(e.target.value)}
-            />
-          </label>
+          <p className="text-[10px] text-textdim font-body">
+            The scenario is now a locked entry in Lorebook → World.
+          </p>
         </Section>
 
         {/* Inventory */}

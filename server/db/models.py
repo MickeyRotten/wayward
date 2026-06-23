@@ -33,13 +33,6 @@ class PartyMember(Base):
     last_spoke_turn: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class Scenario(Base):
-    __tablename__ = "scenarios"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    description: Mapped[str] = mapped_column(Text, default="")
-
-
 class NarratorConfig(Base):
     __tablename__ = "narrator_configs"
 
@@ -82,6 +75,7 @@ class ChatMessage(Base):
     turn_number: Mapped[int] = mapped_column(Integer)
     variant: Mapped[int] = mapped_column(Integer, default=0)
     speaker: Mapped[str] = mapped_column(String, default="narrator")
+    location: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
@@ -120,6 +114,7 @@ class LorebookEntry(Base):
     keywords: Mapped[list] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(Integer, default=True)
     permanent: Mapped[bool] = mapped_column(Integer, default=False)
+    locked: Mapped[bool] = mapped_column(Integer, default=False)
     cat: Mapped[str] = mapped_column(String, default="world")
 
 

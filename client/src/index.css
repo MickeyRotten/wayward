@@ -44,3 +44,10 @@ html, body, #root {
   background: var(--color-golddeep);
   border-radius: 3px;
 }
+
+/* Cinzel sits high in the line box — small baseline correction.
+   Convenience class for cases where an inline pt- isn't cleaner. */
+.font-disp-corrected {
+  font-family: var(--font-disp);
+  padding-top: 3px;
+}

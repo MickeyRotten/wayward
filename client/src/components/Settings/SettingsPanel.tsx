@@ -60,6 +60,15 @@ export function SettingsPanel() {
     setScenario(narrator.scenario)
   }, [narrator.instructions, narrator.scenario])
 
+  // Load the model list automatically when Config opens (once an API key is
+  // set) so the model dropdown is ready to pick from without a manual click.
+  useEffect(() => {
+    const s = useSettingsStore.getState()
+    if (s.apiKeySet && s.availableModels.length === 0) {
+      s.fetchModels()
+    }
+  }, [settings.apiKeySet])
+
   const saveAll = async () => {
     await settings.saveSettings({
       ...(apiKey ? { apiKey } : {}),

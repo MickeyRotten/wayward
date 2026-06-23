@@ -1133,10 +1133,9 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
 
 @router.post("/adventure/reset")
 async def reset_adventure(session: AsyncSession = Depends(get_session)):
-    # Preserve API key
-    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    old_api_key = settings.api_key if settings else ""
-
+    # OpenRouterSettings (API key, model, sampling, context, carry slots) is
+    # user configuration, not adventure progress — intentionally NOT cleared so
+    # "New Adventure" preserves it.
     await session.execute(delete(LorebookEntry))
     await session.execute(delete(LorebookConfig))
     await session.execute(delete(QuestObjective))
@@ -1149,20 +1148,11 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(NarratorConfig))
     await session.execute(delete(Scenario))
     await session.execute(delete(StorySummary))
-    await session.execute(delete(OpenRouterSettings))
     await session.commit()
 
-    # Re-seed
+    # Re-seed (seed_defaults does not touch OpenRouterSettings)
     from server.db.seed import seed_defaults
     await seed_defaults()
-
-    # Restore API key
-    if old_api_key:
-        async with async_session() as s2:
-            or_settings = (await s2.execute(select(OpenRouterSettings))).scalars().first()
-            if or_settings:
-                or_settings.api_key = old_api_key
-                await s2.commit()
 
     return {"ok": True}
 

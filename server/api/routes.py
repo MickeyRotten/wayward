@@ -1578,6 +1578,21 @@ def _stream_llm_response(
     max_tokens = settings.max_tokens_response
     max_context = settings.max_context_tokens
 
+    # Terminal log: full request — model, all sampling settings, and the full
+    # assembled prompt — for troubleshooting.
+    log.info(
+        "LLM REQUEST turn=%s variant=%s | model=%s | temp=%s top_p=%s min_p=%s top_k=%s "
+        "freq=%s pres=%s rep=%s | max_tokens=%s max_context=%s | ~%s prompt tokens",
+        current_turn, variant, model_id, temperature, top_p, min_p, top_k,
+        frequency_penalty, presence_penalty, repetition_penalty,
+        max_tokens, max_context, context_tokens,
+    )
+    log.info(
+        "LLM PROMPT (%d messages):\n%s",
+        len(messages),
+        "\n".join(f"  ── [{m['role']}] ──\n{m['content']}" for m in messages),
+    )
+
     async def stream():
         if did_summarize:
             yield f"data: {json.dumps({'type': 'summarized'})}\n\n"
@@ -1606,8 +1621,13 @@ def _stream_llm_response(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             return
 
+        # Terminal log: full raw output from the LLM.
+        log.info("LLM RESPONSE turn=%s variant=%s (%d chars):\n%s", current_turn, variant, len(full_text), full_text)
+
         # Parse and strip the action block before saving
         clean_text, actions = parse_action_block(full_text)
+        if actions:
+            log.info("LLM ACTIONS parsed: %s", json.dumps(actions, ensure_ascii=False))
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
 

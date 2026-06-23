@@ -1,9 +1,28 @@
+import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# Route all "wayward.*" logs to the terminal (stdout) for easy troubleshooting,
+# independently of uvicorn's own logging config. Force UTF-8 first so prompt
+# text with em-dashes / non-ASCII doesn't raise encode errors on Windows.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+_wlog = logging.getLogger("wayward")
+if not _wlog.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s | %(message)s", "%H:%M:%S"))
+    _wlog.addHandler(_handler)
+    _wlog.setLevel(logging.INFO)
+    _wlog.propagate = False
 
 from server.api.routes import router
 

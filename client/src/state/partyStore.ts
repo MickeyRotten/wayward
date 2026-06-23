@@ -11,6 +11,7 @@ interface PartyState {
   addPartyMember: () => Promise<PartyMember>
   savePartyMember: (pm: PartyMember) => Promise<void>
   removePartyMember: (id: string) => Promise<void>
+  setMembership: (id: string, inParty: boolean) => Promise<void>
 }
 
 export const usePartyStore = create<PartyState>((set, get) => ({
@@ -57,5 +58,12 @@ export const usePartyStore = create<PartyState>((set, get) => ({
   removePartyMember: async (id) => {
     await api.del(`/party-members/${id}`)
     set({ partyMembers: get().partyMembers.filter((m) => m.id !== id) })
+  },
+
+  setMembership: async (id, inParty) => {
+    const saved = await api.put<PartyMember>(`/party-members/${id}/in-party`, { inParty })
+    set({
+      partyMembers: get().partyMembers.map((m) => (m.id === saved.id ? saved : m)),
+    })
   },
 }))

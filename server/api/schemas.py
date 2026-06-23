@@ -70,6 +70,11 @@ class PartyMemberResponse(BaseModel):
     equipment: EquipmentSchema
     fieldSkill: FieldSkillSchema
     lastSpokeTurn: int
+    inParty: bool = True
+
+
+class PartyMembershipUpdate(BaseModel):
+    inParty: bool
 
 
 # --- Narrator ---
@@ -103,6 +108,7 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxTokensResponse: int = 1000
     maxContextTokens: int = 128000
     maxCarrySlots: int = 12
+    maxPartySize: int = 3
 
 
 class OpenRouterSettingsResponse(BaseModel):
@@ -117,6 +123,7 @@ class OpenRouterSettingsResponse(BaseModel):
     maxTokensResponse: int
     maxContextTokens: int
     maxCarrySlots: int
+    maxPartySize: int
     apiKeySet: bool
 
 

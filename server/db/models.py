@@ -31,6 +31,7 @@ class PartyMember(Base):
     equipment: Mapped[dict] = mapped_column(JSON, default=dict)
     field_skill: Mapped[dict] = mapped_column(JSON, default=dict)
     last_spoke_turn: Mapped[int] = mapped_column(Integer, default=0)
+    in_party: Mapped[bool] = mapped_column(Integer, default=True)
 
 
 class NarratorConfig(Base):
@@ -63,6 +64,7 @@ class OpenRouterSettings(Base):
     max_tokens_response: Mapped[int] = mapped_column(Integer, default=1000)
     max_context_tokens: Mapped[int] = mapped_column(Integer, default=128000)
     max_carry_slots: Mapped[int] = mapped_column(Integer, default=12)
+    max_party_size: Mapped[int] = mapped_column(Integer, default=3)
 
 
 class StorySummary(Base):

@@ -38,6 +38,7 @@ export function SettingsPanel() {
   const [repPen, setRepPen] = useState(settings.repetitionPenalty)
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
   const [maxCarrySlots, setMaxCarrySlots] = useState(settings.maxCarrySlots)
+  const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
   const [actionInstruction, setActionInstruction] = useState(narrator.actionInstruction)
@@ -55,7 +56,8 @@ export function SettingsPanel() {
     setRepPen(settings.repetitionPenalty)
     setMaxTokens(settings.maxTokensResponse)
     setMaxCarrySlots(settings.maxCarrySlots)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots])
+    setMaxPartySize(settings.maxPartySize)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -87,6 +89,7 @@ export function SettingsPanel() {
       maxTokensResponse: maxTokens,
       maxContextTokens: settings.maxContextTokens,
       maxCarrySlots,
+      maxPartySize,
     })
     await narrator.save({ instructions, firstMessage, actionInstruction, spotlightRule })
     // Carry-slot capacity is derived server-side; refetch inventory so the
@@ -251,8 +254,21 @@ export function SettingsPanel() {
           </p>
         </Section>
 
-        {/* Inventory */}
-        <Section title="Inventory">
+        {/* Adventure Settings (inventory + party) */}
+        <Section title="Adventure Settings">
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Max Party Size</span>
+            <input
+              type="number"
+              min={1}
+              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+              value={maxPartySize}
+              onChange={(e) => setMaxPartySize(Math.max(1, Number(e.target.value) || 3))}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Active party members (excluding the player character).
+            </span>
+          </label>
           <label className="block">
             <span className="text-[11px] text-textdim font-body">Max Carry Slots</span>
             <input
@@ -262,10 +278,10 @@ export function SettingsPanel() {
               value={maxCarrySlots}
               onChange={(e) => setMaxCarrySlots(Math.max(1, Number(e.target.value) || 12))}
             />
+            <span className="text-[10px] text-textdim font-body">
+              How many distinct item stacks the party can carry.
+            </span>
           </label>
-          <p className="text-[10px] text-textdim font-body">
-            How many distinct item stacks the party can carry.
-          </p>
         </Section>
 
         {/* Lorebook Injection */}

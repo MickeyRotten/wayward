@@ -66,6 +66,7 @@ export interface PartyMember {
   equipment: Equipment
   fieldSkill: FieldSkill
   lastSpokeTurn: number
+  inParty: boolean
 }
 
 export interface NarratorConfig {
@@ -84,6 +85,7 @@ export interface OpenRouterSettings {
   maxTokensResponse: number
   maxContextTokens: number
   maxCarrySlots: number
+  maxPartySize: number
 }
 
 export interface OpenRouterSettingsUpdate extends OpenRouterSettings {

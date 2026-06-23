@@ -44,6 +44,7 @@ from server.api.schemas import (
     OpenRouterSettingsResponse,
     OpenRouterSettingsUpdate,
     PartyMemberCreate,
+    PartyMembershipUpdate,
     PartyMemberResponse,
     PartyMemberUpdate,
     PlayerCharacterResponse,
@@ -90,7 +91,21 @@ def _pm_to_response(pm: PartyMember) -> PartyMemberResponse:
         equipment=pm.equipment,
         fieldSkill=pm.field_skill,
         lastSpokeTurn=pm.last_spoke_turn,
+        inParty=bool(pm.in_party),
     )
+
+
+async def _active_party_count(session: AsyncSession) -> int:
+    return (
+        await session.execute(
+            select(func.count()).select_from(PartyMember).where(PartyMember.in_party == True)  # noqa: E712
+        )
+    ).scalar() or 0
+
+
+async def _max_party_size(session: AsyncSession) -> int:
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    return settings.max_party_size if settings else 3
 
 
 # ── Player Character ──────────────────────────────────────────────
@@ -146,12 +161,32 @@ async def add_party_member(
     data: PartyMemberCreate,
     session: AsyncSession = Depends(get_session),
 ):
+    if await _active_party_count(session) >= await _max_party_size(session):
+        raise HTTPException(400, "Party is full — increase the party size limit in Config.")
     pm = PartyMember(
         basic_info=data.basicInfo.model_dump(),
         equipment=data.equipment.model_dump(),
         field_skill=data.fieldSkill.model_dump(),
     )
     session.add(pm)
+    await session.commit()
+    await session.refresh(pm)
+    return _pm_to_response(pm)
+
+
+@router.put("/party-members/{member_id}/in-party", response_model=PartyMemberResponse)
+async def set_party_membership(
+    member_id: str,
+    data: PartyMembershipUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    pm = await session.get(PartyMember, member_id)
+    if not pm:
+        raise HTTPException(404, "Party member not found")
+    if data.inParty and not pm.in_party:
+        if await _active_party_count(session) >= await _max_party_size(session):
+            raise HTTPException(400, "Party is full — increase the party size limit in Config.")
+    pm.in_party = data.inParty
     await session.commit()
     await session.refresh(pm)
     return _pm_to_response(pm)
@@ -259,6 +294,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         maxTokensResponse=s.max_tokens_response,
         maxContextTokens=s.max_context_tokens,
         maxCarrySlots=s.max_carry_slots,
+        maxPartySize=s.max_party_size,
         apiKeySet=bool(s.api_key),
     )
 
@@ -295,6 +331,7 @@ async def update_openrouter_settings(
     s.max_tokens_response = data.maxTokensResponse
     s.max_context_tokens = data.maxContextTokens
     s.max_carry_slots = data.maxCarrySlots
+    s.max_party_size = data.maxPartySize
     await session.commit()
     return _or_response(s)
 
@@ -961,6 +998,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "maxTokensResponse": settings.max_tokens_response if settings else 1000,
             "maxContextTokens": settings.max_context_tokens if settings else 128000,
             "maxCarrySlots": settings.max_carry_slots if settings else 12,
+            "maxPartySize": settings.max_party_size if settings else 3,
         },
         "items": [_item_to_dict(i) for i in items],
         "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
@@ -1027,6 +1065,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             basic_info=pm_data.get("basicInfo", {}),
             equipment=pm_data.get("equipment", {}),
             field_skill=pm_data.get("fieldSkill", {}),
+            in_party=pm_data.get("inParty", True),
         )
         session.add(pm)
 
@@ -1069,6 +1108,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         max_tokens_response=s.get("maxTokensResponse", 1000),
         max_context_tokens=s.get("maxContextTokens", 128000),
         max_carry_slots=s.get("maxCarrySlots", 12),
+        max_party_size=s.get("maxPartySize", 3),
     ))
 
     # Restore item catalog
@@ -1244,7 +1284,10 @@ async def _load_game_context(session: AsyncSession):
     if not pc:
         raise HTTPException(400, "No player character created")
 
-    party = list((await session.execute(select(PartyMember))).scalars().all())
+    # Only active (in-party) members participate in narration and spotlight.
+    party = list(
+        (await session.execute(select(PartyMember).where(PartyMember.in_party == True))).scalars().all()  # noqa: E712
+    )
     all_messages = list(
         (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
     )

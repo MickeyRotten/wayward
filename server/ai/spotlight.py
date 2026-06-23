@@ -88,7 +88,18 @@ def _extract_keywords(text: str) -> set[str]:
     return {w for w in words if len(w) >= 4 and w not in STOPWORDS}
 
 
-def format_spotlight_block(signals: list[SpotlightSignal]) -> str:
+DEFAULT_SPOTLIGHT_RULE = (
+    "RULE: Voice a party member only when directly addressed, clearly "
+    "relevant to what's happening, or significantly overdue for a beat. "
+    "Default to silence — most turns, no party member needs to speak. "
+    "If a party member IS directly addressed, you MUST have them respond. "
+    "Never have more than one react to the same beat unless the player "
+    "addressed the whole group. When voiced, keep it to one or two "
+    "sentences, true to their established character and Field Skill."
+)
+
+
+def format_spotlight_block(signals: list[SpotlightSignal], rule: str | None = None) -> str:
     lines = ["PARTY SPOTLIGHT — THIS TURN"]
 
     for s in signals:
@@ -109,15 +120,7 @@ def format_spotlight_block(signals: list[SpotlightSignal]) -> str:
         lines.append(f"  {s.member_name:12s} — {' · '.join(parts)}")
 
     lines.append("")
-    lines.append(
-        "RULE: Voice a party member only when directly addressed, clearly "
-        "relevant to what's happening, or significantly overdue for a beat. "
-        "Default to silence — most turns, no party member needs to speak. "
-        "If a party member IS directly addressed, you MUST have them respond. "
-        "Never have more than one react to the same beat unless the player "
-        "addressed the whole group. When voiced, keep it to one or two "
-        "sentences, true to their established character and Field Skill."
-    )
+    lines.append(rule or DEFAULT_SPOTLIGHT_RULE)
 
     return "\n".join(lines)
 

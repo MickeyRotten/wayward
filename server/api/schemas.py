@@ -75,11 +75,17 @@ class PartyMemberResponse(BaseModel):
 # --- Narrator ---
 
 class NarratorUpdate(BaseModel):
-    instructions: str
+    instructions: str | None = None
+    actionInstruction: str | None = None
+    spotlightRule: str | None = None
+    firstMessage: str | None = None
 
 
 class NarratorResponse(BaseModel):
     instructions: str
+    actionInstruction: str
+    spotlightRule: str
+    firstMessage: str
 
 
 # --- OpenRouter Settings ---

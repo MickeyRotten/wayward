@@ -51,8 +51,12 @@ def build_prompt(
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})
 
-    # 1b. System: Narrator action protocol (not user-editable)
-    messages.append({"role": "system", "content": ACTION_INSTRUCTION})
+    # 1b. System: Narrator action protocol (editable in Config; falls back to
+    #     the built-in default when not customized)
+    messages.append({
+        "role": "system",
+        "content": getattr(narrator_config, "action_instruction", "") or ACTION_INSTRUCTION,
+    })
 
     # 2. Scenario context now lives as a permanent World lorebook entry and is
     #    injected through the lorebook (see steps 7–8).
@@ -163,6 +167,13 @@ def build_prompt(
         for m in chat_history
     ]
     history_messages = _trim_to_budget(history_messages, budget)
+
+    # The editable opening narration is the first turn of the conversation —
+    # always present in context, even on the player's first message.
+    first_message = getattr(narrator_config, "first_message", "") or ""
+    if first_message.strip():
+        history_messages.insert(0, {"role": "assistant", "content": first_message})
+
     messages.extend(history_messages)
 
     # 10. Lorebook entries with injectionPosition = 'before_input'

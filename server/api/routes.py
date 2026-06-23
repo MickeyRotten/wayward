@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 PORTRAITS_DIR = Path(__file__).resolve().parent.parent / "portraits"
 
-from server.ai.narrator_actions import execute_actions, parse_action_block, reverse_equipment_changes
+from server.ai.narrator_actions import ACTION_INSTRUCTION, execute_actions, parse_action_block, reverse_equipment_changes
 from server.ai.item_detection import (
     apply_inventory_deltas,
     detect_item_use,
@@ -18,7 +18,7 @@ from server.ai.item_detection import (
 )
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
-from server.ai.spotlight import SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
+from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
 from server.ai.summarizer import (
     format_messages_for_summary,
     generate_summary,
@@ -188,6 +188,17 @@ async def remove_party_member(
 
 # ── Narrator Config ───────────────────────────────────────────────
 
+def _narrator_response(n: NarratorConfig) -> NarratorResponse:
+    # Fall back to the built-in defaults for the protocol blocks so Config shows
+    # the effective text the narrator actually receives (and the user can edit it).
+    return NarratorResponse(
+        instructions=n.instructions or "",
+        actionInstruction=n.action_instruction or ACTION_INSTRUCTION,
+        spotlightRule=n.spotlight_rule or DEFAULT_SPOTLIGHT_RULE,
+        firstMessage=n.first_message or "",
+    )
+
+
 @router.get("/narrator", response_model=NarratorResponse)
 async def get_narrator(session: AsyncSession = Depends(get_session)):
     n = (await session.execute(select(NarratorConfig))).scalars().first()
@@ -195,7 +206,7 @@ async def get_narrator(session: AsyncSession = Depends(get_session)):
         n = NarratorConfig(instructions="")
         session.add(n)
         await session.commit()
-    return NarratorResponse(instructions=n.instructions)
+    return _narrator_response(n)
 
 
 @router.put("/narrator", response_model=NarratorResponse)
@@ -207,9 +218,16 @@ async def update_narrator(
     if not n:
         n = NarratorConfig()
         session.add(n)
-    n.instructions = data.instructions
+    if data.instructions is not None:
+        n.instructions = data.instructions
+    if data.actionInstruction is not None:
+        n.action_instruction = data.actionInstruction
+    if data.spotlightRule is not None:
+        n.spotlight_rule = data.spotlightRule
+    if data.firstMessage is not None:
+        n.first_message = data.firstMessage
     await session.commit()
-    return NarratorResponse(instructions=n.instructions)
+    return _narrator_response(n)
 
 
 # ── OpenRouter Settings ───────────────────────────────────────────
@@ -915,7 +933,12 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
         "version": 1,
         "playerCharacter": _pc_to_response(pc).model_dump() if pc else None,
         "partyMembers": [_pm_to_response(m).model_dump() for m in members],
-        "narrator": {"instructions": narrator.instructions} if narrator else {"instructions": ""},
+        "narrator": {
+            "instructions": narrator.instructions if narrator else "",
+            "actionInstruction": narrator.action_instruction if narrator else "",
+            "spotlightRule": narrator.spotlight_rule if narrator else "",
+            "firstMessage": narrator.first_message if narrator else "",
+        },
         "chatMessages": [
             {
                 "role": m.role, "content": m.content,
@@ -1008,7 +1031,13 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         session.add(pm)
 
     # Restore narrator
-    session.add(NarratorConfig(instructions=data.get("narrator", {}).get("instructions", "")))
+    nar = data.get("narrator", {})
+    session.add(NarratorConfig(
+        instructions=nar.get("instructions", ""),
+        action_instruction=nar.get("actionInstruction", ""),
+        spotlight_rule=nar.get("spotlightRule", ""),
+        first_message=nar.get("firstMessage", ""),
+    ))
 
     # Restore chat
     for msg in data.get("chatMessages", []):
@@ -1269,7 +1298,9 @@ async def _maybe_summarize_and_build(
             party_members=party_list,
             current_turn=current_turn,
         )
-        spotlight_block = format_spotlight_block(spotlight_signals)
+        spotlight_block = format_spotlight_block(
+            spotlight_signals, getattr(narrator, "spotlight_rule", "") or None
+        )
 
     # Build a test prompt to check size
     test_prompt = build_prompt(

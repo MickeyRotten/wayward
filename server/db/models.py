@@ -38,6 +38,13 @@ class NarratorConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     instructions: Mapped[str] = mapped_column(Text, default="")
+    # Additional narrator-facing instruction blocks, editable in Config.
+    # Empty string => fall back to the built-in default at prompt-build time.
+    action_instruction: Mapped[str] = mapped_column(Text, default="")
+    spotlight_rule: Mapped[str] = mapped_column(Text, default="")
+    # The opening narration shown before the player's first turn (drop-capped,
+    # included in context). Editable in Config.
+    first_message: Mapped[str] = mapped_column(Text, default="")
 
 
 class OpenRouterSettings(Base):

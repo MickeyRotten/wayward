@@ -1,5 +1,7 @@
 from sqlalchemy import select
 
+from server.ai.narrator_actions import ACTION_INSTRUCTION
+from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
 from server.db.database import async_session
 from server.db.models import (
     InventoryStack,
@@ -460,6 +462,15 @@ async def seed_defaults():
                 "Characters are wearing only what they have equipped — if an equipment slot is "
                 "empty, they have nothing in that slot. Do not invent clothing or gear that is "
                 "not listed in their equipment."
+            ),
+            action_instruction=ACTION_INSTRUCTION,
+            spotlight_rule=DEFAULT_SPOTLIGHT_RULE,
+            first_message=(
+                "Moonlight pools in the clearing as you step from the trees, and the mist "
+                "closes the trail behind you. At its center, silver light wells up from a "
+                "shallow basin of stone — brighter than any moon should allow — and the "
+                "ancient pillars lean inward as though listening. The air hums with something "
+                "old and patient. Whatever drew you into the Whispering Woods is near now."
             ),
         )
 

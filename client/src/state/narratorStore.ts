@@ -1,23 +1,45 @@
 import { create } from 'zustand'
-import type { NarratorConfig } from '@shared/types/models'
 import { api } from '../lib/api'
+
+interface NarratorConfigResponse {
+  instructions: string
+  actionInstruction: string
+  spotlightRule: string
+  firstMessage: string
+}
 
 interface NarratorState {
   instructions: string
+  actionInstruction: string
+  spotlightRule: string
+  firstMessage: string
   fetchConfig: () => Promise<void>
-  saveInstructions: (text: string) => Promise<void>
+  save: (update: Partial<NarratorConfigResponse>) => Promise<void>
 }
 
 export const useNarratorStore = create<NarratorState>((set) => ({
   instructions: '',
+  actionInstruction: '',
+  spotlightRule: '',
+  firstMessage: '',
 
   fetchConfig: async () => {
-    const narrator = await api.get<NarratorConfig>('/narrator')
-    set({ instructions: narrator.instructions })
+    const n = await api.get<NarratorConfigResponse>('/narrator')
+    set({
+      instructions: n.instructions,
+      actionInstruction: n.actionInstruction,
+      spotlightRule: n.spotlightRule,
+      firstMessage: n.firstMessage,
+    })
   },
 
-  saveInstructions: async (text) => {
-    await api.put('/narrator', { instructions: text })
-    set({ instructions: text })
+  save: async (update) => {
+    const n = await api.put<NarratorConfigResponse>('/narrator', update)
+    set({
+      instructions: n.instructions,
+      actionInstruction: n.actionInstruction,
+      spotlightRule: n.spotlightRule,
+      firstMessage: n.firstMessage,
+    })
   },
 }))

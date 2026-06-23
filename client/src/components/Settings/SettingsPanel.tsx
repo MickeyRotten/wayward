@@ -39,6 +39,9 @@ export function SettingsPanel() {
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
   const [maxCarrySlots, setMaxCarrySlots] = useState(settings.maxCarrySlots)
   const [instructions, setInstructions] = useState(narrator.instructions)
+  const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
+  const [actionInstruction, setActionInstruction] = useState(narrator.actionInstruction)
+  const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -56,7 +59,10 @@ export function SettingsPanel() {
 
   useEffect(() => {
     setInstructions(narrator.instructions)
-  }, [narrator.instructions])
+    setFirstMessage(narrator.firstMessage)
+    setActionInstruction(narrator.actionInstruction)
+    setSpotlightRule(narrator.spotlightRule)
+  }, [narrator.instructions, narrator.firstMessage, narrator.actionInstruction, narrator.spotlightRule])
 
   // Load the model list automatically when Config opens (once an API key is
   // set) so the model dropdown is ready to pick from without a manual click.
@@ -82,7 +88,7 @@ export function SettingsPanel() {
       maxContextTokens: settings.maxContextTokens,
       maxCarrySlots,
     })
-    await narrator.saveInstructions(instructions)
+    await narrator.save({ instructions, firstMessage, actionInstruction, spotlightRule })
     // Carry-slot capacity is derived server-side; refetch inventory so the
     // Items panel reflects the new max immediately.
     await useItemsStore.getState().fetchInventory()
@@ -199,6 +205,47 @@ export function SettingsPanel() {
               onChange={(e) => setInstructions(e.target.value)}
             />
           </label>
+
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">First Message</span>
+            <textarea
+              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              rows={4}
+              value={firstMessage}
+              placeholder="The opening narration shown before the player's first turn."
+              onChange={(e) => setFirstMessage(e.target.value)}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Shown as the drop-capped opening message and included in context.
+            </span>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Action Protocol</span>
+            <textarea
+              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              rows={4}
+              value={actionInstruction}
+              onChange={(e) => setActionInstruction(e.target.value)}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              System instructions for item/equipment/location actions. Advanced.
+            </span>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Spotlight Rule</span>
+            <textarea
+              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              rows={4}
+              value={spotlightRule}
+              onChange={(e) => setSpotlightRule(e.target.value)}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Governs when party members speak. Advanced.
+            </span>
+          </label>
+
           <p className="text-[10px] text-textdim font-body">
             The scenario is now a locked entry in Lorebook → World.
           </p>

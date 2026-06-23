@@ -3,6 +3,7 @@ import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
+import { useNarratorStore } from '../../state/narratorStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveCurrentLocation } from '../../lib/location'
@@ -31,6 +32,7 @@ export function ChatScene() {
   const activeVariants = useChatStore((s) => s.activeVariants)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
+  const firstMessage = useNarratorStore((s) => s.firstMessage)
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
@@ -88,10 +90,14 @@ export function ChatScene() {
       (lastVisibleMsg && lastVisibleMsg.role === 'user')
     )
 
-  // Find first narrator message index for drop-cap
-  const firstNarratorIdx = visibleMessages.findIndex(
-    (m) => m.role === 'assistant' && (m.speaker === 'narrator' || !m.speaker)
-  )
+  // Find first narrator message index for drop-cap. When a configured First
+  // Message is shown, IT carries the drop-cap, so real messages never do.
+  const hasFirstMessage = !!firstMessage.trim()
+  const firstNarratorIdx = hasFirstMessage
+    ? -1
+    : visibleMessages.findIndex(
+        (m) => m.role === 'assistant' && (m.speaker === 'narrator' || !m.speaker)
+      )
 
   // Build a lookup for party member info by id
   const partyMemberMap = new Map(
@@ -145,12 +151,32 @@ export function ChatScene() {
         ref={listRef}
         className="flex-1 overflow-y-auto p-4 space-y-4"
       >
-        {messages.length === 0 && !isLoading && (
+        {/* Configured opening narration (drop-capped, not editable in chat) */}
+        {hasFirstMessage && (
+          <div className="max-w-[85%] mr-auto">
+            <div className="px-4 py-3">
+              <div
+                className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap first-narrator-dropcap"
+                dangerouslySetInnerHTML={{
+                  __html: applyItemChips(formatNarrationWithDropCap(firstMessage), itemNames),
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {messages.length === 0 && !isLoading && !hasFirstMessage && (
           <div className="flex items-center justify-center h-full">
             <p className="font-ui text-[10px] text-textdim tracking-wider">
               {apiKeySet ? 'BEGIN YOUR ADVENTURE' : 'SET API KEY IN SETTINGS TO BEGIN'}
             </p>
           </div>
+        )}
+
+        {messages.length === 0 && !isLoading && hasFirstMessage && !apiKeySet && (
+          <p className="font-ui text-[10px] text-textdim tracking-wider px-4">
+            SET API KEY IN SETTINGS TO BEGIN
+          </p>
         )}
 
         {visibleMessages.map((m, idx) => (

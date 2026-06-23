@@ -41,7 +41,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const save = usePartyStore((s) => s.savePlayerCharacter)
   const catalog = useItemsStore((s) => s.catalog)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
-  const select = useUiStore((s) => s.select)
+  const selectInto = useUiStore((s) => s.selectInto)
   const draft = useRef<PlayerCharacter | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -124,7 +124,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
                   key={key}
                   label={label}
                   item={item}
-                  onSelect={item ? () => select({ kind: 'item', id: item.id }) : undefined}
+                  onSelect={item ? () => selectInto({ kind: 'item', id: item.id }) : undefined}
                 />
               )
             })}

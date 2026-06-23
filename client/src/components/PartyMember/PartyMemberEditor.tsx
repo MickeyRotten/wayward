@@ -44,6 +44,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
   const remove = usePartyStore((s) => s.removePartyMember)
   const catalog = useItemsStore((s) => s.catalog)
   const select = useUiStore((s) => s.select)
+  const selectInto = useUiStore((s) => s.selectInto)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PartyMember>(structuredClone(member))
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -149,7 +150,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
                   key={key}
                   label={label}
                   item={item}
-                  onSelect={item ? () => select({ kind: 'item', id: item.id }) : undefined}
+                  onSelect={item ? () => selectInto({ kind: 'item', id: item.id }) : undefined}
                 />
               )
             })}

@@ -1027,9 +1027,9 @@ function handleEntityClick(e: ReactMouseEvent) {
   const id = el.getAttribute('data-id')
   if (!id) return
   e.stopPropagation()
-  const select = useUiStore.getState().select
-  if (kind === 'item') select({ kind: 'item', id })
-  else if (kind === 'member') select({ kind: 'member', id })
+  const selectInto = useUiStore.getState().selectInto
+  if (kind === 'item') selectInto({ kind: 'item', id })
+  else if (kind === 'member') selectInto({ kind: 'member', id })
 }
 
 // Renders narrator/chat HTML with entity-chip click handling.

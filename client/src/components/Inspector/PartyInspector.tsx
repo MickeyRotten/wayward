@@ -20,6 +20,8 @@ export function PartyInspector() {
   const mode = useUiStore((s) => s.mode)
   const editDirty = useUiStore((s) => s.editDirty)
   const setMode = useUiStore((s) => s.setMode)
+  const back = useUiStore((s) => s.back)
+  const goBack = useUiStore((s) => s.goBack)
 
   if (!everSelected) return <EmptyState />
 
@@ -84,7 +86,21 @@ export function PartyInspector() {
         <div className="shrink-0 border-b border-line px-6 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <span className="font-ui text-[9px] text-textdim tracking-wider">{entityLabel}</span>
+              <div className="flex items-center gap-1.5">
+                {back && (
+                  <>
+                    <button
+                      type="button"
+                      className="font-ui text-[9px] text-gold hover:text-gold2 tracking-wider transition-colors"
+                      onClick={goBack}
+                    >
+                      ◀ BACK
+                    </button>
+                    <span className="font-ui text-[9px] text-textdim">|</span>
+                  </>
+                )}
+                <span className="font-ui text-[9px] text-textdim tracking-wider">{entityLabel}</span>
+              </div>
               <h2 className="font-disp text-[24px] pt-0.75 leading-none text-text truncate">
                 {entityName}
               </h2>
@@ -498,6 +514,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
   const setActiveTab = useUiStore((s) => s.setActiveTab)
   const setLoreCategory = useLoreStore((s) => s.setCategory)
   const select = useUiStore((s) => s.select)
+  const selectInto = useUiStore((s) => s.selectInto)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
 
   const draft = useRef<Partial<Pick<Quest, 'title' | 'status' | 'desc' | 'notes'>>>(
@@ -609,7 +626,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
                         setLoreCategory(loreEntry.cat)
                       }
                       setActiveTab('lore')
-                      select({ kind: 'lore', id: loreId })
+                      selectInto({ kind: 'lore', id: loreId })
                     }}
                     title={loreEntry ? `Jump to: ${loreEntry.title}` : loreId}
                   >

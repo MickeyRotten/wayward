@@ -41,13 +41,24 @@ export function ChatScene() {
   const [input, setInput] = useState('')
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
   }, [messages, streamingContent])
+
+  // Auto-grow the input: single row by default, expand with wrapped lines up
+  // to a cap, then scroll.
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [input])
 
   const handleSend = () => {
     const text = input.trim()
@@ -262,11 +273,54 @@ export function ChatScene() {
       )}
 
       {/* Input */}
-      <div className="border-t-[1.5px] border-line2 p-4 bg-bg1">
-        <div className="flex gap-2">
+      <div className="border-t-[1.5px] border-line2 p-3 bg-bg1">
+        <div className="flex items-end gap-2">
+          {/* Tools button + dropdown (opens above) */}
+          <div className="relative shrink-0">
+            {toolsOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setToolsOpen(false)} />
+                <div className="absolute bottom-full left-0 mb-2 w-44 bg-bg2 border-[1.5px] border-line2 z-20 py-1">
+                  <ToolMenuItem
+                    label="Regenerate"
+                    disabled={!showInputRegenerate}
+                    onClick={() => { setToolsOpen(false); regenerate() }}
+                  />
+                  <ToolMenuItem
+                    label="Clear Chat"
+                    disabled={messages.length === 0}
+                    onClick={() => {
+                      setToolsOpen(false)
+                      setConfirmAction({ message: 'Clear the entire chat history? This cannot be undone.', action: clearHistory })
+                    }}
+                  />
+                  <ToolMenuItem
+                    label="View Prompt Log"
+                    disabled={messages.length === 0}
+                    onClick={() => { setToolsOpen(false); handleShowLog() }}
+                  />
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              title="Tools"
+              aria-label="Tools"
+              className={`border-[1.5px] px-2.5 py-2 transition-colors ${
+                toolsOpen ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
+              }`}
+              onClick={() => setToolsOpen((o) => !o)}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
+              </svg>
+            </button>
+          </div>
+
           <textarea
-            className="flex-1 border-[1.5px] border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none"
-            rows={2}
+            ref={inputRef}
+            className="flex-1 border-[1.5px] border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none max-h-[160px] overflow-y-auto"
+            rows={1}
             placeholder={apiKeySet ? 'What do you do?' : 'Set API key in Settings...'}
             value={input}
             disabled={!apiKeySet || isLoading}
@@ -278,56 +332,25 @@ export function ChatScene() {
               }
             }}
           />
-          <div className="flex flex-col gap-1">
-            {isLoading ? (
-              <button
-                type="button"
-                className="font-ui text-[10px] bg-golddeep text-bg0 px-3 py-1 hover:bg-gold transition-colors"
-                onClick={stopGeneration}
-              >
-                STOP
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="font-ui text-[10px] bg-golddeep text-bg0 px-3 py-1 hover:bg-gold transition-colors disabled:opacity-40"
-                disabled={!apiKeySet || !input.trim()}
-                onClick={handleSend}
-              >
-                SEND
-              </button>
-            )}
-            <div className="flex gap-1">
-              {showInputRegenerate && (
-                <button
-                  type="button"
-                  className="font-ui text-[9px] text-textdim hover:text-gold px-2 py-1"
-                  title="Regenerate last response (replaces it entirely)"
-                  onClick={regenerate}
-                >
-                  &#8635;
-                </button>
-              )}
-              {messages.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
-                    onClick={handleShowLog}
-                  >
-                    LOG
-                  </button>
-                  <button
-                    type="button"
-                    className="font-ui text-[9px] text-textdim hover:text-text px-2 py-1"
-                    onClick={() => setConfirmAction({ message: 'Clear the entire chat history? This cannot be undone.', action: clearHistory })}
-                  >
-                    CLEAR
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+
+          {isLoading ? (
+            <button
+              type="button"
+              className="shrink-0 font-ui text-[10px] bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors"
+              onClick={stopGeneration}
+            >
+              STOP
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="shrink-0 font-ui text-[10px] bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors disabled:opacity-40"
+              disabled={!apiKeySet || !input.trim()}
+              onClick={handleSend}
+            >
+              SEND
+            </button>
+          )}
         </div>
       </div>
 
@@ -342,6 +365,21 @@ export function ChatScene() {
         />
       )}
     </div>
+  )
+}
+
+// ── Tools menu item ─────────────────────────────────────────────────
+
+function ToolMenuItem({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="w-full text-left font-ui text-[10px] tracking-wider uppercase px-3 py-2 text-textsec hover:bg-bg3 hover:text-text transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-textsec disabled:cursor-not-allowed"
+    >
+      {label}
+    </button>
   )
 }
 

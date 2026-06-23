@@ -1,9 +1,11 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useNarratorStore } from '../../state/narratorStore'
+import { useUiStore } from '../../state/uiStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveCurrentLocation } from '../../lib/location'
@@ -119,8 +121,11 @@ export function ChatScene() {
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
   const pcPortrait = playerCharacter?.basicInfo?.portrait || ''
 
-  // Item names for inline chip rendering
-  const itemNames = catalog.map((item) => item.name).filter(Boolean)
+  // Items + party members for inline chip rendering (and click-to-inspect)
+  const chipEntities: ChipEntity[] = [
+    ...catalog.map((item) => ({ name: item.name, kind: 'item' as const, id: item.id })),
+    ...partyMembers.map((m) => ({ name: m.basicInfo?.name || '', kind: 'member' as const, id: m.id })),
+  ].filter((e) => e.name.trim())
 
   // Item id -> catalog entry, for resolving names in inventory/equipment notices
   const catalogMap = new Map(catalog.map((item) => [item.id, item]))
@@ -166,11 +171,9 @@ export function ChatScene() {
         {hasFirstMessage && (
           <div className="max-w-[85%] mr-auto">
             <div className="px-4 py-3">
-              <div
+              <NarrationHtml
                 className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap first-narrator-dropcap"
-                dangerouslySetInnerHTML={{
-                  __html: applyItemChips(formatNarrationWithDropCap(firstMessage), itemNames),
-                }}
+                html={applyEntityChips(formatNarrationWithDropCap(firstMessage), chipEntities)}
               />
             </div>
           </div>
@@ -211,7 +214,7 @@ export function ChatScene() {
             pcName={pcName}
             pcPortrait={pcPortrait}
             partyMemberMap={partyMemberMap}
-            itemNames={itemNames}
+            chipEntities={chipEntities}
             catalogMap={catalogMap}
             resolveCharName={resolveCharName}
           />
@@ -231,9 +234,9 @@ export function ChatScene() {
         {/* Streaming response */}
         {isLoading && streamingContent && (
           <div className="max-w-[85%] mr-auto px-4 py-3">
-            <div
+            <NarrationHtml
               className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
-              dangerouslySetInnerHTML={{ __html: applyItemChips(formatNarration(streamingContent), itemNames) }}
+              html={applyEntityChips(formatNarration(streamingContent), chipEntities)}
             />
           </div>
         )}
@@ -434,7 +437,7 @@ function MessageBubble({
   pcName,
   pcPortrait,
   partyMemberMap,
-  itemNames,
+  chipEntities,
   catalogMap,
   resolveCharName,
 }: {
@@ -449,7 +452,7 @@ function MessageBubble({
   pcName: string
   pcPortrait: string
   partyMemberMap: Map<string, { id: string; basicInfo: { name: string; portrait?: string } }>
-  itemNames: string[]
+  chipEntities: ChipEntity[]
   catalogMap: Map<string, ItemCatalogEntry>
   resolveCharName: (id: string) => string
 }) {
@@ -517,9 +520,9 @@ function MessageBubble({
                   onCancel={() => { setEditText(message.content); setEditing(false) }}
                 />
               ) : (
-                <div
+                <NarrationHtml
                   className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: applyItemChips(formatNarration(message.content), itemNames) }}
+                  html={applyEntityChips(formatNarration(message.content), chipEntities)}
                 />
               )}
             </div>
@@ -599,9 +602,9 @@ function MessageBubble({
                   onCancel={() => { setEditText(message.content); setEditing(false) }}
                 />
               ) : (
-                <div
+                <NarrationHtml
                   className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: applyItemChips(formatNarration(message.content), itemNames) }}
+                  html={applyEntityChips(formatNarration(message.content), chipEntities)}
                 />
               )}
             </div>
@@ -648,18 +651,16 @@ function MessageBubble({
             onCancel={() => { setEditText(message.content); setEditing(false) }}
           />
         ) : (
-          <div
+          <NarrationHtml
             className={`text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap ${
               isFirstNarrator ? 'first-narrator-dropcap' : ''
             }`}
-            dangerouslySetInnerHTML={{
-              __html: applyItemChips(
-                isFirstNarrator
-                  ? formatNarrationWithDropCap(message.content)
-                  : formatNarration(message.content),
-                itemNames,
-              ),
-            }}
+            html={applyEntityChips(
+              isFirstNarrator
+                ? formatNarrationWithDropCap(message.content)
+                : formatNarration(message.content),
+              chipEntities,
+            )}
           />
         )}
       </div>
@@ -991,18 +992,49 @@ function formatNarration(text: string): string {
     .replace(/\n/g, '<br/>')
 }
 
-function applyItemChips(html: string, itemNames: string[]): string {
-  if (itemNames.length === 0) return html
-  // Sort by length descending so longer names match first (e.g. "Tide-Salt Draught" before "Salt")
-  const sorted = [...itemNames].sort((a, b) => b.length - a.length)
-  // Build a single regex that matches any item name (case-insensitive, word-boundary)
-  const escaped = sorted.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const itemRe = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
-  // Split HTML into tags and text segments, only process text segments
+export type ChipEntity = { name: string; kind: 'item' | 'member'; id: string }
+
+// Highlight item and party-member names as inline chips. Items render gold,
+// members blue; each carries data-entity/data-id so clicks can open the
+// relevant inspector (see handleEntityClick).
+function applyEntityChips(html: string, entities: ChipEntity[]): string {
+  const byName = new Map(entities.filter((e) => e.name.trim()).map((e) => [e.name.toLowerCase(), e]))
+  if (byName.size === 0) return html
+  // Longer names first so multi-word names win over substrings.
+  const names = [...byName.values()].map((e) => e.name).sort((a, b) => b.length - a.length)
+  const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const re = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
   return html.replace(/(<[^>]*>)|([^<]+)/g, (_, tag, text) => {
     if (tag) return tag
-    return text.replace(itemRe, '<span class="text-gold2 bg-gold/10 px-1 rounded text-sm font-ui">$1</span>')
+    return text.replace(re, (m: string) => {
+      const e = byName.get(m.toLowerCase())
+      if (!e) return m
+      const cls = e.kind === 'item'
+        ? 'text-gold2 bg-gold/10 px-1 rounded text-sm font-ui cursor-pointer hover:bg-gold/20'
+        : 'text-blue bg-blue/10 px-1 rounded text-sm font-ui cursor-pointer hover:bg-blue/20'
+      return `<span class="${cls}" data-entity="${e.kind}" data-id="${e.id}">${m}</span>`
+    })
   })
+}
+
+// Delegated click handler for entity chips rendered via dangerouslySetInnerHTML.
+// Opens the relevant inspector and stops the click from also triggering the
+// message's edit-on-click.
+function handleEntityClick(e: ReactMouseEvent) {
+  const el = (e.target as HTMLElement).closest('[data-entity]')
+  if (!el) return
+  const kind = el.getAttribute('data-entity')
+  const id = el.getAttribute('data-id')
+  if (!id) return
+  e.stopPropagation()
+  const select = useUiStore.getState().select
+  if (kind === 'item') select({ kind: 'item', id })
+  else if (kind === 'member') select({ kind: 'member', id })
+}
+
+// Renders narrator/chat HTML with entity-chip click handling.
+function NarrationHtml({ className, html }: { className: string; html: string }) {
+  return <div className={className} onClick={handleEntityClick} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 function formatNarrationWithDropCap(text: string): string {

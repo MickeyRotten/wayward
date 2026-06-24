@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { AppShell } from './components/Layout/AppShell'
 import { IconRail } from './components/IconRail/IconRail'
-import { PartyView } from './components/PartyView/PartyView'
+import { HomeView } from './components/Home/HomeView'
 import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
 import { QuestsPanel } from './components/QuestsPanel/QuestsPanel'
 import { LorePanel } from './components/LorePanel/LorePanel'
-import { ScenePOIList } from './components/ScenePOIList/ScenePOIList'
 import { ChatScene } from './components/Scene/ChatScene'
 import { PartyInspector } from './components/Inspector/PartyInspector'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
@@ -23,7 +22,7 @@ function App() {
   const activeTab = useUiStore((s) => s.activeTab)
   const setActiveTab = useUiStore((s) => s.setActiveTab)
   const select = useUiStore((s) => s.select)
-  const prevTabRef = useRef<TabId>('party')
+  const prevTabRef = useRef<TabId>('home')
 
   // Esc clears the inspector selection (back to the default inspector view),
   // unless the user is typing in a field (let that field handle Escape).
@@ -67,10 +66,8 @@ function App() {
 
   const leftPanel = (() => {
     switch (activeTab) {
-      case 'party':
-        return <PartyView />
-      case 'scene':
-        return <ScenePOIList />
+      case 'home':
+        return <HomeView />
       case 'items':
         return <ItemsPanel />
       case 'quests':
@@ -80,7 +77,7 @@ function App() {
       case 'config':
         return <SettingsPanel />
       default:
-        return <PartyView />
+        return <HomeView />
     }
   })()
 

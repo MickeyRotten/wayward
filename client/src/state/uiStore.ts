@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type TabId = 'scene' | 'party' | 'items' | 'quests' | 'lore' | 'config'
+export type TabId = 'home' | 'items' | 'quests' | 'lore' | 'config'
 
 export type SelectionKind =
   | { kind: 'player' }
@@ -35,7 +35,7 @@ function selectionKey(sel: SelectionKind): string | null {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  activeTab: 'party',
+  activeTab: 'home',
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   selection: null,

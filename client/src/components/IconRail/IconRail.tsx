@@ -3,22 +3,13 @@ import type { TabId } from '../../state/uiStore'
 
 const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   {
-    id: 'scene',
-    label: 'Scene',
+    id: 'home',
+    label: 'Home',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <path d="m21 15-5-5L5 21" />
-      </svg>
-    ),
-  },
-  {
-    id: 'party',
-    label: 'Party',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2L22 12L12 22L2 12Z" />
+        <path d="m3 10.5 9-7 9 7" />
+        <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+        <path d="M9.5 21v-6h5v6" />
       </svg>
     ),
   },

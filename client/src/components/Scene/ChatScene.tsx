@@ -8,7 +8,7 @@ import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
-import { deriveCurrentLocation } from '../../lib/location'
+import { deriveSceneBanner } from '../../lib/location'
 import type { ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
 
 interface PromptLogMessage {
@@ -141,25 +141,40 @@ export function ChatScene() {
     [playerCharacter, partyMemberMap],
   )
 
-  const locationName = deriveCurrentLocation(visibleMessages)
+  const banner = deriveSceneBanner(visibleMessages)
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat header — current location banner (does not scroll) */}
+      {/* Chat header — location + time/weather banner (does not scroll) */}
       <div
-        className="flex-shrink-0 border-b-[1.5px] border-line2 bg-bg2 px-4 pt-3 pb-2.5"
+        className="flex-shrink-0 border-b-[1.5px] border-line2 bg-bg2 px-4 pt-3 pb-2.5 flex items-start justify-between gap-3"
         style={{
           backgroundImage:
             'radial-gradient(circle, rgba(201,165,88,0.08) 1px, transparent 1px)',
           backgroundSize: '4px 4px',
         }}
       >
-        <span className="font-ui text-[8px] tracking-[0.2em] uppercase text-textdim block">
-          Location
-        </span>
-        <h1 className="font-disp text-[22px] leading-none text-gold pt-[3px]">
-          {locationName}
-        </h1>
+        <div className="min-w-0">
+          <span className="font-ui text-[8px] tracking-[0.2em] uppercase text-textdim block">
+            Location
+          </span>
+          <h1 className="font-disp text-[22px] leading-none text-gold pt-[3px] truncate">
+            {banner.location}
+          </h1>
+        </div>
+        {(banner.timeOfDay || banner.weather) && (
+          <div className="shrink-0 text-right">
+            {banner.timeOfDay && (
+              <div className="flex items-center justify-end gap-1.5 text-gold">
+                <TimeOfDayIcon timeOfDay={banner.timeOfDay} />
+                <span className="font-ui text-[11px] tracking-wider uppercase">{banner.timeOfDay}</span>
+              </div>
+            )}
+            {banner.weather && (
+              <span className="font-body text-[12px] text-textsec block mt-1">{banner.weather}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -368,6 +383,51 @@ export function ChatScene() {
         />
       )}
     </div>
+  )
+}
+
+// ── Time-of-day icon ────────────────────────────────────────────────
+
+function TimeOfDayIcon({ timeOfDay }: { timeOfDay: string }) {
+  const key = timeOfDay.trim().toLowerCase()
+  const common = {
+    width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+  }
+  if (key === 'night') {
+    return <svg {...common}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+  }
+  if (key === 'morning') {
+    return (
+      <svg {...common}>
+        <path d="M3 18h18M7 18a5 5 0 0 1 10 0" />
+        <path d="M12 3v3M9.5 6.5 12 4l2.5 2.5" />
+      </svg>
+    )
+  }
+  if (key === 'evening') {
+    return (
+      <svg {...common}>
+        <path d="M3 18h18M7 18a5 5 0 0 1 10 0" />
+        <path d="M12 7V4M9.5 4.5 12 7l2.5-2.5" />
+      </svg>
+    )
+  }
+  if (key === 'afternoon') {
+    return (
+      <svg {...common}>
+        <circle cx="8" cy="8" r="3" />
+        <path d="M7 17h8a3 3 0 0 0 .3-6 4.5 4.5 0 0 0-8.7-1.2A3.1 3.1 0 0 0 7 17z" />
+      </svg>
+    )
+  }
+  // day (and default): full sun
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
+    </svg>
   )
 }
 

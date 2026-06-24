@@ -139,6 +139,8 @@ class ChatMessageResponse(BaseModel):
     variant: int
     speaker: str = "narrator"
     location: str | None = None
+    timeOfDay: str | None = None
+    weather: str | None = None
     spotlightReason: str | None = None
     appliedInventoryDeltas: list[dict] | None = None
     appliedEquipmentChanges: list[dict] | None = None

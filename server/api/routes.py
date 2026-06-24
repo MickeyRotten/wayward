@@ -849,6 +849,8 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             variant=m.variant,
             speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
             location=m.location,
+            timeOfDay=m.time_of_day,
+            weather=m.weather,
             spotlightReason=m.spotlight_reason,
             appliedInventoryDeltas=m.applied_inventory_deltas,
             appliedEquipmentChanges=m.applied_equipment_changes,
@@ -1000,6 +1002,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
                 "turnNumber": m.turn_number, "variant": m.variant,
                 "speaker": m.speaker or ("narrator" if m.role == "assistant" else "player"),
                 "location": m.location,
+                "timeOfDay": m.time_of_day,
+                "weather": m.weather,
                 "spotlightReason": m.spotlight_reason,
                 "appliedInventoryDeltas": m.applied_inventory_deltas,
                 "appliedEquipmentChanges": m.applied_equipment_changes,
@@ -1107,6 +1111,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
             speaker=msg.get("speaker", "narrator" if msg["role"] == "assistant" else "player"),
             location=msg.get("location"),
+            time_of_day=msg.get("timeOfDay"),
+            weather=msg.get("weather"),
             spotlight_reason=msg.get("spotlightReason"),
             applied_inventory_deltas=msg.get("appliedInventoryDeltas"),
             applied_equipment_changes=msg.get("appliedEquipmentChanges"),
@@ -1716,12 +1722,20 @@ def _stream_llm_response(
                                 spot_reason = "Hasn't spoken in a while"
                             break
 
-                # Narrator-declared location (parsed from the action block).
+                # Narrator-declared scene state (parsed from the action block).
                 location: str | None = None
+                time_of_day: str | None = None
+                weather: str | None = None
                 if actions:
                     loc = actions.get("location")
                     if isinstance(loc, str) and loc.strip():
                         location = loc.strip()
+                    tod = actions.get("timeOfDay")
+                    if isinstance(tod, str) and tod.strip():
+                        time_of_day = tod.strip()
+                    wx = actions.get("weather")
+                    if isinstance(wx, str) and wx.strip():
+                        weather = wx.strip()
 
                 # Execute narrator actions if present
                 if actions:
@@ -1744,6 +1758,8 @@ def _stream_llm_response(
                     turn_number=current_turn, variant=variant,
                     speaker="narrator",
                     location=location,
+                    time_of_day=time_of_day,
+                    weather=weather,
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=combined_inv_deltas if combined_inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,

@@ -347,6 +347,8 @@ When your narration results in the party gaining or losing items, or a character
 <<<ACTIONS>>>
 {
   "location": "The Moonlit Clearing",
+  "timeOfDay": "Night",
+  "weather": "Clear and cold",
   "addItems": [{ "itemName": "Item Name", "count": 1 }],
   "equip": [{ "characterName": "Tifa", "slot": "rightHand", "itemName": "Comet Wand" }],
   "unequip": [{ "characterName": "Seraphine", "slot": "head" }]
@@ -354,8 +356,10 @@ When your narration results in the party gaining or losing items, or a character
 <<<END ACTIONS>>>
 
 Rules:
-- Only include the keys that apply (location, addItems, equip, unequip). If nothing changes AND the location is unchanged, do not include the block.
+- Only include the keys that apply (location, timeOfDay, weather, addItems, equip, unequip). If nothing changes AND the location/time/weather are unchanged, do not include the block.
 - "location": a short place name (2–4 words) for where the scene is taking place. Include it whenever the location is first established or changes — even if no items change. Omit it on turns where the party stays in the same place.
+- "timeOfDay": one of exactly Morning, Day, Afternoon, Evening, Night. Include it when the time of day is first established or changes.
+- "weather": a short weather descriptor (1–4 words, e.g. "Light rain", "Clear skies", "Fog"). Include it when the weather is first established or changes.
 - Use the character's first name for characterName.
 - Valid equipment slots: head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2.
 - Use exact item names as they appear in the world context.

@@ -9,9 +9,29 @@ export const DEFAULT_LOCATION = 'The Void'
  * default before the Narrator has established anywhere.
  */
 export function deriveCurrentLocation(messages: ChatMessage[]): string {
+  return deriveLatest(messages, 'location') ?? DEFAULT_LOCATION
+}
+
+/** Most recently declared value of a scene field, or null if never declared. */
+function deriveLatest(messages: ChatMessage[], field: 'location' | 'timeOfDay' | 'weather'): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const loc = messages[i].location
-    if (loc && loc.trim()) return loc.trim()
+    const v = messages[i][field]
+    if (v && v.trim()) return v.trim()
   }
-  return DEFAULT_LOCATION
+  return null
+}
+
+export interface SceneBanner {
+  location: string
+  timeOfDay: string | null
+  weather: string | null
+}
+
+/** Current location (default "The Void"), time of day, and weather for the banner. */
+export function deriveSceneBanner(messages: ChatMessage[]): SceneBanner {
+  return {
+    location: deriveLatest(messages, 'location') ?? DEFAULT_LOCATION,
+    timeOfDay: deriveLatest(messages, 'timeOfDay'),
+    weather: deriveLatest(messages, 'weather'),
+  }
 }

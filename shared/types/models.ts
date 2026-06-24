@@ -113,6 +113,8 @@ export interface ChatMessage {
   variant: number
   speaker: string
   location?: string | null
+  timeOfDay?: string | null
+  weather?: string | null
   spotlightReason?: string | null
   appliedInventoryDeltas?: InventoryDelta[] | null
   appliedEquipmentChanges?: EquipmentChange[] | null

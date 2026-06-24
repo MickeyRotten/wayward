@@ -1,0 +1,48 @@
+/* ============================================================================
+   Wayward — Design Tokens (CANONICAL)
+   ----------------------------------------------------------------------------
+   This :root block is the single source of truth for the visual style and is
+   mirrored verbatim from the Design System:
+
+       docs/Wayward Design System.html  →  :root { ... }
+
+   TO UPDATE THE STYLE: when the Design System changes, copy its :root token
+   values into the block below. Nothing else needs to change — Tailwind utility
+   classes (bg-bg0, text-gold, font-disp, border-line, …) are mapped onto these
+   variables in index.css, and components reference the utilities, so a token
+   edit here propagates everywhere.
+
+   Variable names match the Design System exactly (--bg0, --gold, --fdisp, …)
+   so the Design System's :root can be pasted in directly.
+   ========================================================================== */
+
+:root {
+  /* Surfaces */
+  --bg0: #100e0a;
+  --bg1: #17140e;
+  --bg2: #1e1a12;
+  --bg3: #262016;
+
+  /* Lines / borders */
+  --line:  rgba(201, 165, 88, 0.18);
+  --line2: rgba(201, 165, 88, 0.42);
+
+  /* Gold accents */
+  --gold:     #c9a558;
+  --gold2:    #e8cf8c;
+  --golddeep: #8a6f3a;
+
+  /* Blue accent (player character) */
+  --blue: #7aa6cf;
+
+  /* Text hierarchy */
+  --text:    #ece4d3;
+  --text2:   #cfc6b0;
+  --textsec: #9b927a;
+  --textdim: #6c654f;
+
+  /* Fonts */
+  --fdisp: 'Cinzel', serif;          /* display / headers / names */
+  --fbody: 'Quicksand', sans-serif;  /* body prose */
+  --fui:   'Hanken Grotesk', sans-serif; /* UI chrome / labels */
+}

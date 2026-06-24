@@ -1,53 +1,61 @@
 @import "tailwindcss";
 
-@theme inline {
-  --color-bg0: #100e0a;
-  --color-bg1: #17140e;
-  --color-bg2: #1e1a12;
-  --color-bg3: #262016;
-  --color-line: rgba(201,165,88,.18);
-  --color-line2: rgba(201,165,88,.42);
-  --color-gold: #c9a558;
-  --color-gold2: #e8cf8c;
-  --color-golddeep: #8a6f3a;
-  --color-blue: #7aa6cf;
-  --color-text: #ece4d3;
-  --color-text2: #cfc6b0;
-  --color-textsec: #9b927a;
-  --color-textdim: #6c654f;
+/* Canonical design tokens (mirrors docs/Wayward Design System.html → :root).
+   Edit token values in theme.css; everything below maps Tailwind utilities and
+   global styles onto those variables. */
+@import "./theme.css";
 
-  --font-disp: 'Cinzel', serif;
-  --font-body: 'Quicksand', sans-serif;
-  --font-ui: 'Hanken Grotesk', sans-serif;
+/* Map Tailwind's theme onto the canonical Design System variables. `inline`
+   makes utilities resolve straight to var(--…) so a change in theme.css (or the
+   Design System) propagates without rebuilding token names here. */
+@theme inline {
+  --color-bg0: var(--bg0);
+  --color-bg1: var(--bg1);
+  --color-bg2: var(--bg2);
+  --color-bg3: var(--bg3);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-gold: var(--gold);
+  --color-gold2: var(--gold2);
+  --color-golddeep: var(--golddeep);
+  --color-blue: var(--blue);
+  --color-text: var(--text);
+  --color-text2: var(--text2);
+  --color-textsec: var(--textsec);
+  --color-textdim: var(--textdim);
+
+  --font-disp: var(--fdisp);
+  --font-body: var(--fbody);
+  --font-ui: var(--fui);
 }
 
 html, body, #root {
   height: 100%;
   overflow: hidden;
-  background-color: var(--color-bg0);
-  color: var(--color-text);
-  font-family: var(--font-body);
+  background-color: var(--bg0);
+  color: var(--text);
+  font-family: var(--fbody);
 }
 
 /* Thin scrollbars so they don't eat into padding */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-golddeep) var(--color-bg2);
+  scrollbar-color: var(--golddeep) var(--bg2);
 }
 *::-webkit-scrollbar {
   width: 6px;
 }
 *::-webkit-scrollbar-track {
-  background: var(--color-bg2);
+  background: var(--bg2);
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-golddeep);
+  background: var(--golddeep);
   border-radius: 3px;
 }
 
 /* Cinzel sits high in the line box — small baseline correction.
    Convenience class for cases where an inline pt- isn't cleaner. */
 .font-disp-corrected {
-  font-family: var(--font-disp);
+  font-family: var(--fdisp);
   padding-top: 3px;
 }

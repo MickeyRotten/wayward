@@ -77,7 +77,7 @@ export function LorePanel() {
           <button
             key={tab.id}
             type="button"
-            className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border-[1.5px] transition-colors ${
+            className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
               activeCategory === tab.id
                 ? 'text-gold border-gold/40 bg-gold/5'
                 : 'text-textsec border-line hover:text-text hover:border-line2'
@@ -92,7 +92,7 @@ export function LorePanel() {
       {/* Search input */}
       <div className="px-4 pb-3">
         <input
-          className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+          className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
           placeholder="Search by title or keyword..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -112,7 +112,7 @@ export function LorePanel() {
             <button
               key={entry.id}
               type="button"
-              className={`w-full text-left px-3 py-2.5 border-[1.5px] transition-colors ${
+              className={`w-full text-left px-3 py-2.5 border transition-colors ${
                 isSelected(entry.id)
                   ? 'border-line2 bg-bg0'
                   : 'border-transparent hover:bg-bg2'
@@ -150,13 +150,13 @@ export function LorePanel() {
       <div className="shrink-0 px-4 pb-4">
         <button
           type="button"
-          className="w-full font-ui text-[10px] tracking-wider text-textsec border-[1.5px] border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
+          className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
           onClick={handleCreate}
         >
           + NEW ENTRY
         </button>
         {createError && (
-          <p className="text-[11px] text-red-400 font-body mt-1 px-1">{createError}</p>
+          <p className="text-[11px] text-danger font-body mt-1 px-1">{createError}</p>
         )}
       </div>
     </div>

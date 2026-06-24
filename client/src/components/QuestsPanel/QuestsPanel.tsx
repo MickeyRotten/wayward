@@ -82,7 +82,7 @@ function QuestRow({
   return (
     <button
       type="button"
-      className={`w-full text-left px-3 py-2.5 border-[1.5px] transition-colors ${
+      className={`w-full text-left px-3 py-2.5 border transition-colors ${
         selected
           ? 'border-line2 bg-bg0'
           : 'border-transparent hover:bg-bg2'
@@ -134,7 +134,7 @@ function InactiveSection({
             <button
               key={quest.id}
               type="button"
-              className={`w-full text-left px-3 py-2.5 border-[1.5px] transition-colors ${
+              className={`w-full text-left px-3 py-2.5 border transition-colors ${
                 isSelected(quest.id)
                   ? 'border-line2 bg-bg0'
                   : 'border-transparent hover:bg-bg2'
@@ -144,7 +144,7 @@ function InactiveSection({
               <div className="flex items-center justify-between gap-2">
                 <span className="font-body text-sm text-textdim truncate">{quest.title}</span>
                 <span className={`font-ui text-[9px] tracking-wider shrink-0 ${
-                  quest.status === 'completed' ? 'text-textsec' : 'text-red-400/70'
+                  quest.status === 'completed' ? 'text-textsec' : 'text-danger'
                 }`}>
                   {quest.status === 'completed' ? 'DONE' : 'FAILED'}
                 </span>
@@ -179,7 +179,7 @@ function NewQuestInput() {
   return (
     <div className="px-2 space-y-2">
       <input
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         placeholder="Quest title... (Enter to create)"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -191,7 +191,7 @@ function NewQuestInput() {
         }}
       />
       {error && (
-        <p className="text-[11px] text-red-400 font-body px-1">{error}</p>
+        <p className="text-[11px] text-danger font-body px-1">{error}</p>
       )}
     </div>
   )

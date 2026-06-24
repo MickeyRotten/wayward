@@ -6,11 +6,11 @@ import { useUiStore } from '../../state/uiStore'
 import { PortraitUpload } from '../PortraitUpload'
 
 const RARITY_COLORS: Record<Rarity, string> = {
-  c: 'bg-[#6c654f]',
-  u: 'bg-[#5a9e6f]',
-  r: 'bg-[#7aa6cf]',
-  e: 'bg-[#a67ecf]',
-  l: 'bg-gold',
+  c: 'bg-rarity-c',
+  u: 'bg-rarity-u',
+  r: 'bg-rarity-r',
+  e: 'bg-rarity-e',
+  l: 'bg-rarity-l',
 }
 
 const RARITY_LABELS: Record<Rarity, string> = {
@@ -89,7 +89,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
       <div className="space-y-6 p-6">
         {/* Portrait */}
         {d.basicInfo.portrait && (
-          <div className="w-full aspect-3/4 border-[1.5px] border-line bg-bg2 overflow-hidden">
+          <div className="w-full aspect-3/4 border border-line bg-bg2 overflow-hidden">
             <img
               src={`/portraits/${d.basicInfo.portrait}`}
               alt="Portrait"
@@ -205,7 +205,7 @@ function Field({ label, value, onChange, onBlur, placeholder }: {
     <label className="block">
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -223,7 +223,7 @@ function NumField({ label, value, onChange, onBlur }: {
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
         type="number"
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         onBlur={(e) => (onBlur ?? onChange)(Number(e.target.value) || 0)}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
@@ -239,7 +239,7 @@ function TextArea({ label, value, onChange, onBlur }: {
     <label className="block">
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <textarea
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
         defaultValue={value}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -306,7 +306,7 @@ function EquipSlotField({ label, value, catalog, onChange }: {
     <div className="relative">
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       {currentItem && !open ? (
-        <div className="flex items-center gap-2 w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5">
+        <div className="flex items-center gap-2 w-full border border-line bg-bg0 px-2.5 py-1.5">
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[currentItem.rarity] || RARITY_COLORS.c}`}
             title={RARITY_LABELS[currentItem.rarity] || 'Common'}
@@ -329,7 +329,7 @@ function EquipSlotField({ label, value, catalog, onChange }: {
         <div>
           <input
             ref={inputRef}
-            className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+            className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
             placeholder={currentItem ? currentItem.name : 'Search equipment...'}
             value={search}
             onChange={(e) => { setSearch(e.target.value); setOpen(true) }}

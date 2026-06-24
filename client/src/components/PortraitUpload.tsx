@@ -22,7 +22,7 @@ export function PortraitUpload({
 
   return (
     <div
-      className="relative w-full aspect-[3/4] border-[1.5px] border-line bg-bg2 overflow-hidden cursor-pointer group"
+      className="relative w-full aspect-[3/4] border border-line bg-bg2 overflow-hidden cursor-pointer group"
       onClick={() => inputRef.current?.click()}
     >
       {portraitUrl ? (

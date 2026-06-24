@@ -4,11 +4,11 @@ import { useUiStore } from '../../state/uiStore'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 const RARITY_COLORS: Record<Rarity, string> = {
-  c: 'bg-[#6c654f]',  // gray/dim
-  u: 'bg-[#5a9e6f]',  // green
-  r: 'bg-[#7aa6cf]',  // blue
-  e: 'bg-[#a67ecf]',  // purple
-  l: 'bg-gold',       // gold
+  c: 'bg-rarity-c',  // gray/dim
+  u: 'bg-rarity-u',  // green
+  r: 'bg-rarity-r',  // blue
+  e: 'bg-rarity-e',  // purple
+  l: 'bg-rarity-l',       // gold
 }
 
 const RARITY_LABELS: Record<Rarity, string> = {
@@ -54,7 +54,7 @@ export function ItemsPanel() {
             <button
               key={stack.itemId}
               type="button"
-              className={`w-full text-left px-3 py-2.5 border-[1.5px] transition-colors ${
+              className={`w-full text-left px-3 py-2.5 border transition-colors ${
                 isSelected(stack.itemId)
                   ? 'border-line2 bg-bg0'
                   : 'border-transparent hover:bg-bg2'
@@ -153,7 +153,7 @@ function AddItemSection() {
     <div className="px-2 space-y-2">
       {/* Search input */}
       <input
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         placeholder="Type to search..."
         value={query}
         onChange={(e) => handleSearch(e.target.value)}
@@ -216,7 +216,7 @@ function AddItemSection() {
                 max={selectedItem.maxStack ?? 1}
                 value={quantity}
                 onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-                className="w-16 border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 transition-colors text-center"
+                className="w-16 border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 transition-colors text-center"
               />
             </div>
           )}
@@ -231,7 +231,7 @@ function AddItemSection() {
             </button>
             <button
               type="button"
-              className="font-ui text-[10px] text-textdim border-[1.5px] border-line hover:border-line2 hover:text-text px-3 py-1.5 transition-colors tracking-wider"
+              className="font-ui text-[10px] text-textdim border border-line hover:border-line2 hover:text-text px-3 py-1.5 transition-colors tracking-wider"
               onClick={() => {
                 setSelectedItem(null)
                 setQuery('')
@@ -246,7 +246,7 @@ function AddItemSection() {
 
       {/* Error */}
       {error && (
-        <p className="text-[11px] text-red-400 font-body px-1">{error}</p>
+        <p className="text-[11px] text-danger font-body px-1">{error}</p>
       )}
     </div>
   )

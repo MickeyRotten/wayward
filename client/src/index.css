@@ -27,6 +27,24 @@
   --font-disp: var(--fdisp);
   --font-body: var(--fbody);
   --font-ui: var(--fui);
+
+  /* Border radius scale → rounded-sm (2px) / rounded-md (3px) / rounded-lg (4px) */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+
+  /* Item rarity → bg-rarity-c / text-rarity-r / … */
+  --color-rarity-c: var(--rarity-c);
+  --color-rarity-u: var(--rarity-u);
+  --color-rarity-r: var(--rarity-r);
+  --color-rarity-e: var(--rarity-e);
+  --color-rarity-l: var(--rarity-l);
+
+  /* Destructive → text-danger / border-danger / bg-danger-bg / text-danger-hover */
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-border: var(--danger-border);
+  --color-danger-bg: var(--danger-bg);
 }
 
 html, body, #root {
@@ -37,20 +55,21 @@ html, body, #root {
   font-family: var(--fbody);
 }
 
-/* Thin scrollbars so they don't eat into padding */
+/* Scrollbars (Design System §Components) */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--golddeep) var(--bg2);
+  scrollbar-color: rgba(201, 165, 88, 0.24) transparent;
 }
 *::-webkit-scrollbar {
-  width: 6px;
+  width: 9px;
+  height: 9px;
 }
 *::-webkit-scrollbar-track {
-  background: var(--bg2);
+  background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--golddeep);
-  border-radius: 3px;
+  background: rgba(201, 165, 88, 0.24);
+  border-radius: 9px;
 }
 
 /* Cinzel sits high in the line box — small baseline correction.

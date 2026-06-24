@@ -45,4 +45,22 @@
   --fdisp: 'Cinzel', serif;          /* display / headers / names */
   --fbody: 'Quicksand', sans-serif;  /* body prose */
   --fui:   'Hanken Grotesk', sans-serif; /* UI chrome / labels */
+
+  /* Border radius scale (Design System §Spacing) */
+  --r-sm: 2px;   /* inputs, tags, chips, portraits */
+  --r-md: 3px;   /* cards, panels */
+  --r-lg: 4px;   /* modals */
+
+  /* Item rarity (literal values, Design System §Color) */
+  --rarity-c: #8b8784;  /* common */
+  --rarity-u: #5fa85a;  /* uncommon */
+  --rarity-r: #4a86d8;  /* rare */
+  --rarity-e: #9d63c9;  /* epic */
+  --rarity-l: #e0913a;  /* legendary */
+
+  /* Destructive / danger (Design System §Color) */
+  --danger:        #a96b54;             /* delete button text */
+  --danger-hover:  #c98e76;             /* destructive icon hover */
+  --danger-border: rgba(169,107,84,.35);
+  --danger-bg:     rgba(169,107,84,.10); /* danger hover background */
 }

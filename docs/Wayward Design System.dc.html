@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail" data-bg-color="#100e0a">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#100e0a"/>
+    <rect x="462" y="262" width="276" height="276" fill="none" stroke="#c9a558" stroke-width="9" transform="rotate(45 600 400)"/>
+    <text x="600" y="370" font-family="Georgia,serif" font-size="52" letter-spacing="10" fill="#e8cf8c" text-anchor="middle">WAYWARD</text>
+    <text x="600" y="418" font-family="Georgia,serif" font-size="16" letter-spacing="18" fill="#8a6f3a" text-anchor="middle">DESIGN SYSTEM</text>
+  </svg>
+</template>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #100e0a; }
+  ::-webkit-scrollbar { width: 9px; }
+  ::-webkit-scrollbar-thumb { background: rgba(201,165,88,.24); border-radius: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes wy-pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  @keyframes wy-caret { 0%,48%{opacity:1} 49%,100%{opacity:0} }
+  pre { margin: 0; }
+  code {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: #c9a558;
+    white-space: pre;
+    display: block;
+    overflow-x: auto;
+  }
+  @media print {
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { background: #100e0a !important; }
+    .no-print { display: none !important; }
+  }
+</style>
+</helmet>
+
+<!-- ROOT -->
+<div style="--bg0:#100e0a;--bg1:#17140e;--bg2:#1e1a12;--bg3:#262016;--line:rgba(201,165,88,.18);--line2:rgba(201,165,88,.42);--gold:#c9a558;--gold2:#e8cf8c;--golddeep:#8a6f3a;--blue:#7aa6cf;--text:#ece4d3;--text2:#cfc6b0;--textsec:#9b927a;--textdim:#6c654f;--fdisp:'Cinzel',serif;--fbody:'Quicksand',sans-serif;--fui:'Hanken Grotesk',sans-serif;background:var(--bg0);color:var(--text);font-family:var(--fui);min-height:100vh">
+
+  <!-- STICKY NAV -->
+  <nav class="no-print" style="position:sticky;top:0;z-index:100;background:rgba(16,14,10,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:0;padding:0 48px">
+    <div style="display:flex;align-items:center;gap:14px;padding:16px 0;border-right:1px solid var(--line);padding-right:28px;margin-right:4px">
+      <span style="width:14px;height:14px;border:1.5px solid var(--gold);transform:rotate(45deg);flex:none"></span>
+      <span style="font-family:var(--fdisp);font-size:13px;letter-spacing:.1em;color:var(--gold2)">Wayward</span>
+      <span style="font-family:var(--fui);font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--textdim)">Design System</span>
+    </div>
+    <div style="display:flex;gap:0;flex:1;overflow-x:auto">
+      <a href="#philosophy" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Philosophy</a>
+      <a href="#colors" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Color</a>
+      <a href="#typography" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Typography</a>
+      <a href="#spacing" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Spacing</a>
+      <a href="#components" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Components</a>
+      <a href="#layout" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Layout</a>
+      <a href="#tokens" style="font-family:var(--fui);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--textsec);text-decoration:none;padding:18px 16px;white-space:nowrap" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Token Reference</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <header style="padding:96px 48px 80px;max-width:960px;border-bottom:1px solid var(--line)">
+    <div style="display:flex;align-items:center;gap:18px;margin-bottom:32px">
+      <span style="width:22px;height:22px;border:2px solid var(--gold);transform:rotate(45deg);flex:none"></span>
+      <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--textdim)">Wayward · v1.0 · 2026</span>
+    </div>
+    <h1 style="font-family:var(--fdisp);font-size:52px;color:var(--gold2);letter-spacing:.04em;margin:0 0 20px;padding-top:4px;line-height:1.1;text-wrap:balance">Design System</h1>
+    <p style="font-family:var(--fbody);font-size:17px;line-height:1.72;color:var(--text2);margin:0;max-width:640px;text-wrap:pretty">A complete visual language for Wayward — an LLM-powered tabletop narrator interface. All colors, typography, spacing, and component patterns documented for implementation in any environment.</p>
+  </header>
+
+  <div style="max-width:960px;padding:0 48px 120px">
+
+    <!-- ═══════════════════════════ PHILOSOPHY ═══════════════════════════ -->
+    <section id="philosophy" style="padding-top:72px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">01</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Philosophy</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:40px">
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:20px 22px">
+          <div style="font-family:var(--fdisp);font-size:15px;color:var(--gold2);margin-bottom:10px;padding-top:2px">Manuscript at Night</div>
+          <div style="font-family:var(--fbody);font-size:13px;line-height:1.65;color:var(--text2)">Dark, warm, gold-accented. Evokes old parchment and candlelight without being literal about it.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:20px 22px">
+          <div style="font-family:var(--fdisp);font-size:15px;color:var(--gold2);margin-bottom:10px;padding-top:2px">Amber Warmth</div>
+          <div style="font-family:var(--fbody);font-size:13px;line-height:1.65;color:var(--text2)">No gradients on backgrounds, no neon, no hard whites. Every surface carries amber warmth.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:20px 22px">
+          <div style="font-family:var(--fdisp);font-size:15px;color:var(--gold2);margin-bottom:10px;padding-top:2px">Typographic Hierarchy</div>
+          <div style="font-family:var(--fbody);font-size:13px;line-height:1.65;color:var(--text2)">Three distinct typefaces: display, body, and UI chrome — each with a precise role, never mixed.</div>
+        </div>
+      </div>
+
+      <div style="border:1px solid rgba(201,165,88,.28);border-radius:3px;background:rgba(201,165,88,.04);padding:20px 24px">
+        <div style="font-family:var(--fui);font-size:8px;letter-spacing:.26em;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Core Principle</div>
+        <div style="font-family:var(--fbody);font-size:15px;line-height:1.7;color:var(--text)">Every surface has amber warmth. Text is never pure white. Backgrounds are never pure black. The entire palette exists on a narrow warm-amber axis — even the coolest accent (steel blue, <code style="display:inline;font-size:13px;color:var(--blue);background:none;white-space:normal">--blue</code>) leans warm.</div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ COLORS ═══════════════════════════ -->
+    <section id="colors" style="padding-top:80px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">02</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Color</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <!-- Backgrounds -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Backgrounds — Four Depth Levels</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:36px">
+        <div>
+          <div style="height:72px;border-radius:3px;background:#100e0a;border:1px solid rgba(201,165,88,.1)"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--bg0</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#100e0a</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Near-black shell, chat area</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:72px;border-radius:3px;background:#17140e;border:1px solid rgba(201,165,88,.1)"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--bg1</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#17140e</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Primary panels, sidebars</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:72px;border-radius:3px;background:#1e1a12;border:1px solid rgba(201,165,88,.1)"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--bg2</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#1e1a12</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Cards, inputs, secondary</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:72px;border-radius:3px;background:#262016;border:1px solid rgba(201,165,88,.1)"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--bg3</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#262016</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Elevated cards, icon thumbs</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Borders -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Borders</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:36px">
+        <div style="border-radius:3px;background:var(--bg1);padding:18px;border:1px solid rgba(201,165,88,.18)">
+          <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--line</div>
+          <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">rgba(201,165,88,.18)</div>
+          <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:4px">Subtle dividers, default card borders</div>
+        </div>
+        <div style="border-radius:3px;background:var(--bg1);padding:18px;border:1px solid rgba(201,165,88,.42)">
+          <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--line2</div>
+          <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">rgba(201,165,88,.42)</div>
+          <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:4px">Strong borders, selection state, focus rings</div>
+        </div>
+      </div>
+
+      <!-- Gold scale -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Gold Accent Scale</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:36px">
+        <div>
+          <div style="height:56px;border-radius:3px;background:#c9a558"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--gold</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#c9a558</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Primary: active tabs, CTAs, selection bars</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:56px;border-radius:3px;background:#e8cf8c"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--gold2</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#e8cf8c</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Brighter: hover states, text highlights, links</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:56px;border-radius:3px;background:#8a6f3a"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--golddeep</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#8a6f3a</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Muted: disabled states, decorative only</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Semantic + Text -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Semantic Accent</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:36px">
+        <div>
+          <div style="height:56px;border-radius:3px;background:#7aa6cf"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">--blue</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#7aa6cf</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Player character</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:56px;border-radius:3px;background:#c98e76"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">danger</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#c98e76</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Destructive hover (literal)</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:56px;border-radius:3px;background:#a96b54"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">danger-text</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">#a96b54</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Delete button text</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:56px;border-radius:3px;background:rgba(169,107,84,.35);border:1px solid rgba(169,107,84,.35)"></div>
+          <div style="margin-top:9px">
+            <div style="font-family:var(--fui);font-size:9px;letter-spacing:.12em;color:var(--text)">danger-bd</div>
+            <div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--textsec);margin-top:2px">rgba(169,107,84,.35)</div>
+            <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:3px">Delete button border</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Text scale -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Text Scale — Warm Off-Whites</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);overflow:hidden;margin-bottom:36px">
+        <div style="display:flex;align-items:baseline;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--fbody);font-size:20px;color:#ece4d3;min-width:180px">Primary Text</span>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textsec)">--text · #ece4d3</code>
+          <span style="font-family:var(--fbody);font-size:11px;color:var(--textdim)">Body text, headings</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--fbody);font-size:20px;color:#cfc6b0;min-width:180px">Secondary Text</span>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textsec)">--text2 · #cfc6b0</code>
+          <span style="font-family:var(--fbody);font-size:11px;color:var(--textdim)">Narrator prose, descriptions</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--fbody);font-size:20px;color:#9b927a;min-width:180px">Section Labels</span>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textsec)">--textsec · #9b927a</code>
+          <span style="font-family:var(--fbody);font-size:11px;color:var(--textdim)">Subtitles, metadata</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px;padding:14px 20px">
+          <span style="font-family:var(--fbody);font-size:20px;color:#6c654f;min-width:180px">Dimmed Text</span>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textsec)">--textdim · #6c654f</code>
+          <span style="font-family:var(--fbody);font-size:11px;color:var(--textdim)">Placeholders, disabled, timestamps</span>
+        </div>
+      </div>
+
+      <!-- Item rarity -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Item Rarity Colors</div>
+      <div style="display:flex;gap:10px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:10px 14px;flex:1">
+          <span style="width:3px;height:32px;border-radius:1px;background:#8b8784;flex:none"></span>
+          <div><div style="font-family:var(--fui);font-size:9px;color:var(--text)">Common</div><div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--textdim);margin-top:2px">#8b8784</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:10px 14px;flex:1">
+          <span style="width:3px;height:32px;border-radius:1px;background:#5fa85a;flex:none"></span>
+          <div><div style="font-family:var(--fui);font-size:9px;color:var(--text)">Uncommon</div><div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--textdim);margin-top:2px">#5fa85a</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:10px 14px;flex:1">
+          <span style="width:3px;height:32px;border-radius:1px;background:#4a86d8;flex:none"></span>
+          <div><div style="font-family:var(--fui);font-size:9px;color:var(--text)">Rare</div><div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--textdim);margin-top:2px">#4a86d8</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:10px 14px;flex:1">
+          <span style="width:3px;height:32px;border-radius:1px;background:#9d63c9;flex:none"></span>
+          <div><div style="font-family:var(--fui);font-size:9px;color:var(--text)">Epic</div><div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--textdim);margin-top:2px">#9d63c9</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:10px 14px;flex:1">
+          <span style="width:3px;height:32px;border-radius:1px;background:#e0913a;flex:none"></span>
+          <div><div style="font-family:var(--fui);font-size:9px;color:var(--text)">Legendary</div><div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--textdim);margin-top:2px">#e0913a</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ TYPOGRAPHY ═══════════════════════════ -->
+    <section id="typography" style="padding-top:80px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">03</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Typography</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <!-- Font families -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:48px">
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;overflow:hidden">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">--fdisp · Display</div>
+          <div style="font-family:'Cinzel',serif;font-size:34px;color:var(--gold2);line-height:1;padding-top:3px;letter-spacing:.03em">Cinzel</div>
+          <div style="font-family:'Cinzel',serif;font-size:16px;color:var(--text);margin-top:12px;padding-top:2px">ABCDEFGHIJKLM<br>NOPQRSTUVWXYZ</div>
+          <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:14px;line-height:1.5">Names, headers, character titles. Apply <strong style="color:var(--textsec)">padding-top: 2–3px</strong> to correct ascent — Cinzel glyphs sit high in their line box.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;overflow:hidden">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">--fbody · Body</div>
+          <div style="font-family:'Quicksand',sans-serif;font-size:34px;color:var(--text2);line-height:1">Quicksand</div>
+          <div style="font-family:'Quicksand',sans-serif;font-size:14px;color:var(--text2);margin-top:12px;line-height:1.62">The rain falls in slow silver threads across the ruined orrery.</div>
+          <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:14px;line-height:1.5">Narration prose, descriptions, card body text. Target: Spectral in production.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;overflow:hidden">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">--fui · Interface</div>
+          <div style="font-family:'Hanken Grotesk',sans-serif;font-size:28px;color:var(--text);line-height:1;letter-spacing:.03em">Hanken</div>
+          <div style="font-family:'Hanken Grotesk',sans-serif;font-size:9px;letter-spacing:.3em;text-transform:uppercase;color:var(--textsec);margin-top:14px">SECTION LABEL · 3 OF 12</div>
+          <div style="font-family:'Hanken Grotesk',sans-serif;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-top:8px">Active Tab · Config</div>
+          <div style="font-family:var(--fbody);font-size:11px;color:var(--textdim);margin-top:14px;line-height:1.5">All chrome: buttons, labels, tabs, section headers. Always uppercase + letter-spacing.</div>
+        </div>
+      </div>
+
+      <!-- Type scale -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:16px">Type Scale</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);overflow:hidden;margin-bottom:12px">
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Cinzel',serif;font-size:23px;color:var(--gold2);padding-top:3px;letter-spacing:.05em">Panel Header</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fdisp · 23px · gold2 · ls .05em · pt 3px</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Cinzel',serif;font-size:19px;color:var(--text);padding-top:3px;letter-spacing:.02em">Character Name</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fdisp · 19px · text · pt 3px</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Cinzel',serif;font-size:16px;color:var(--text);padding-top:2px">Card Title</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fdisp · 16px · text · pt 2px</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Cinzel',serif;font-size:14px;color:var(--text);padding-top:2px">Small Display</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fdisp · 14px · text · pt 2px</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Quicksand',sans-serif;font-size:18px;line-height:1.74;color:#cfc6b0">Narrator prose flows here</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fbody · 18px · lh 1.74 · text2</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Quicksand',sans-serif;font-size:17px;line-height:1.62;color:#ece4d3">Player response text</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fbody · 17px · lh 1.62 · text</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Quicksand',sans-serif;font-size:13px;line-height:1.65;color:#cfc6b0">Description body copy</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fbody · 13px · lh 1.65 · text2</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Hanken Grotesk',sans-serif;font-size:9px;letter-spacing:.26em;text-transform:uppercase;color:#c9a558">Section Divider</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fui · 9px · ls .26em · upper · gold</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px;border-bottom:1px solid var(--line)">
+          <div style="min-width:220px">
+            <div style="font-family:'Hanken Grotesk',sans-serif;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#9b927a">Card Subtitle · Meta</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fui · 8px · ls .18em · upper · textsec</code>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:20px;padding:16px 20px">
+          <div style="min-width:220px">
+            <div style="font-family:'Hanken Grotesk',sans-serif;font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:#6c654f">Tab Label · Icon Rail</div>
+          </div>
+          <code style="display:inline;background:none;font-size:11px;color:var(--textdim)">fui · 7px · ls .14em · upper · textdim</code>
+        </div>
+      </div>
+
+      <!-- Drop cap note -->
+      <div style="border:1px solid rgba(201,165,88,.28);border-radius:3px;background:rgba(201,165,88,.04);padding:16px 20px;margin-top:16px">
+        <div style="font-family:var(--fui);font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Drop Cap · Narrator Opening</div>
+        <div style="display:flex;align-items:flex-start;gap:16px">
+          <p style="font-family:'Quicksand',sans-serif;font-size:15px;line-height:1.72;color:var(--text2);margin:0;max-width:520px">
+            <span style="float:left;font-family:'Cinzel',serif;font-size:54px;line-height:.82;padding:7px 11px 0 0;color:var(--gold)">R</span>ain has found the broken dome, and it falls in slow silver threads across the ruined orrery.</p>
+          <code style="display:block;flex:1;font-size:10.5px;line-height:1.7;color:var(--textsec);background:none">float:left; fdisp; 62px;<br>lh:.82; pt:7px; pr:13px;<br>color: var(--gold)</code>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ SPACING ═══════════════════════════ -->
+    <section id="spacing" style="padding-top:80px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">04</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Spacing &amp; Radius</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px">
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:22px">
+          <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:18px">Padding &amp; Gap</div>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:64px;height:12px;background:var(--gold);opacity:.6;border-radius:1px;flex:none"></div>
+              <div>
+                <span style="font-family:var(--fbody);font-size:12px;color:var(--text)">16–18px</span>
+                <span style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textdim);margin-left:10px">Panel padding</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:48px;height:12px;background:var(--gold);opacity:.5;border-radius:1px;flex:none"></div>
+              <div>
+                <span style="font-family:var(--fbody);font-size:12px;color:var(--text)">10–13px</span>
+                <span style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textdim);margin-left:10px">Card padding</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:28px;height:12px;background:var(--gold);opacity:.4;border-radius:1px;flex:none"></div>
+              <div>
+                <span style="font-family:var(--fbody);font-size:12px;color:var(--text)">7–9px</span>
+                <span style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textdim);margin-left:10px">Gap between cards</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:80px;height:12px;background:var(--gold);opacity:.35;border-radius:1px;flex:none"></div>
+              <div>
+                <span style="font-family:var(--fbody);font-size:12px;color:var(--text)">20–24px</span>
+                <span style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textdim);margin-left:10px">Gap between sections</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:22px">
+          <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:18px">Border Radius</div>
+          <div style="display:flex;gap:20px;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              <div style="width:48px;height:48px;background:var(--bg3);border:1px solid var(--line);border-radius:2px"></div>
+              <div style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textsec);text-align:center">2px<br><span style="color:var(--textdim);letter-spacing:0">inputs, tags</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              <div style="width:48px;height:48px;background:var(--bg3);border:1px solid var(--line);border-radius:3px"></div>
+              <div style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textsec);text-align:center">3px<br><span style="color:var(--textdim);letter-spacing:0">cards, panels</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              <div style="width:48px;height:48px;background:var(--bg3);border:1px solid var(--line);border-radius:4px"></div>
+              <div style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textsec);text-align:center">4px<br><span style="color:var(--textdim);letter-spacing:0">modals</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              <div style="width:48px;height:48px;background:var(--bg3);border:1px solid var(--line);border-radius:9px"></div>
+              <div style="font-family:var(--fui);font-size:9px;letter-spacing:.1em;color:var(--textsec);text-align:center">9px<br><span style="color:var(--textdim);letter-spacing:0">scrollbar</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ COMPONENTS ═══════════════════════════ -->
+    <section id="components" style="padding-top:80px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">05</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Components</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <!-- BUTTONS -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Buttons</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:#100e0a;background:#c9a558;border-radius:2px;padding:8px 14px;cursor:pointer">Primary Action</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--textsec);border:1px solid var(--line);border-radius:2px;padding:8px 14px;cursor:pointer">Secondary</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:#a96b54;border:1px solid rgba(169,107,84,.35);border-radius:2px;padding:8px 14px;cursor:pointer">Delete Entry</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);border:none;background:none;cursor:pointer">＋ Add New</span>
+        </div>
+        <pre><code>/* Primary */
+color: #100e0a; background: var(--gold); border-radius: 2px; padding: 8px 14px;
+font-family: var(--fui); font-size: 8.5px; letter-spacing: .16em; text-transform: uppercase;
+hover: background: var(--gold2)
+
+/* Secondary / Ghost */
+color: var(--textsec); border: 1px solid var(--line); border-radius: 2px; padding: 8px 14px;
+
+/* Danger */
+color: #a96b54; border: 1px solid rgba(169,107,84,.35); border-radius: 2px; padding: 8px 14px;
+hover: background: rgba(169,107,84,.1)
+
+/* Text / Inline */
+color: var(--gold); no border; hover: color: var(--gold2)</code></pre>
+      </div>
+
+      <!-- TAGS / CHIPS -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Tags &amp; Chips</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:#e8cf8c;border:1px solid rgba(201,165,88,.18);background:rgba(201,165,88,.06);border-radius:2px;padding:3px 7px">Gold Chip</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:7.5px;letter-spacing:.14em;text-transform:uppercase;color:#100e0a;background:#c9a558;border-radius:2px;padding:3px 7px">Permanent</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#9b927a;border:1px solid rgba(201,165,88,.18);background:rgba(201,165,88,.06);border-radius:2px;padding:2px 6px">Human · Cartographer</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:#100e0a;background:#c9a558;border-radius:2px;padding:2px 6px">Player</span>
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:7.5px;letter-spacing:.15em;text-transform:uppercase;color:#e8cf8c;border:1px solid rgba(201,165,88,.35);border-radius:2px;padding:4px 8px">Top of Prompt</span>
+        </div>
+        <pre><code>/* Standard chip */
+border: 1px solid var(--line); background: rgba(201,165,88,.06); border-radius: 2px; padding: 2px 6px;
+font-family: var(--fui); font-size: 8px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold2);
+
+/* Filled badge (Permanent, Player role) */
+background: var(--gold); color: #100e0a; /* same sizing */</code></pre>
+      </div>
+
+      <!-- SECTION DIVIDER -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Section Divider</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:20px">
+          <span style="font-family:'Hanken Grotesk',sans-serif;font-size:9px;letter-spacing:.26em;text-transform:uppercase;color:#c9a558">Equipment</span>
+          <span style="flex:1;height:1px;background:rgba(201,165,88,.18)"></span>
+        </div>
+        <pre><code>display: flex; align-items: center; gap: 11px; margin-bottom: 12px;
+
+  &lt;span&gt; /* label */
+    font-family: var(--fui); font-size: 9px; letter-spacing: .26em;
+    text-transform: uppercase; color: var(--gold);
+  &lt;span style="flex:1; height:1px; background:var(--line)"&gt;</code></pre>
+      </div>
+
+      <!-- CARDS -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Cards — List Items</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:24px">
+          <!-- Default card -->
+          <div style="position:relative;display:flex;gap:12px;padding:12px;background:var(--bg1);border:1px solid var(--line);border-radius:3px;cursor:pointer">
+            <div style="width:38px;height:38px;border:1px solid rgba(201,165,88,.42);border-radius:2px;background:radial-gradient(120% 110% at 50% 18%,#262016,#0c0a07);display:flex;align-items:center;justify-content:center;flex:none"><span style="font-size:18px;color:#c9a558;opacity:.9;line-height:1">⚗</span></div>
+            <div style="flex:1">
+              <div style="font-family:'Cinzel',serif;font-size:16px;color:#ece4d3;padding-top:2px;line-height:1.05">Fractured Lens Array</div>
+              <div style="font-family:'Hanken Grotesk',sans-serif;font-size:7.5px;letter-spacing:.2em;text-transform:uppercase;color:#9b927a;margin-top:6px">Point of Interest</div>
+            </div>
+          </div>
+          <!-- Selected card -->
+          <div style="position:relative;display:flex;gap:12px;padding:12px;background:var(--bg2);border:1px solid var(--line);border-radius:3px;cursor:pointer">
+            <span style="position:absolute;left:0;top:10px;bottom:10px;width:2px;background:#c9a558"></span>
+            <div style="width:38px;height:38px;border:1px solid rgba(201,165,88,.42);border-radius:2px;background:radial-gradient(120% 110% at 50% 18%,#262016,#0c0a07);display:flex;align-items:center;justify-content:center;flex:none"><span style="font-size:18px;color:#c9a558;opacity:.9;line-height:1">🗝</span></div>
+            <div style="flex:1">
+              <div style="font-family:'Cinzel',serif;font-size:16px;color:#ece4d3;padding-top:2px;line-height:1.05">Warden's Lockbox</div>
+              <div style="font-family:'Hanken Grotesk',sans-serif;font-size:7.5px;letter-spacing:.2em;text-transform:uppercase;color:#9b927a;margin-top:6px">Interactable</div>
+            </div>
+          </div>
+        </div>
+        <pre><code>/* Default */
+position: relative; display: flex; gap: 12px; padding: 12px;
+background: var(--bg1); border: 1px solid var(--line); border-radius: 3px; cursor: pointer;
+
+/* Selected — bg shifts + 2px left accent bar */
+background: var(--bg2);
+  &lt;span position:absolute; left:0; top:10px; bottom:10px; width:2px; background:var(--gold)&gt;
+
+/* Portrait thumbnail */
+width: 38px; height: 38px; border: 1px solid var(--line2); border-radius: 2px;
+background: radial-gradient(120% 110% at 50% 18%, var(--bg3), #0c0a07);
+
+/* PC portrait — blue border + glyph */
+border: 1px solid var(--blue); /* glyph: color: var(--blue) */</code></pre>
+      </div>
+
+      <!-- INPUTS -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Inputs &amp; Textareas</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;flex-direction:column;gap:12px;max-width:480px;margin-bottom:20px">
+          <div>
+            <label style="display:block;font-family:'Hanken Grotesk',sans-serif;font-size:7.5px;letter-spacing:.2em;text-transform:uppercase;color:#9b927a;margin-bottom:5px">Field Label</label>
+            <input placeholder="Text input…" style="width:100%;background:#1e1a12;border:1px solid rgba(201,165,88,.18);border-radius:2px;padding:10px 12px;color:#ece4d3;font-family:'Quicksand',sans-serif;font-size:13px;outline:none;caret-color:#c9a558">
+          </div>
+          <div>
+            <label style="display:block;font-family:'Hanken Grotesk',sans-serif;font-size:7.5px;letter-spacing:.2em;text-transform:uppercase;color:#9b927a;margin-bottom:5px">Narrative Content</label>
+            <textarea rows="3" placeholder="Prose textarea…" style="width:100%;background:#1e1a12;border:1px solid rgba(201,165,88,.18);border-radius:2px;padding:10px 12px;color:#cfc6b0;font-family:'Quicksand',sans-serif;font-size:13px;line-height:1.6;outline:none;resize:none;caret-color:#c9a558"></textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;background:#1e1a12;border:1px solid rgba(201,165,88,.18);border-radius:2px;padding:6px 10px">
+            <input placeholder="Inline search input…" style="flex:1;background:transparent;border:none;outline:none;font-family:'Quicksand',sans-serif;font-size:12px;color:#ece4d3;caret-color:#c9a558">
+          </div>
+        </div>
+        <pre><code>/* All inputs */
+background: var(--bg2); border: 1px solid var(--line); border-radius: 2px;
+padding: 10px 12px; color: var(--text); outline: none; caret-color: var(--gold);
+font-family: var(--fbody); font-size: 13px; /* prose fields */
+font-family: var(--fui); /* short label fields */
+
+/* Label above */
+font-family: var(--fui); font-size: 7.5px; letter-spacing: .2em; text-transform: uppercase;
+color: var(--textsec); display: block; margin-bottom: 4–5px;</code></pre>
+      </div>
+
+      <!-- INLINE MESSAGE HOVER TOOLBAR -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Message Hover Toolbar</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="position:relative;display:inline-block;margin-bottom:20px">
+          <p style="font-family:'Quicksand',sans-serif;font-size:18px;line-height:1.74;color:#cfc6b0;margin:0;max-width:480px">Rain has found the broken dome, and it falls in slow silver threads across the flooded floor.</p>
+          <div style="position:absolute;top:-8px;right:-2px;display:flex;gap:1px;background:#1e1a12;border:1px solid rgba(201,165,88,.18);border-radius:3px;padding:2px">
+            <span style="cursor:pointer;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9b927a">✎</span>
+            <span style="cursor:pointer;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9b927a">↻</span>
+            <span style="cursor:pointer;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9b927a">✕</span>
+          </div>
+        </div>
+        <pre><code>position: absolute; top: -8px; right: -2px;
+display: flex; gap: 1px;
+background: var(--bg2); border: 1px solid var(--line); border-radius: 3px; padding: 2px;
+opacity: 0; transition: opacity .14s;  /* show on parent hover */
+
+  icon button: width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+  font-size: 12–14px; color: var(--textsec);
+  hover: color: var(--gold2);         /* edit/regen */
+  hover: color: #c98e76;              /* delete */</code></pre>
+      </div>
+
+      <!-- PORTRAIT THUMBNAIL -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Portrait Thumbnails</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:20px">
+          <!-- NPC / scene glyph -->
+          <div style="width:38px;height:38px;border:1px solid rgba(201,165,88,.42);border-radius:2px;background:radial-gradient(120% 110% at 50% 18%,#262016,#0c0a07);display:flex;align-items:center;justify-content:center">
+            <span style="font-size:18px;color:#c9a558;opacity:.9;line-height:1">⚗</span>
+          </div>
+          <!-- Small member -->
+          <div style="width:40px;height:48px;border:1px solid rgba(201,165,88,.42);border-radius:2px;background:radial-gradient(120% 110% at 50% 18%,#262016,#0c0a07);display:flex;align-items:center;justify-content:center">
+            <span style="font-family:'Cinzel',serif;font-size:20px;color:#c9a558;opacity:.88;padding-top:3px">T</span>
+          </div>
+          <!-- PC card (blue) -->
+          <div style="width:50px;height:60px;border:1px solid #7aa6cf;border-radius:2px;background:radial-gradient(120% 90% at 50% 18%,#262016,#0c0a07);display:flex;align-items:center;justify-content:center">
+            <span style="font-family:'Cinzel',serif;font-size:27px;color:#7aa6cf;opacity:.92;padding-top:3px">S</span>
+          </div>
+          <!-- Inspector large -->
+          <div style="width:96px;height:108px;border:1px solid rgba(201,165,88,.42);border-radius:2px;background:radial-gradient(120% 110% at 50% 18%,#262016,#0c0a07);display:flex;align-items:center;justify-content:center">
+            <span style="font-family:'Cinzel',serif;font-size:48px;color:#c9a558;opacity:.8;padding-top:4px">M</span>
+          </div>
+        </div>
+        <pre><code>/* Base */
+border: 1px solid var(--line2); border-radius: 2px;
+background: radial-gradient(120% 110% at 50% 18%, var(--bg3), #0c0a07);
+display: flex; align-items: center; justify-content: center;
+
+/* NPC / scene: glyph font-size ~50–60% of container; color: var(--gold) */
+/* PC (player): border: 1px solid var(--blue); glyph color: var(--blue) */
+/* Glyph: font-family: var(--fdisp); padding-top: 3–4px (Cinzel ascent fix) */</code></pre>
+      </div>
+
+      <!-- MESSAGE DIVIDER -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Message Divider</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:14px;opacity:.55;margin-bottom:20px">
+          <span style="flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(201,165,88,.42))"></span>
+          <span style="width:5px;height:5px;border:1px solid #8a6f3a;transform:rotate(45deg);flex:none"></span>
+          <span style="flex:1;height:1px;background:linear-gradient(90deg,rgba(201,165,88,.42),transparent)"></span>
+        </div>
+        <pre><code>display: flex; align-items: center; gap: 14px; opacity: .55;
+
+  left line:  flex:1; height:1px; background: linear-gradient(90deg, transparent, var(--line2))
+  diamond:    width:5px; height:5px; border:1px solid var(--golddeep); transform:rotate(45deg)
+  right line: flex:1; height:1px; background: linear-gradient(90deg, var(--line2), transparent)</code></pre>
+      </div>
+
+      <!-- TYPING INDICATOR -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Typing Indicator</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;gap:5px;align-items:center;margin-bottom:20px">
+          <span style="width:6px;height:6px;border-radius:50%;background:#c9a558;animation:wy-pulse 1.2s ease-in-out infinite;animation-delay:0s"></span>
+          <span style="width:6px;height:6px;border-radius:50%;background:#c9a558;animation:wy-pulse 1.2s ease-in-out infinite;animation-delay:.22s"></span>
+          <span style="width:6px;height:6px;border-radius:50%;background:#c9a558;animation:wy-pulse 1.2s ease-in-out infinite;animation-delay:.44s"></span>
+        </div>
+        <pre><code>@keyframes wy-pulse {
+  0%, 100% { opacity: .3 }
+  50%       { opacity: 1  }
+}
+
+/* Three gold dots */
+width: 6px; height: 6px; border-radius: 50%; background: var(--gold);
+animation: wy-pulse 1.2s ease-in-out infinite;
+animation-delay: 0s / .22s / .44s;</code></pre>
+      </div>
+
+      <!-- DECORATIVE ELEMENTS -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Decorative Elements</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;gap:32px;align-items:center;margin-bottom:20px">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <span style="width:18px;height:18px;border:1.5px solid #c9a558;transform:rotate(45deg)"></span>
+            <span style="font-family:var(--fui);font-size:8px;letter-spacing:.1em;color:var(--textdim)">Logo mark</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <span style="width:14px;height:14px;border:1.5px solid #c9a558;transform:rotate(45deg)"></span>
+            <span style="font-family:var(--fui);font-size:8px;letter-spacing:.1em;color:var(--textdim)">Nav mark</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <span style="width:5px;height:5px;border:1px solid #8a6f3a;transform:rotate(45deg)"></span>
+            <span style="font-family:var(--fui);font-size:8px;letter-spacing:.1em;color:var(--textdim)">Divider pip</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#c9a558;box-shadow:0 0 7px #c9a558"></span>
+            <span style="font-family:var(--fui);font-size:8px;letter-spacing:.1em;color:var(--textdim)">Status dot</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div style="width:72px;height:40px;background-image:radial-gradient(rgba(201,165,88,.18) 1.1px,transparent 1.3px);background-size:21px 21px;background-color:#1b1710;border-radius:2px"></div>
+            <span style="font-family:var(--fui);font-size:8px;letter-spacing:.1em;color:var(--textdim)">Dot grain</span>
+          </div>
+        </div>
+        <pre><code>/* Diamond logo mark */
+width: 18px; height: 18px; border: 1.5px solid var(--gold); transform: rotate(45deg);
+
+/* Status dot (online / active) */
+width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 7px var(--gold);
+
+/* Dot-grain texture (chat banner) */
+background-image: radial-gradient(rgba(201,165,88,.18) 1.1px, transparent 1.3px);
+background-size: 21px 21px;
+
+/* Blink caret (inline edit) */
+@keyframes wy-caret { 0%,48%{opacity:1} 49%,100%{opacity:0} }
+animation: wy-caret 1.1s step-end infinite;</code></pre>
+      </div>
+
+      <!-- LOREBOOK ENTRY CARD -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Lorebook Entry Card</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:24px">
+        <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:20px;max-width:520px">
+          <div style="border:1px solid rgba(201,165,88,.42);border-radius:3px;background:var(--bg2);overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
+              <span style="font-family:'Cinzel',serif;font-size:14px;color:#ece4d3;flex:1;padding-top:2px">Salt Wraith</span>
+              <span style="font-family:'Hanken Grotesk',sans-serif;font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#6c654f">🔑 wraith, salt, lights</span>
+              <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#100e0a;background:#c9a558;border-radius:2px;padding:4px 9px;cursor:pointer">On</span>
+              <span style="font-size:14px;color:#6c654f;cursor:pointer">✎</span>
+            </div>
+            <div style="padding:0 12px 10px;font-family:'Quicksand',sans-serif;font-size:12px;line-height:1.55;color:#9b927a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">A spectral remnant of a Lenskeeper who died mid-ritual. It drifts silently through the galleries…</div>
+          </div>
+          <div style="border:1px solid rgba(201,165,88,.18);border-radius:3px;background:var(--bg2);overflow:hidden;opacity:.55">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
+              <span style="font-family:'Cinzel',serif;font-size:14px;color:#ece4d3;flex:1;padding-top:2px">Stellar Compendium</span>
+              <span style="font-family:'Hanken Grotesk',sans-serif;font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:#100e0a;background:#c9a558;border-radius:2px;padding:3px 7px">Permanent</span>
+              <span style="font-family:'Hanken Grotesk',sans-serif;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#9b927a;border:1px solid rgba(201,165,88,.18);border-radius:2px;padding:4px 9px;cursor:pointer">Off</span>
+              <span style="font-size:14px;color:#6c654f;cursor:pointer">✎</span>
+            </div>
+            <div style="padding:0 12px 10px;font-family:'Quicksand',sans-serif;font-size:12px;line-height:1.55;color:#9b927a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">The observatory's master catalog of stellar observations, maintained for three centuries…</div>
+          </div>
+        </div>
+        <pre><code>/* Enabled */  border: 1px solid var(--line2); background: var(--bg2); opacity: 1;
+/* Disabled */ border: 1px solid var(--line);  background: var(--bg2); opacity: 0.55;
+
+/* Toggle chip: On  */ background: var(--gold);  color: #100e0a;
+/* Toggle chip: Off */ background: none; border: 1px solid var(--line); color: var(--textsec);</code></pre>
+      </div>
+
+      <!-- SCROLLBAR -->
+      <div style="font-family:var(--fui);font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--textdim);margin-bottom:14px">Scrollbar</div>
+      <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:24px;margin-bottom:8px">
+        <pre><code>::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: rgba(201,165,88,.24); border-radius: 9px; }
+::-webkit-scrollbar-track { background: transparent; }</code></pre>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ LAYOUT ═══════════════════════════ -->
+    <section id="layout" style="padding-top:80px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">06</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Layout</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <div style="font-family:var(--fbody);font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:24px">The application shell is a 4-column CSS grid. Each column has a fixed role; the chat column is fluid.</div>
+
+      <!-- Grid diagram -->
+      <div style="display:grid;grid-template-columns:66px 288px minmax(0,1fr) 344px;gap:4px;margin-bottom:24px">
+        <div style="background:rgba(201,165,88,.12);border:1px solid var(--line);border-radius:2px;padding:12px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:80px">
+          <div style="font-family:var(--fui);font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:center">Icon<br>Rail</div>
+          <div style="font-family:ui-monospace,monospace;font-size:9px;color:var(--textdim)">66px</div>
+        </div>
+        <div style="background:rgba(201,165,88,.08);border:1px solid var(--line);border-radius:2px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+          <div style="font-family:var(--fui);font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:center">Left Panel</div>
+          <div style="font-family:ui-monospace,monospace;font-size:9px;color:var(--textdim)">288px</div>
+        </div>
+        <div style="background:rgba(201,165,88,.05);border:1px solid var(--line);border-radius:2px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+          <div style="font-family:var(--fui);font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:center">Chat Area</div>
+          <div style="font-family:ui-monospace,monospace;font-size:9px;color:var(--textdim)">minmax(0, 1fr)</div>
+        </div>
+        <div style="background:rgba(201,165,88,.08);border:1px solid var(--line);border-radius:2px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+          <div style="font-family:var(--fui);font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:center">Inspector</div>
+          <div style="font-family:ui-monospace,monospace;font-size:9px;color:var(--textdim)">344px</div>
+        </div>
+      </div>
+      <pre style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:20px;margin-bottom:32px"><code>display: grid;
+grid-template-columns: 66px 288px minmax(0, 1fr) 344px;
+width: 100vw; height: 100vh; overflow: hidden;</code></pre>
+
+      <!-- Column notes -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:18px">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Icon Rail · 66px</div>
+          <div style="font-family:var(--fbody);font-size:12px;line-height:1.6;color:var(--text2)">background: var(--bg2). Tab items are flex-column, center-aligned, 12px vertical padding. Active tab: 2px left gold bar + gold text. Inactive: var(--textsec) text.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:18px">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Left Panel · 288px</div>
+          <div style="font-family:var(--fbody);font-size:12px;line-height:1.6;color:var(--text2)">background: var(--bg1). Flex-column, height 100vh. Fixed header (border-bottom, 20px padding) + scrollable body (flex:1, overflow-y:auto).</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:18px">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Chat · fluid</div>
+          <div style="font-family:var(--fbody);font-size:12px;line-height:1.6;color:var(--text2)">background: linear-gradient(180deg, #13110c, #100e0a). Fixed scene banner (134px) + scrollable message list (flex:1) + fixed composer. Chat max-width: 660px, margin: 0 auto, padding: 0 34px.</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:18px">
+          <div style="font-family:var(--fui);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:10px">Inspector · 344px</div>
+          <div style="font-family:var(--fbody);font-size:12px;line-height:1.6;color:var(--text2)">background: var(--bg1). Fixed header with entity portrait, View/Edit tab switcher + scrollable body. All entity kinds share the same shell; content swaps conditionally.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ TOKEN REFERENCE ═══════════════════════════ -->
+    <section id="tokens" style="padding-top:80px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px">
+        <span style="font-family:var(--fui);font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)">07</span>
+        <span style="font-family:var(--fdisp);font-size:28px;color:var(--text);letter-spacing:.04em;padding-top:3px">Token Reference</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+      <div style="font-family:var(--fbody);font-size:13px;line-height:1.65;color:var(--text2);margin-bottom:20px">Copy this block onto the root layout element. All tokens are CSS custom properties; inline-style usage looks like <code style="display:inline;background:none;font-size:12px;color:var(--gold2)">color: var(--gold)</code>.</div>
+      <div style="border:1px solid var(--line2);border-radius:3px;background:var(--bg2);padding:24px 26px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <span style="font-family:var(--fui);font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold)">CSS Custom Properties</span>
+          <span id="copy-btn" onClick="copyTokens()" style="font-family:var(--fui);font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:var(--textsec);border:1px solid var(--line);border-radius:2px;padding:5px 11px;cursor:pointer" onMouseOver="this.style.color='var(--gold2)'" onMouseOut="this.style.color='var(--textsec)'">Copy</span>
+        </div>
+        <code id="token-block">/* ── Backgrounds ─────────────────────────── */
+--bg0: #100e0a;     /* near-black shell, chat area           */
+--bg1: #17140e;     /* primary panels, sidebars              */
+--bg2: #1e1a12;     /* cards, inputs, secondary panels       */
+--bg3: #262016;     /* elevated cards, icon thumbnails       */
+
+/* ── Borders ──────────────────────────────── */
+--line:  rgba(201,165,88,.18);  /* subtle dividers, card borders  */
+--line2: rgba(201,165,88,.42);  /* selection state, focus rings   */
+
+/* ── Gold accent ──────────────────────────── */
+--gold:     #c9a558;  /* primary: active tabs, CTAs, bars   */
+--gold2:    #e8cf8c;  /* brighter: hover, text highlights   */
+--golddeep: #8a6f3a;  /* muted: disabled, decorative        */
+
+/* ── Semantic ─────────────────────────────── */
+--blue: #7aa6cf;    /* player character                      */
+
+/* ── Text ─────────────────────────────────── */
+--text:    #ece4d3;  /* primary body text                    */
+--text2:   #cfc6b0;  /* narrator prose, descriptions         */
+--textsec: #9b927a;  /* subtitles, metadata, card labels     */
+--textdim: #6c654f;  /* placeholders, disabled, timestamps   */
+
+/* ── Fonts ────────────────────────────────── */
+--fdisp: 'Cinzel', serif;           /* names, headers, titles       */
+--fbody: 'Quicksand', sans-serif;   /* narration, descriptions      */
+--fui:   'Hanken Grotesk', sans-serif; /* all chrome, uppercase     */</code>
+      </div>
+
+      <div style="margin-top:20px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:20px 24px">
+        <div style="font-family:var(--fui);font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:14px">Google Fonts Import</div>
+        <pre><code>&lt;link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700
+  &amp;family=Quicksand:wght@400;500;600;700
+  &amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"&gt;</code></pre>
+      </div>
+
+      <div style="margin-top:20px;border:1px solid var(--line);border-radius:3px;background:var(--bg1);padding:20px 24px">
+        <div style="font-family:var(--fui);font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:14px">Rarity Literal Values (not tokens)</div>
+        <pre><code>Common:    #8b8784   Uncommon: #5fa85a   Rare:      #4a86d8
+Epic:      #9d63c9   Legendary: #e0913a
+
+/* Danger (delete) */
+color:      #a96b54
+border:     1px solid rgba(169,107,84,.35)
+hover-bg:   rgba(169,107,84,.10)
+hover-text: #c98e76   /* icon hover */</code></pre>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- FOOTER -->
+  <footer style="border-top:1px solid var(--line);padding:32px 48px;display:flex;align-items:center;gap:20px;max-width:960px">
+    <span style="width:14px;height:14px;border:1.5px solid var(--golddeep);transform:rotate(45deg);flex:none"></span>
+    <span style="font-family:var(--fui);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--textdim)">Wayward Design System · 2026 · Dark Fantasy Narrator Interface</span>
+  </footer>
+</div>
+
+<script>
+function copyTokens() {
+  const block = document.getElementById('token-block');
+  navigator.clipboard.writeText(block.textContent).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.style.color = 'var(--gold2)';
+    btn.style.borderColor = 'var(--line2)';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.style.color = 'var(--textsec)';
+      btn.style.borderColor = 'var(--line)';
+    }, 1800);
+  });
+}
+</script>
+
+</x-dc>
+</body>
+</html>

@@ -147,7 +147,7 @@ export function ChatScene() {
     <div className="flex flex-col h-full">
       {/* Chat header — location + time/weather banner (does not scroll) */}
       <div
-        className="flex-shrink-0 border-b-[1.5px] border-line2 bg-bg2 px-4 pt-3 pb-2.5 flex items-start justify-between gap-3"
+        className="flex-shrink-0 border-b border-line2 bg-bg2 px-4 pt-3 pb-2.5 flex items-start justify-between gap-3"
         style={{
           backgroundImage:
             'radial-gradient(circle, rgba(201,165,88,0.08) 1px, transparent 1px)',
@@ -259,7 +259,7 @@ export function ChatScene() {
         {/* Generating indicator — narrator avatar with animated dots */}
         {isLoading && !streamingContent && (
           <div className="flex items-start gap-3 mr-auto px-1 py-3">
-            <div className="w-10 h-10 rounded-sm border-[1.5px] border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
               <span className="font-disp text-[16px] text-gold pt-[2px]">N</span>
             </div>
             <div className="pt-2">
@@ -269,7 +269,7 @@ export function ChatScene() {
         )}
 
         {error && (
-          <div className="mr-auto bg-bg1 border-[1.5px] border-line px-4 py-3">
+          <div className="mr-auto bg-bg1 border border-line px-4 py-3">
             <p className="font-ui text-[10px] text-textdim">{error}</p>
           </div>
         )}
@@ -291,14 +291,14 @@ export function ChatScene() {
       )}
 
       {/* Input */}
-      <div className="border-t-[1.5px] border-line2 p-3 bg-bg1">
+      <div className="border-t border-line2 p-3 bg-bg1">
         <div className="flex items-end gap-2">
           {/* Tools button + dropdown (opens above) */}
           <div className="relative shrink-0">
             {toolsOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setToolsOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 w-44 bg-bg2 border-[1.5px] border-line2 z-20 py-1">
+                <div className="absolute bottom-full left-0 mb-2 w-44 bg-bg2 border border-line2 z-20 py-1">
                   <ToolMenuItem
                     label="Regenerate"
                     disabled={!showInputRegenerate}
@@ -324,7 +324,7 @@ export function ChatScene() {
               type="button"
               title="Tools"
               aria-label="Tools"
-              className={`border-[1.5px] px-2.5 py-2 transition-colors ${
+              className={`border px-2.5 py-2 transition-colors ${
                 toolsOpen ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
               }`}
               onClick={() => setToolsOpen((o) => !o)}
@@ -337,7 +337,7 @@ export function ChatScene() {
 
           <textarea
             ref={inputRef}
-            className="flex-1 border-[1.5px] border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none max-h-[160px] overflow-y-auto"
+            className="flex-1 border border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none max-h-[160px] overflow-y-auto"
             rows={1}
             placeholder={apiKeySet ? 'What do you do?' : 'Set API key in Settings...'}
             value={input}
@@ -466,7 +466,7 @@ function Portrait({
 
   return (
     <div
-      className={`w-10 h-10 rounded-sm border-[1.5px] bg-bg2 flex items-center justify-center flex-shrink-0 overflow-hidden ${borderColor}`}
+      className={`w-10 h-10 rounded-sm border bg-bg2 flex items-center justify-center flex-shrink-0 overflow-hidden ${borderColor}`}
     >
       {src ? (
         <img
@@ -566,7 +566,7 @@ function MessageBubble({
 
             {/* Message content */}
             <div
-              className="bg-bg2 border-[1.5px] border-line px-4 py-3 cursor-pointer"
+              className="bg-bg2 border border-line px-4 py-3 cursor-pointer"
               onClick={() => {
                 if (!editing && message.id > 0) setEditing(true)
               }}
@@ -790,7 +790,7 @@ function ChangeNotices({
                   {name}
                 </span>
                 <span
-                  className={`font-ui text-xs ${positive ? 'text-emerald-400' : 'text-rose-400'}`}
+                  className={`font-ui text-xs ${positive ? 'text-gold2' : 'text-danger'}`}
                 >
                   {sign}{Math.abs(d.delta)}
                 </span>
@@ -918,7 +918,7 @@ const EditArea = forwardRef<
       <textarea
         ref={ref}
         title="Edit message"
-        className="w-full text-sm font-body text-text bg-bg0 border-[1.5px] border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
+        className="w-full text-sm font-body text-text bg-bg0 border border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -1018,8 +1018,8 @@ function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg0/80">
-      <div className="bg-bg1 border-[1.5px] border-line2 w-[720px] max-w-[90vw] max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 border-b-[1.5px] border-line2">
+      <div className="bg-bg1 border border-line2 w-[720px] max-w-[90vw] max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line2">
           <h2 className="font-ui text-[11px] tracking-wider">PROMPT LOG</h2>
           <button
             type="button"
@@ -1035,7 +1035,7 @@ function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; o
               <span className="font-ui text-[9px] tracking-wider text-textsec uppercase">
                 {m.role}
               </span>
-              <pre className="text-[12px] font-body text-text leading-relaxed whitespace-pre-wrap bg-bg0 border-[1.5px] border-line p-3 overflow-x-auto">
+              <pre className="text-[12px] font-body text-text leading-relaxed whitespace-pre-wrap bg-bg0 border border-line p-3 overflow-x-auto">
                 {m.content}
               </pre>
             </div>

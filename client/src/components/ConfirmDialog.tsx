@@ -21,7 +21,7 @@ export function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg0/80">
-      <div className="bg-bg1 border-[1.5px] border-line2 w-[360px] p-5 space-y-4">
+      <div className="bg-bg1 border border-line2 w-[360px] p-5 space-y-4">
         <p className="text-sm font-body text-text leading-relaxed">{message}</p>
         <div className="flex gap-3">
           <button
@@ -33,7 +33,7 @@ export function ConfirmDialog({
           </button>
           <button
             type="button"
-            className="font-ui text-[10px] text-textdim border-[1.5px] border-line px-4 py-2 hover:border-line2 transition-colors"
+            className="font-ui text-[10px] text-textdim border border-line px-4 py-2 hover:border-line2 transition-colors"
             onClick={onCancel}
           >
             CANCEL

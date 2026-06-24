@@ -116,7 +116,7 @@ export function PartyInspector() {
               {/* View/Edit toggle */}
               <button
                 type="button"
-                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border-[1.5px] transition-colors ${
+                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
                   mode === 'view'
                     ? 'text-textsec border-line hover:text-text hover:border-line2'
                     : 'text-gold border-gold/40 hover:border-gold/60'
@@ -184,11 +184,11 @@ const RARITY_LABELS: Record<Rarity, string> = {
 }
 
 const RARITY_TEXT_COLORS: Record<Rarity, string> = {
-  c: 'text-[#6c654f]',
-  u: 'text-[#5a9e6f]',
-  r: 'text-[#7aa6cf]',
-  e: 'text-[#a67ecf]',
-  l: 'text-gold',
+  c: 'text-rarity-c',
+  u: 'text-rarity-u',
+  r: 'text-rarity-r',
+  e: 'text-rarity-e',
+  l: 'text-rarity-l',
 }
 
 const ITEM_TYPES: ItemType[] = ['Equipment', 'Tool', 'Consumable', 'Key Item', 'Artifact', 'Other']
@@ -282,7 +282,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
               </span>
               <button
                 type="button"
-                className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line hover:border-line2 px-2 py-1 transition-colors"
+                className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors"
                 onClick={async () => {
                   setRemoveError('')
                   try {
@@ -296,7 +296,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
               </button>
             </div>
             {removeError && (
-              <p className="text-[11px] text-red-400 font-body mt-1">{removeError}</p>
+              <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>
             )}
           </ItemSection>
         )}
@@ -312,7 +312,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
       <div className="flex items-start justify-end">
         <button
           type="button"
-          className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
+          className="font-ui text-[9px] text-textdim hover:text-text border border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
           onClick={() => setShowDeleteConfirm(true)}
         >
           DELETE ITEM
@@ -326,7 +326,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  className="font-ui text-[9px] text-textdim border-[1.5px] border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
+                  className="font-ui text-[9px] text-textdim border border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
                   onClick={() => setShowDeleteConfirm(false)}
                 >
                   CANCEL
@@ -361,7 +361,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
           <label className="block">
             <span className="text-[11px] text-textdim font-body block mb-0.5">Type</span>
             <select
-              className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
               defaultValue={d.type ?? 'Other'}
               onChange={(e) => update('type', e.target.value, true)}
             >
@@ -375,7 +375,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
           <label className="block">
             <span className="text-[11px] text-textdim font-body block mb-0.5">Rarity</span>
             <select
-              className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
               defaultValue={d.rarity ?? 'c'}
               onChange={(e) => update('rarity', e.target.value, true)}
             >
@@ -451,7 +451,7 @@ function ItemField({ label, value, onChange, onBlur, placeholder }: {
     <label className="block">
       {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
       <input
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -469,7 +469,7 @@ function ItemNumField({ label, value, onChange, onBlur }: {
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       <input
         type="number"
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         onBlur={(e) => (onBlur ?? onChange)(Number(e.target.value) || 0)}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
@@ -485,7 +485,7 @@ function ItemTextArea({ label, value, onChange, onBlur, placeholder }: {
     <label className="block">
       {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
       <textarea
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
         defaultValue={value}
         placeholder={placeholder}
@@ -558,7 +558,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
               ? 'text-gold'
               : quest.status === 'completed'
                 ? 'text-textsec'
-                : 'text-red-400/70'
+                : 'text-danger'
           }`}>
             {quest.status.toUpperCase()}
           </span>
@@ -649,7 +649,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
       <div className="flex items-start justify-end">
         <button
           type="button"
-          className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
+          className="font-ui text-[9px] text-textdim hover:text-text border border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
           onClick={() => setShowDeleteConfirm(true)}
         >
           DELETE QUEST
@@ -663,7 +663,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  className="font-ui text-[9px] text-textdim border-[1.5px] border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
+                  className="font-ui text-[9px] text-textdim border border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
                   onClick={() => setShowDeleteConfirm(false)}
                 >
                   CANCEL
@@ -696,7 +696,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
           <label className="block">
             <span className="text-[11px] text-textdim font-body block mb-0.5">Status</span>
             <select
-              className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
               defaultValue={d.status ?? 'active'}
               onChange={(e) => update('status', e.target.value, true)}
             >
@@ -741,7 +741,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
           {/* Add objective */}
           <div className="flex items-center gap-2 pt-1">
             <input
-              className="flex-1 border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              className="flex-1 border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
               placeholder="New objective... (Enter)"
               value={newObjText}
               onChange={(e) => setNewObjText(e.target.value)}
@@ -783,7 +783,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
                 <button
                   key={loreEntry.id}
                   type="button"
-                  className={`w-full text-left flex items-center gap-2.5 px-2 py-1.5 border-[1.5px] transition-colors ${
+                  className={`w-full text-left flex items-center gap-2.5 px-2 py-1.5 border transition-colors ${
                     linked
                       ? 'border-gold/30 bg-gold/5'
                       : 'border-transparent hover:bg-bg2'
@@ -834,7 +834,7 @@ function ObjectiveEditRow({
     return (
       <div className="flex-1 flex items-center gap-1.5">
         <input
-          className="flex-1 border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 transition-colors"
+          className="flex-1 border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 transition-colors"
           value={editText}
           onChange={(e) => setEditText(e.target.value)}
           onKeyDown={(e) => {
@@ -873,7 +873,7 @@ function ObjectiveEditRow({
       </span>
       <button
         type="button"
-        className="font-ui text-[9px] text-textdim opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all shrink-0"
+        className="font-ui text-[9px] text-textdim opacity-0 group-hover:opacity-100 hover:text-danger-hover transition-all shrink-0"
         onClick={onDelete}
         title="Delete objective"
       >
@@ -899,7 +899,7 @@ function QuestField({ label, value, onChange, onBlur, placeholder }: {
     <label className="block">
       {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
       <input
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -914,7 +914,7 @@ function QuestTextArea({ value, onChange, onBlur, placeholder }: {
 }) {
   return (
     <textarea
-      className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
+      className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
       rows={3}
       defaultValue={value}
       placeholder={placeholder}
@@ -1039,13 +1039,13 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
       {/* Delete button — hidden for locked entries (e.g. the Scenario) */}
       <div className="flex items-start justify-end">
         {entry.locked ? (
-          <span className="font-ui text-[9px] tracking-wider uppercase text-textdim border-[1.5px] border-line px-2 py-1 shrink-0">
+          <span className="font-ui text-[9px] tracking-wider uppercase text-textdim border border-line px-2 py-1 shrink-0">
             Locked · cannot delete
           </span>
         ) : (
           <button
             type="button"
-            className="font-ui text-[9px] text-textdim hover:text-text border-[1.5px] border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
+            className="font-ui text-[9px] text-textdim hover:text-text border border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
             onClick={() => setShowDeleteConfirm(true)}
           >
             DELETE ENTRY
@@ -1060,7 +1060,7 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  className="font-ui text-[9px] text-textdim border-[1.5px] border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
+                  className="font-ui text-[9px] text-textdim border border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
                   onClick={() => setShowDeleteConfirm(false)}
                 >
                   CANCEL
@@ -1095,7 +1095,7 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
           <label className="block">
             <span className="text-[11px] text-textdim font-body block mb-0.5">Category</span>
             <select
-              className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
               defaultValue={d.cat ?? 'world'}
               onChange={(e) => update('cat', e.target.value, true)}
             >
@@ -1168,7 +1168,7 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
 
           {/* Add keyword input */}
           <input
-            className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+            className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
             placeholder="Type keyword + Enter"
             value={newKeyword}
             onChange={(e) => setNewKeyword(e.target.value)}
@@ -1207,7 +1207,7 @@ function LoreField({ label, value, onChange, onBlur, placeholder }: {
     <label className="block">
       {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
       <input
-        className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
@@ -1222,7 +1222,7 @@ function LoreTextArea({ value, onChange, onBlur, placeholder }: {
 }) {
   return (
     <textarea
-      className="w-full border-[1.5px] border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
+      className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
       rows={4}
       defaultValue={value}
       placeholder={placeholder}

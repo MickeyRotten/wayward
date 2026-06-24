@@ -119,7 +119,7 @@ export function SettingsPanel() {
             </span>
             <input
               type="password"
-              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
               placeholder={settings.apiKeySet ? '••••••••' : 'Enter your OpenRouter API key'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -128,7 +128,7 @@ export function SettingsPanel() {
           {settings.availableModels.length === 0 && (
             <button
               type="button"
-              className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1 hover:border-line2"
+              className="font-ui text-[10px] text-textsec border border-line px-3 py-1 hover:border-line2"
               onClick={() => settings.fetchModels()}
             >
               LOAD MODELS
@@ -142,7 +142,7 @@ export function SettingsPanel() {
             <span className="text-[11px] text-textdim font-body">Model</span>
             {settings.availableModels.length > 0 ? (
               <select
-                className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
                 value={modelId}
                 onChange={(e) => {
                   setModelId(e.target.value)
@@ -159,7 +159,7 @@ export function SettingsPanel() {
               </select>
             ) : (
               <input
-                className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
                 placeholder="e.g. anthropic/claude-sonnet-4.6"
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
@@ -175,7 +175,7 @@ export function SettingsPanel() {
               <span className="text-[11px] text-textdim font-body">Top K ({topK})</span>
               <input
                 type="number"
-                className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
                 value={topK}
                 min={0}
                 onChange={(e) => setTopK(Math.max(0, Number(e.target.value) || 0))}
@@ -188,7 +188,7 @@ export function SettingsPanel() {
               <span className="text-[11px] text-textdim font-body">Max Tokens</span>
               <input
                 type="number"
-                className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
                 value={maxTokens}
                 onChange={(e) => setMaxTokens(Number(e.target.value) || 1000)}
               />
@@ -205,7 +205,7 @@ export function SettingsPanel() {
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Narrator Instructions</span>
             <textarea
-              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
+              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
               rows={5}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
@@ -215,7 +215,7 @@ export function SettingsPanel() {
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">First Message</span>
             <textarea
-              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={firstMessage}
               placeholder="The opening narration shown before the player's first turn."
@@ -229,7 +229,7 @@ export function SettingsPanel() {
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Action Protocol</span>
             <textarea
-              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={actionInstruction}
               onChange={(e) => setActionInstruction(e.target.value)}
@@ -242,7 +242,7 @@ export function SettingsPanel() {
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Spotlight Rule</span>
             <textarea
-              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={spotlightRule}
               onChange={(e) => setSpotlightRule(e.target.value)}
@@ -255,7 +255,7 @@ export function SettingsPanel() {
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Post-History Instructions</span>
             <textarea
-              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={postHistory}
               placeholder="Added to the very end of the prompt, right before your message. Empty by default."
@@ -278,7 +278,7 @@ export function SettingsPanel() {
             <input
               type="number"
               min={1}
-              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+              className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
               value={maxPartySize}
               onChange={(e) => setMaxPartySize(Math.max(1, Number(e.target.value) || 3))}
             />
@@ -291,7 +291,7 @@ export function SettingsPanel() {
             <input
               type="number"
               min={1}
-              className="w-full border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+              className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
               value={maxCarrySlots}
               onChange={(e) => setMaxCarrySlots(Math.max(1, Number(e.target.value) || 12))}
             />
@@ -387,13 +387,13 @@ function FragmentRow({
       <input
         type="number"
         title={`${label} injection order`}
-        className="w-[64px] border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+        className="w-[64px] border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
         value={order}
         onChange={(e) => onOrder(Number(e.target.value) || 0)}
       />
       <select
         title={`${label} injection position`}
-        className="w-[110px] border-[1.5px] border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2"
+        className="w-[110px] border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2"
         value={position}
         onChange={(e) => onPosition(e.target.value as LorebookConfig['injectionPosition'][LoreCategory])}
       >
@@ -416,7 +416,7 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="border-[1.5px] border-line">
+    <section className="border border-line">
       <button
         type="button"
         className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-bg2 transition-colors"
@@ -489,26 +489,26 @@ function AdventureManagement() {
 
   return (
     <>
-      <section className="space-y-2 border-t-[1.5px] border-line pt-4 mt-2">
+      <section className="space-y-2 border-t border-line pt-4 mt-2">
         <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase">Adventure</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
+            className="font-ui text-[10px] text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
             onClick={handleExport}
           >
             EXPORT
           </button>
           <button
             type="button"
-            className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
+            className="font-ui text-[10px] text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
             onClick={() => importRef.current?.click()}
           >
             IMPORT
           </button>
           <button
             type="button"
-            className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
+            className="font-ui text-[10px] text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
             onClick={handleReset}
           >
             NEW ADVENTURE

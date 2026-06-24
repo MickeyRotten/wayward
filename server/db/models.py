@@ -43,6 +43,8 @@ class NarratorConfig(Base):
     # Empty string => fall back to the built-in default at prompt-build time.
     action_instruction: Mapped[str] = mapped_column(Text, default="")
     spotlight_rule: Mapped[str] = mapped_column(Text, default="")
+    # Appended after everything else, immediately before the user's message.
+    post_history_instructions: Mapped[str] = mapped_column(Text, default="")
     # The opening narration shown before the player's first turn (drop-capped,
     # included in context). Editable in Config.
     first_message: Mapped[str] = mapped_column(Text, default="")

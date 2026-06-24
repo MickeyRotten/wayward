@@ -10,16 +10,20 @@ _model_cache: dict[str, tuple[float, list[dict]]] = {}
 MODEL_CACHE_TTL = 300  # 5 minutes
 
 
-async def fetch_models(api_key: str) -> list[dict]:
+async def fetch_models(api_key: str = "") -> list[dict]:
+    # OpenRouter's /models endpoint is public; the key is optional. Cache under a
+    # stable key so the keyless list is reused too.
     now = time.time()
-    cached = _model_cache.get(api_key)
+    cache_key = api_key or "_public"
+    cached = _model_cache.get(cache_key)
     if cached and now - cached[0] < MODEL_CACHE_TTL:
         return cached[1]
 
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient() as client:
         res = await client.get(
             f"{OPENROUTER_BASE}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=headers,
             timeout=30,
         )
         res.raise_for_status()
@@ -34,7 +38,7 @@ async def fetch_models(api_key: str) -> list[dict]:
         for m in data
     ]
     models.sort(key=lambda m: m["name"])
-    _model_cache[api_key] = (now, models)
+    _model_cache[cache_key] = (now, models)
     return models
 
 

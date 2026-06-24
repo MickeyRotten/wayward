@@ -84,6 +84,7 @@ class NarratorUpdate(BaseModel):
     actionInstruction: str | None = None
     spotlightRule: str | None = None
     firstMessage: str | None = None
+    postHistoryInstructions: str | None = None
 
 
 class NarratorResponse(BaseModel):
@@ -91,6 +92,7 @@ class NarratorResponse(BaseModel):
     actionInstruction: str
     spotlightRule: str
     firstMessage: str
+    postHistoryInstructions: str
 
 
 # --- OpenRouter Settings ---

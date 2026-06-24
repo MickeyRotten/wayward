@@ -12,15 +12,24 @@ from server.db.models import (
 )
 
 
-def _resolve_equip_name(item_id: str | None, catalog_lookup: dict[str, str]) -> str | None:
-    """Resolve an equipment slot value to an item name using the catalog lookup dict.
+def _format_equipment(equip: dict, catalog_lookup: dict[str, tuple[str, str]]) -> str:
+    """Format an equipment dict into a prompt string including item descriptions.
 
-    Returns the item name if found, the raw value as fallback (backwards compat),
-    or None if the slot is empty.
+    Each equipped slot renders as ``slot: Name — description`` so the Narrator
+    knows what each worn item actually is. Falls back to the raw id for any
+    value not found in the catalog. Returns "nothing equipped" when empty.
     """
-    if not item_id:
-        return None
-    return catalog_lookup.get(item_id, item_id)
+    parts: list[str] = []
+    for slot, item_id in equip.items():
+        if not item_id:
+            continue
+        entry = catalog_lookup.get(item_id)
+        if entry:
+            name, desc = entry
+            parts.append(f"{slot}: {name} — {desc}" if desc else f"{slot}: {name}")
+        else:
+            parts.append(f"{slot}: {item_id}")
+    return "; ".join(parts) if parts else "nothing equipped"
 
 
 def build_prompt(
@@ -41,11 +50,11 @@ def build_prompt(
 ) -> list[dict]:
     messages: list[dict] = []
 
-    # Build catalog lookup: id -> name
-    catalog_lookup: dict[str, str] = {}
+    # Build catalog lookup: id -> (name, description)
+    catalog_lookup: dict[str, tuple[str, str]] = {}
     if item_catalog:
         for cat_item in item_catalog:
-            catalog_lookup[cat_item.id] = cat_item.title
+            catalog_lookup[cat_item.id] = (cat_item.title, cat_item.content or "")
 
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})
@@ -64,14 +73,7 @@ def build_prompt(
     pc_info = player_character.basic_info
     pc_equip = player_character.equipment
 
-    equipped = [
-        f"{slot}: {resolved}"
-        for slot, item_id in pc_equip.items()
-        if item_id
-        for resolved in [_resolve_equip_name(item_id, catalog_lookup)]
-        if resolved
-    ]
-    equip_str = ", ".join(equipped) if equipped else "nothing equipped"
+    equip_str = _format_equipment(pc_equip, catalog_lookup)
 
     pc_summary = (
         f"PLAYER CHARACTER: {pc_info.get('name', 'Unknown')}, "
@@ -87,14 +89,7 @@ def build_prompt(
         for pm in party_members:
             info = pm.basic_info
             skill = pm.field_skill
-            equipped_pm = [
-                f"{slot}: {resolved}"
-                for slot, item_id in pm.equipment.items()
-                if item_id
-                for resolved in [_resolve_equip_name(item_id, catalog_lookup)]
-                if resolved
-            ]
-            equip_pm_str = ", ".join(equipped_pm) if equipped_pm else "nothing equipped"
+            equip_pm_str = _format_equipment(pm.equipment, catalog_lookup)
             lines = [
                 f"  {info.get('name', 'Unknown')} — {info.get('species', 'unknown')}. "
                 f"{info.get('description', '')}",
@@ -178,6 +173,12 @@ def build_prompt(
     # 10. Lorebook entries with injectionPosition = 'before_input'
     if lore_groups["before_input"]:
         messages.append({"role": "system", "content": format_lore_block(lore_groups["before_input"])})
+
+    # 10b. Post-history instructions — always last, right before the user's
+    #      message (user-editable in Config, empty by default).
+    post_history = getattr(narrator_config, "post_history_instructions", "") or ""
+    if post_history.strip():
+        messages.append({"role": "system", "content": post_history})
 
     # 11. Player's new message
     messages.append({"role": "user", "content": player_message})

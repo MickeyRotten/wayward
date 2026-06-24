@@ -230,6 +230,7 @@ def _narrator_response(n: NarratorConfig) -> NarratorResponse:
         actionInstruction=n.action_instruction or ACTION_INSTRUCTION,
         spotlightRule=n.spotlight_rule or DEFAULT_SPOTLIGHT_RULE,
         firstMessage=n.first_message or "",
+        postHistoryInstructions=n.post_history_instructions or "",
     )
 
 
@@ -260,6 +261,8 @@ async def update_narrator(
         n.spotlight_rule = data.spotlightRule
     if data.firstMessage is not None:
         n.first_message = data.firstMessage
+    if data.postHistoryInstructions is not None:
+        n.post_history_instructions = data.postHistoryInstructions
     await session.commit()
     return _narrator_response(n)
 
@@ -989,6 +992,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "actionInstruction": narrator.action_instruction if narrator else "",
             "spotlightRule": narrator.spotlight_rule if narrator else "",
             "firstMessage": narrator.first_message if narrator else "",
+            "postHistoryInstructions": narrator.post_history_instructions if narrator else "",
         },
         "chatMessages": [
             {
@@ -1093,6 +1097,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         action_instruction=nar.get("actionInstruction", ""),
         spotlight_rule=nar.get("spotlightRule", ""),
         first_message=nar.get("firstMessage", ""),
+        post_history_instructions=nar.get("postHistoryInstructions", ""),
     ))
 
     # Restore chat
@@ -1214,11 +1219,12 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
 
 @router.get("/models")
 async def list_models(session: AsyncSession = Depends(get_session)):
+    # OpenRouter's model list is public, so this works without an API key —
+    # the dropdown can be populated before the user has entered one.
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    if not settings or not settings.api_key:
-        raise HTTPException(400, "OpenRouter API key not configured")
+    api_key = settings.api_key if settings else ""
     try:
-        models = await fetch_models(settings.api_key)
+        models = await fetch_models(api_key)
         return models
     except Exception as e:
         raise HTTPException(502, f"Failed to fetch models: {e}")

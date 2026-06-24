@@ -43,6 +43,7 @@ export function SettingsPanel() {
   const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
   const [actionInstruction, setActionInstruction] = useState(narrator.actionInstruction)
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
+  const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -64,16 +65,18 @@ export function SettingsPanel() {
     setFirstMessage(narrator.firstMessage)
     setActionInstruction(narrator.actionInstruction)
     setSpotlightRule(narrator.spotlightRule)
-  }, [narrator.instructions, narrator.firstMessage, narrator.actionInstruction, narrator.spotlightRule])
+    setPostHistory(narrator.postHistoryInstructions)
+  }, [narrator.instructions, narrator.firstMessage, narrator.actionInstruction, narrator.spotlightRule, narrator.postHistoryInstructions])
 
-  // Load the model list automatically when Config opens (once an API key is
-  // set) so the model dropdown is ready to pick from without a manual click.
+  // Load the model list automatically when Config opens. OpenRouter's model
+  // list is public, so this works even before an API key is entered — the
+  // dropdown is ready to pick from immediately.
   useEffect(() => {
     const s = useSettingsStore.getState()
-    if (s.apiKeySet && s.availableModels.length === 0) {
+    if (s.availableModels.length === 0) {
       s.fetchModels()
     }
-  }, [settings.apiKeySet])
+  }, [])
 
   const saveAll = async () => {
     await settings.saveSettings({
@@ -91,7 +94,7 @@ export function SettingsPanel() {
       maxCarrySlots,
       maxPartySize,
     })
-    await narrator.save({ instructions, firstMessage, actionInstruction, spotlightRule })
+    await narrator.save({ instructions, firstMessage, actionInstruction, spotlightRule, postHistoryInstructions: postHistory })
     // Carry-slot capacity is derived server-side; refetch inventory so the
     // Items panel reflects the new max immediately.
     await useItemsStore.getState().fetchInventory()
@@ -122,7 +125,7 @@ export function SettingsPanel() {
               onChange={(e) => setApiKey(e.target.value)}
             />
           </label>
-          {settings.apiKeySet && settings.availableModels.length === 0 && (
+          {settings.availableModels.length === 0 && (
             <button
               type="button"
               className="font-ui text-[10px] text-textsec border-[1.5px] border-line px-3 py-1 hover:border-line2"
@@ -246,6 +249,20 @@ export function SettingsPanel() {
             />
             <span className="text-[10px] text-textdim font-body">
               Governs when party members speak. Advanced.
+            </span>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Post-History Instructions</span>
+            <textarea
+              className="w-full border-[1.5px] border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              rows={4}
+              value={postHistory}
+              placeholder="Added to the very end of the prompt, right before your message. Empty by default."
+              onChange={(e) => setPostHistory(e.target.value)}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Always injected last, immediately before your input.
             </span>
           </label>
 

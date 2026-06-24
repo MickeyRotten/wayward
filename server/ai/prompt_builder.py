@@ -2,7 +2,6 @@ from server.ai.lore_injector import format_lore_block, group_by_position, match_
 from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.db.models import (
     ChatMessage,
-    ItemCatalogEntry,
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
@@ -32,7 +31,7 @@ def build_prompt(
     player_message: str,
     spotlight_block: str | None = None,
     story_summary: str | None = None,
-    item_catalog: list[ItemCatalogEntry] | None = None,
+    item_catalog: list[LorebookEntry] | None = None,
     quests: list[Quest] | None = None,
     quest_objectives: list[QuestObjective] | None = None,
     lore_entries: list[LorebookEntry] | None = None,
@@ -46,7 +45,7 @@ def build_prompt(
     catalog_lookup: dict[str, str] = {}
     if item_catalog:
         for cat_item in item_catalog:
-            catalog_lookup[cat_item.id] = cat_item.name
+            catalog_lookup[cat_item.id] = cat_item.title
 
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})

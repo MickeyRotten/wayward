@@ -93,19 +93,6 @@ class ChatMessage(Base):
     )
 
 
-class ItemCatalogEntry(Base):
-    __tablename__ = "item_catalog"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    type: Mapped[str] = mapped_column(String, nullable=False)
-    slot: Mapped[str | None] = mapped_column(String, nullable=True)
-    max_stack: Mapped[int] = mapped_column(Integer, default=1)
-    uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rarity: Mapped[str] = mapped_column(String, default="c")
-    desc: Mapped[str] = mapped_column(Text, default="")
-
-
 class InventoryStack(Base):
     __tablename__ = "inventory_stacks"
 
@@ -125,6 +112,14 @@ class LorebookEntry(Base):
     permanent: Mapped[bool] = mapped_column(Integer, default=False)
     locked: Mapped[bool] = mapped_column(Integer, default=False)
     cat: Mapped[str] = mapped_column(String, default="world")
+
+    # Item fields — only meaningful when cat == "items" (the unified item
+    # catalog lives in the lorebook). title == item name, content == item desc.
+    item_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    slot: Mapped[str | None] = mapped_column(String, nullable=True)
+    max_stack: Mapped[int] = mapped_column(Integer, default=1)
+    uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rarity: Mapped[str] = mapped_column(String, default="c")
 
 
 class LorebookConfig(Base):

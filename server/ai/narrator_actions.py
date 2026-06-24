@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import (
     InventoryStack,
-    ItemCatalogEntry,
+    LorebookEntry,
     OpenRouterSettings,
     PartyMember,
     PlayerCharacter,
@@ -101,8 +101,9 @@ async def execute_actions(
         # Resolve name -> catalog entry (case-insensitive exact match)
         item = (
             await session.execute(
-                select(ItemCatalogEntry).where(
-                    func.lower(ItemCatalogEntry.name) == item_name.lower()
+                select(LorebookEntry).where(
+                    LorebookEntry.cat == "items",
+                    func.lower(LorebookEntry.title) == item_name.lower(),
                 )
             )
         ).scalars().first()
@@ -169,8 +170,9 @@ async def execute_actions(
         # Resolve item by name
         item = (
             await session.execute(
-                select(ItemCatalogEntry).where(
-                    func.lower(ItemCatalogEntry.name) == item_name.lower()
+                select(LorebookEntry).where(
+                    LorebookEntry.cat == "items",
+                    func.lower(LorebookEntry.title) == item_name.lower(),
                 )
             )
         ).scalars().first()
@@ -180,10 +182,10 @@ async def execute_actions(
             continue
 
         # Validate: item must be Equipment type
-        if item.type != "Equipment":
+        if item.item_type != "Equipment":
             log.info(
                 "Narrator equip: item '%s' is type '%s', not Equipment, skipping",
-                item_name, item.type,
+                item_name, item.item_type,
             )
             continue
 

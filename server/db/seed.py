@@ -5,7 +5,6 @@ from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
 from server.db.database import async_session
 from server.db.models import (
     InventoryStack,
-    ItemCatalogEntry,
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
@@ -51,8 +50,6 @@ LORE_IDS = {
     "moonlit_clearing":    "d0000001-0001-4000-8000-000000000002",
     "tifa_lore":           "d0000001-0001-4000-8000-000000000003",
     "rosalina_lore":       "d0000001-0001-4000-8000-000000000004",
-    "tide_salt_draught":   "d0000001-0001-4000-8000-000000000005",
-    "observatory_key":     "d0000001-0001-4000-8000-000000000006",
     "shadow_wraith":       "d0000001-0001-4000-8000-000000000007",
     "moss_golem":          "d0000001-0001-4000-8000-000000000008",
     "starlight_ward":      "d0000001-0001-4000-8000-000000000009",
@@ -114,25 +111,6 @@ SEED_LOREBOOK = [
         "enabled": True,
         "permanent": False,
         "cat": "characters",
-    },
-    # --- Items (2 entries) ---
-    {
-        "id": LORE_IDS["tide_salt_draught"],
-        "title": "Tide-Salt Draught",
-        "content": "A potion brewed by coastal alchemists using salts harvested during the highest tides. The brine glows faintly when agitated. Drinking it restores vigor and sharpens the mind for a short while, though the taste is memorably unpleasant. Prized by travelers who push through exhaustion.",
-        "keywords": ["tide-salt", "draught", "potion", "brine"],
-        "enabled": True,
-        "permanent": False,
-        "cat": "items",
-    },
-    {
-        "id": LORE_IDS["observatory_key"],
-        "title": "The Observatory Key",
-        "content": "An ornate brass key covered in celestial engravings — constellations that do not match any known sky. It was found inside a hollow stone pillar in the Moonlit Clearing. It presumably opens the old observatory on the ridge above Thornhaven, though no one living has been inside.",
-        "keywords": ["observatory", "key", "brass key", "celestial"],
-        "enabled": True,
-        "permanent": False,
-        "cat": "items",
     },
     # --- Monsters (2 entries) ---
     {
@@ -384,9 +362,23 @@ async def seed_defaults():
         if existing:
             return
 
-        # --- Seed item catalog ---
+        # --- Seed item catalog as lorebook entries (cat == "items") ---
         for item_data in SEED_CATALOG:
-            session.add(ItemCatalogEntry(**item_data))
+            session.add(LorebookEntry(
+                id=item_data["id"],
+                cat="items",
+                title=item_data["name"],
+                content=item_data.get("desc", ""),
+                keywords=[],
+                enabled=True,
+                permanent=False,
+                locked=False,
+                item_type=item_data["type"],
+                slot=item_data.get("slot"),
+                max_stack=item_data.get("max_stack", 1),
+                uses=item_data.get("uses"),
+                rarity=item_data.get("rarity", "c"),
+            ))
 
         # --- Seed characters with equipment referencing catalog IDs ---
         pc = PlayerCharacter(

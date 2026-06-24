@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { api } from '../lib/api'
+import { useLoreStore } from './loreStore'
 import type { ItemCatalogEntry, InventoryStack } from '@shared/types/models'
+
+// Items are stored as lorebook entries (cat === 'items'). Keep the lore list in
+// sync after item mutations so Lore → Items reflects changes immediately.
+const syncLore = () => { void useLoreStore.getState().fetchEntries() }
 
 export interface InventoryStackWithItem extends InventoryStack {
   item?: ItemCatalogEntry
@@ -66,6 +71,7 @@ export const useItemsStore = create<ItemsState>((set, get) => ({
   createItem: async (data) => {
     const item = await api.post<ItemCatalogEntry>('/items', data)
     set({ catalog: [...get().catalog, item] })
+    syncLore()
     return item
   },
 
@@ -78,6 +84,7 @@ export const useItemsStore = create<ItemsState>((set, get) => ({
         s.itemId === id ? { ...s, item: updated } : s
       ),
     })
+    syncLore()
   },
 
   deleteItem: async (id) => {
@@ -86,5 +93,6 @@ export const useItemsStore = create<ItemsState>((set, get) => ({
       catalog: get().catalog.filter((i) => i.id !== id),
       inventory: get().inventory.filter((s) => s.itemId !== id),
     })
+    syncLore()
   },
 }))

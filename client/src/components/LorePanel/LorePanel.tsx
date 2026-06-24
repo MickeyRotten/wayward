@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useLoreStore } from '../../state/loreStore'
+import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import type { LoreCategory } from '@shared/types/models'
 
@@ -18,10 +19,13 @@ export function LorePanel() {
   const setCategory = useLoreStore((s) => s.setCategory)
   const setSearchQuery = useLoreStore((s) => s.setSearchQuery)
   const createEntry = useLoreStore((s) => s.createEntry)
+  const createItem = useItemsStore((s) => s.createItem)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
   const [createError, setCreateError] = useState('')
+
+  const isItems = activeCategory === 'items'
 
   // Filter entries by active category
   const categoryEntries = entries.filter((e) => e.cat === activeCategory)
@@ -36,14 +40,25 @@ export function LorePanel() {
       )
     : categoryEntries
 
+  // Items live in the lorebook but use the richer Item inspector.
   const isSelected = (id: string) =>
-    selection?.kind === 'lore' && selection.id === id
+    isItems
+      ? selection?.kind === 'item' && selection.id === id
+      : selection?.kind === 'lore' && selection.id === id
+
+  const selectEntry = (id: string) =>
+    select(isItems ? { kind: 'item', id } : { kind: 'lore', id })
 
   const handleCreate = async () => {
     setCreateError('')
     try {
-      const entry = await createEntry(activeCategory)
-      select({ kind: 'lore', id: entry.id })
+      if (isItems) {
+        const item = await createItem({ name: '', type: 'Other', rarity: 'c', desc: '', maxStack: 1 })
+        select({ kind: 'item', id: item.id })
+      } else {
+        const entry = await createEntry(activeCategory)
+        select({ kind: 'lore', id: entry.id })
+      }
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : 'Failed to create entry')
     }
@@ -102,7 +117,7 @@ export function LorePanel() {
                   ? 'border-line2 bg-bg0'
                   : 'border-transparent hover:bg-bg2'
               }`}
-              onClick={() => select({ kind: 'lore', id: entry.id })}
+              onClick={() => selectEntry(entry.id)}
             >
               <div className="flex items-center gap-2">
                 {/* Enabled indicator dot */}

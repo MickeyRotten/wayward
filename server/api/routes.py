@@ -59,7 +59,6 @@ from server.db.database import get_session
 from server.db.models import (
     ChatMessage,
     InventoryStack,
-    ItemCatalogEntry,
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
@@ -267,18 +266,25 @@ async def update_narrator(
 
 # ── OpenRouter Settings ───────────────────────────────────────────
 
-def _item_to_dict(item: ItemCatalogEntry) -> dict:
+def _item_to_dict(item: LorebookEntry) -> dict:
+    """Build the /items API shape from a lorebook item entry (cat == 'items')."""
     return {
         "id": item.id,
         "kind": "item",
-        "name": item.name,
-        "type": item.type,
+        "name": item.title,
+        "type": item.item_type,
         "slot": item.slot,
         "maxStack": item.max_stack,
         "uses": item.uses,
         "rarity": item.rarity,
-        "desc": item.desc,
+        "desc": item.content,
     }
+
+
+async def _get_item(session: AsyncSession, item_id: str) -> LorebookEntry | None:
+    """Fetch a lorebook entry only if it is an item (cat == 'items')."""
+    e = await session.get(LorebookEntry, item_id)
+    return e if e and e.cat == "items" else None
 
 
 def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
@@ -336,16 +342,16 @@ async def update_openrouter_settings(
     return _or_response(s)
 
 
-# ── Item Catalog ──────────────────────────────────────────────────
+# ── Items (unified into the lorebook — cat == "items") ─────────────
 
 @router.get("/items")
 async def list_items(
     type: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    query = select(ItemCatalogEntry)
+    query = select(LorebookEntry).where(LorebookEntry.cat == "items")
     if type:
-        query = query.where(ItemCatalogEntry.type == type)
+        query = query.where(LorebookEntry.item_type == type)
     items = (await session.execute(query)).scalars().all()
     return [_item_to_dict(i) for i in items]
 
@@ -358,7 +364,10 @@ async def search_items(
     if len(q) < 3:
         return []
     items = (await session.execute(
-        select(ItemCatalogEntry).where(ItemCatalogEntry.name.ilike(f"%{q}%"))
+        select(LorebookEntry).where(
+            LorebookEntry.cat == "items",
+            LorebookEntry.title.ilike(f"%{q}%"),
+        )
     )).scalars().all()
     return [_item_to_dict(i) for i in items]
 
@@ -368,7 +377,7 @@ async def get_item(
     item_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    item = await session.get(ItemCatalogEntry, item_id)
+    item = await _get_item(session, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
     return _item_to_dict(item)
@@ -379,14 +388,18 @@ async def create_item(
     data: ItemCatalogCreate,
     session: AsyncSession = Depends(get_session),
 ):
-    item = ItemCatalogEntry(
-        name=data.name,
-        type=data.type,
+    item = LorebookEntry(
+        cat="items",
+        title=data.name,
+        content=data.desc,
+        keywords=[],
+        enabled=True,
+        permanent=False,
+        item_type=data.type,
         slot=data.slot,
         max_stack=data.maxStack,
         uses=data.uses,
         rarity=data.rarity,
-        desc=data.desc,
     )
     session.add(item)
     await session.commit()
@@ -400,13 +413,13 @@ async def update_item(
     data: ItemCatalogUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    item = await session.get(ItemCatalogEntry, item_id)
+    item = await _get_item(session, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
     if data.name is not None:
-        item.name = data.name
+        item.title = data.name
     if data.type is not None:
-        item.type = data.type
+        item.item_type = data.type
     if data.slot is not None:
         item.slot = data.slot
     if data.maxStack is not None:
@@ -416,7 +429,7 @@ async def update_item(
     if data.rarity is not None:
         item.rarity = data.rarity
     if data.desc is not None:
-        item.desc = data.desc
+        item.content = data.desc
     await session.commit()
     await session.refresh(item)
     return _item_to_dict(item)
@@ -427,9 +440,11 @@ async def delete_item(
     item_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    item = await session.get(ItemCatalogEntry, item_id)
+    item = await _get_item(session, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
+    if item.locked:
+        raise HTTPException(403, "This item is locked and cannot be deleted")
     await session.delete(item)
     await session.commit()
 
@@ -448,7 +463,7 @@ async def _list_inventory_dicts(session: AsyncSession) -> list[dict]:
     stacks = (await session.execute(select(InventoryStack))).scalars().all()
     result = []
     for s in stacks:
-        item = await session.get(ItemCatalogEntry, s.item_id)
+        item = await _get_item(session, s.item_id)
         result.append({
             "itemId": s.item_id,
             "count": s.count,
@@ -467,7 +482,7 @@ async def add_to_inventory(
     data: InventoryAddRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    item = await session.get(ItemCatalogEntry, data.itemId)
+    item = await _get_item(session, data.itemId)
     if not item:
         raise HTTPException(404, "Item not in catalog")
 
@@ -952,7 +967,6 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
     messages = (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
     summary = (await session.execute(select(StorySummary))).scalars().first()
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    items = (await session.execute(select(ItemCatalogEntry))).scalars().all()
     inventory = (await session.execute(select(InventoryStack))).scalars().all()
     quests = (await session.execute(select(Quest))).scalars().all()
     quest_objectives = (await session.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
@@ -1000,7 +1014,6 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "maxCarrySlots": settings.max_carry_slots if settings else 12,
             "maxPartySize": settings.max_party_size if settings else 3,
         },
-        "items": [_item_to_dict(i) for i in items],
         "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
         "quests": [
             {
@@ -1024,6 +1037,11 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
                 "permanent": bool(e.permanent),
                 "locked": bool(e.locked),
                 "cat": e.cat,
+                "itemType": e.item_type,
+                "slot": e.slot,
+                "maxStack": e.max_stack,
+                "uses": e.uses,
+                "rarity": e.rarity,
             }
             for e in lore_entries
         ],
@@ -1042,7 +1060,6 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
     await session.execute(delete(QuestObjective))
     await session.execute(delete(Quest))
     await session.execute(delete(InventoryStack))
-    await session.execute(delete(ItemCatalogEntry))
     await session.execute(delete(ChatMessage))
     await session.execute(delete(PartyMember))
     await session.execute(delete(PlayerCharacter))
@@ -1111,18 +1128,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         max_party_size=s.get("maxPartySize", 3),
     ))
 
-    # Restore item catalog
-    for item_data in data.get("items", []):
-        session.add(ItemCatalogEntry(
-            id=item_data.get("id"),
-            name=item_data["name"],
-            type=item_data["type"],
-            slot=item_data.get("slot"),
-            max_stack=item_data.get("maxStack", 1),
-            uses=item_data.get("uses"),
-            rarity=item_data.get("rarity", "c"),
-            desc=item_data.get("desc", ""),
-        ))
+    # (Items are restored as part of the lorebook below — cat == "items".)
 
     # Restore inventory
     for inv_data in data.get("inventory", []):
@@ -1162,6 +1168,11 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             permanent=le_data.get("permanent", False),
             locked=le_data.get("locked", False),
             cat=le_data.get("cat", "world"),
+            item_type=le_data.get("itemType"),
+            slot=le_data.get("slot"),
+            max_stack=le_data.get("maxStack", 1),
+            uses=le_data.get("uses"),
+            rarity=le_data.get("rarity", "c"),
         ))
 
     # Restore lorebook config
@@ -1185,7 +1196,6 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(QuestObjective))
     await session.execute(delete(Quest))
     await session.execute(delete(InventoryStack))
-    await session.execute(delete(ItemCatalogEntry))
     await session.execute(delete(ChatMessage))
     await session.execute(delete(PartyMember))
     await session.execute(delete(PlayerCharacter))
@@ -1295,7 +1305,7 @@ async def _load_game_context(session: AsyncSession):
     if not summary:
         summary = StorySummary(content="", summary_up_to_turn=0)
         session.add(summary)
-    catalog = list((await session.execute(select(ItemCatalogEntry))).scalars().all())
+    catalog = list((await session.execute(select(LorebookEntry).where(LorebookEntry.cat == "items"))).scalars().all())
     quests = list((await session.execute(select(Quest))).scalars().all())
     quest_objectives = list(
         (await session.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
@@ -1317,7 +1327,7 @@ async def _maybe_summarize_and_build(
     player_message: str,
     current_turn: int,
     session: AsyncSession,
-    item_catalog: list[ItemCatalogEntry] | None = None,
+    item_catalog: list[LorebookEntry] | None = None,
     quests: list[Quest] | None = None,
     quest_objectives: list[QuestObjective] | None = None,
     lore_entries: list[LorebookEntry] | None = None,

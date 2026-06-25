@@ -5,8 +5,11 @@ the party inventory, we deterministically decrement that stack *before* the
 narrator generates — so the narration is grounded in the post-use state and the
 UI can surface an inventory notice.
 
-This is intentionally simple, local, and LLM-free (matching the project's
-minimal-LLM philosophy). It is keyword/phrase based, not semantic.
+This is intentionally simple, local, and LLM-free — keyword/phrase based, not
+semantic. It powers the **legacy** (non-agentic) turn path; when the agentic
+tool loop is active the narrator's `consume_item` tool handles item use instead
+(see server/ai/narrator_agent.py). The apply/reverse helpers below are shared by
+both paths.
 
 This module also owns the apply / reverse helpers for inventory deltas (shared
 by the chat-turn route and the swipe/regenerate/delete reversal paths) so the

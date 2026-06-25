@@ -111,6 +111,8 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxContextTokens: int = 128000
     maxCarrySlots: int = 12
     maxPartySize: int = 3
+    maxToolRounds: int = 6
+    useTools: bool = True
 
 
 class OpenRouterSettingsResponse(BaseModel):
@@ -126,6 +128,8 @@ class OpenRouterSettingsResponse(BaseModel):
     maxContextTokens: int
     maxCarrySlots: int
     maxPartySize: int
+    maxToolRounds: int
+    useTools: bool
     apiKeySet: bool
 
 

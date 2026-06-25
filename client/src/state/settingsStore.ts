@@ -15,6 +15,8 @@ interface SettingsState {
   maxContextTokens: number
   maxCarrySlots: number
   maxPartySize: number
+  maxToolRounds: number
+  useTools: boolean
   apiKeySet: boolean
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
@@ -38,6 +40,8 @@ function applyResponse(s: SettingsResponse) {
     maxContextTokens: s.maxContextTokens,
     maxCarrySlots: s.maxCarrySlots,
     maxPartySize: s.maxPartySize,
+    maxToolRounds: s.maxToolRounds,
+    useTools: s.useTools,
     apiKeySet: s.apiKeySet,
   }
 }
@@ -55,6 +59,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   maxContextTokens: 128000,
   maxCarrySlots: 12,
   maxPartySize: 3,
+  maxToolRounds: 6,
+  useTools: true,
   apiKeySet: false,
   availableModels: [],
 
@@ -78,6 +84,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       maxContextTokens: update.maxContextTokens ?? state.maxContextTokens,
       maxCarrySlots: update.maxCarrySlots ?? state.maxCarrySlots,
       maxPartySize: update.maxPartySize ?? state.maxPartySize,
+      maxToolRounds: update.maxToolRounds ?? state.maxToolRounds,
+      useTools: update.useTools ?? state.useTools,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),
     }
     const s = await api.put<SettingsResponse>('/settings/openrouter', payload)

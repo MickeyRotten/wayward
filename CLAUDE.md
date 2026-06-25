@@ -201,7 +201,7 @@ Standard OpenAI-compatible shape. `max_tokens` must be ≤ `context_length` minu
 
 This is the hardest part of the alpha and worth building carefully. The goal: party members feel present and alive, without the DM voicing someone every single turn (which gets noisy fast) or never voicing anyone unprompted (which makes the party feel like furniture).
 
-**Hard rule: one LLM call per turn, always.** Do not add a separate classifier call per party member to decide "should X speak" — that's slow, costly, and against the project's minimal-LLM philosophy. Instead, compute cheap deterministic signals locally and feed them into the same single narration call as context, letting the Narrator LLM make the actual judgment call within its one generation.
+**Spotlight stays deterministic and single-call.** Do not add a separate classifier call per party member to decide "should X speak" — that's slow and costly. Instead, compute cheap deterministic signals locally and feed them into the narration prompt as context, letting the Narrator make the judgment call within its generation. (Note: as of the agentic refactor the *narrator* may take several tool round-trips per turn — see "The Narrator Agent Loop" below — but the spotlight signals themselves remain purely local computation, injected once into the prompt, with no extra LLM calls.)
 
 **Signals computed every turn, before the LLM call:**
 
@@ -244,6 +244,25 @@ Skill.
 ```
 
 Update `lastSpokeTurn` after the call resolves, based on whether the response actually included that member's voice (simple presence check on their name/dialogue tag in the output is fine for alpha — no need for anything fancier).
+
+---
+
+## The Narrator Agent Loop
+
+The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](server/ai/narrator_agent.py)), not a single text-completion. Within one player turn it may take several model round-trips: it can call tools, see the results, and continue before writing the final prose. This replaces the older "append a `<<<ACTIONS>>>` JSON block, parse it with a regex" approach, which couldn't validate against real game state.
+
+**The loop** (`run_narrator_agent`):
+1. Build the prompt (`build_prompt(..., include_action_protocol=False)`) — the spotlight block is still injected, deterministically, exactly as above. Tool-use guidance is prepended.
+2. Call the model with `tools` (streaming). If it returns tool calls, execute each against the DB, append the results as `role:"tool"` messages, and loop. If it returns prose with no tool calls, that's the narration → stream it and stop.
+3. `max_tool_rounds` (default 6, configurable) caps the loop; the final round drops `tools` to force narration.
+
+**Tools** (handlers in [`server/ai/narrator_actions.py`](server/ai/narrator_actions.py)):
+- *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`, `update_summary` (replaces threshold summarization — the model compresses history when nudged by a context hint).
+- *Read:* `lookup_item`, `search_items`, `list_inventory`, `get_character` — let the model validate before acting (e.g. confirm an item exists and its slot before `equip`).
+
+**Persistence/reversal is unchanged.** Tools mutate the DB during the loop; the accumulated inventory deltas, equipment changes, and scene state are recorded on the `ChatMessage` exactly as before, so swipe/regenerate/delete reversal (`_reverse_message_effects`) works identically.
+
+**Model support & fallback.** Tool calling needs a tool-capable model. The model picker (`supportsTools` from OpenRouter's `supported_parameters`) defaults to tool-capable models. When `use_tools` is off **or** the selected model lacks tool support, the narrator falls back to the legacy `<<<ACTIONS>>>` text-block path — `parse_action_block`/`execute_actions`/`ACTION_INSTRUCTION` are retained for exactly this reason. Both `use_tools` and `max_tool_rounds` live on `OpenRouterSettings`, editable in Config → API & Model.
 
 ---
 

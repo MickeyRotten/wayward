@@ -6,6 +6,7 @@ import { useLoreStore } from '../../state/loreStore'
 import { useUiStore } from '../../state/uiStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
+import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import type { ItemCatalogEntry, ItemType, Rarity, Quest, LorebookEntry, LoreCategory } from '@shared/types/models'
 
 export function PartyInspector() {
@@ -484,13 +485,14 @@ function ItemTextArea({ label, value, onChange, onBlur, placeholder }: {
   return (
     <label className="block">
       {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
-      <textarea
+      <ExpandableTextarea
+        label={label || 'Edit'}
         className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
-        defaultValue={value}
+        value={value}
         placeholder={placeholder}
-        onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
+        onBlur={onBlur ?? onChange}
       />
     </label>
   )
@@ -913,13 +915,14 @@ function QuestTextArea({ value, onChange, onBlur, placeholder }: {
   value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
 }) {
   return (
-    <textarea
+    <ExpandableTextarea
+      label={placeholder || 'Edit'}
       className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
       rows={3}
-      defaultValue={value}
+      value={value}
       placeholder={placeholder}
-      onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={onChange}
+      onBlur={onBlur ?? onChange}
     />
   )
 }
@@ -1221,13 +1224,14 @@ function LoreTextArea({ value, onChange, onBlur, placeholder }: {
   value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
 }) {
   return (
-    <textarea
+    <ExpandableTextarea
+      label={placeholder || 'Edit'}
       className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
       rows={4}
-      defaultValue={value}
+      value={value}
       placeholder={placeholder}
-      onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={onChange}
+      onBlur={onBlur ?? onChange}
     />
   )
 }

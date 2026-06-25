@@ -86,6 +86,8 @@ export interface OpenRouterSettings {
   maxContextTokens: number
   maxCarrySlots: number
   maxPartySize: number
+  maxToolRounds: number
+  useTools: boolean
 }
 
 export interface OpenRouterSettingsUpdate extends OpenRouterSettings {
@@ -166,4 +168,5 @@ export interface OpenRouterModel {
   id: string
   name: string
   contextLength: number
+  supportsTools: boolean
 }

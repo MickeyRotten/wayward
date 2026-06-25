@@ -6,6 +6,7 @@ import { useChatStore } from '../../state/chatStore'
 import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { api } from '../../lib/api'
 import type { LoreCategory, LorebookConfig } from '@shared/types/models'
 
@@ -39,9 +40,11 @@ export function SettingsPanel() {
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
   const [maxCarrySlots, setMaxCarrySlots] = useState(settings.maxCarrySlots)
   const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
+  const [maxToolRounds, setMaxToolRounds] = useState(settings.maxToolRounds)
+  const [useTools, setUseTools] = useState(settings.useTools)
+  const [showAllModels, setShowAllModels] = useState(false)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
-  const [actionInstruction, setActionInstruction] = useState(narrator.actionInstruction)
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
   const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
   const [saved, setSaved] = useState(false)
@@ -58,15 +61,16 @@ export function SettingsPanel() {
     setMaxTokens(settings.maxTokensResponse)
     setMaxCarrySlots(settings.maxCarrySlots)
     setMaxPartySize(settings.maxPartySize)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize])
+    setMaxToolRounds(settings.maxToolRounds)
+    setUseTools(settings.useTools)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
     setFirstMessage(narrator.firstMessage)
-    setActionInstruction(narrator.actionInstruction)
     setSpotlightRule(narrator.spotlightRule)
     setPostHistory(narrator.postHistoryInstructions)
-  }, [narrator.instructions, narrator.firstMessage, narrator.actionInstruction, narrator.spotlightRule, narrator.postHistoryInstructions])
+  }, [narrator.instructions, narrator.firstMessage, narrator.spotlightRule, narrator.postHistoryInstructions])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -93,8 +97,10 @@ export function SettingsPanel() {
       maxContextTokens: settings.maxContextTokens,
       maxCarrySlots,
       maxPartySize,
+      maxToolRounds,
+      useTools,
     })
-    await narrator.save({ instructions, firstMessage, actionInstruction, spotlightRule, postHistoryInstructions: postHistory })
+    await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory })
     // Carry-slot capacity is derived server-side; refetch inventory so the
     // Items panel reflects the new max immediately.
     await useItemsStore.getState().fetchInventory()
@@ -135,7 +141,19 @@ export function SettingsPanel() {
             </button>
           )}
           <label className="block">
-            <span className="text-[11px] text-textdim font-body">Model</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-textdim font-body">Model</span>
+              {settings.availableModels.length > 0 && (
+                <label className="flex items-center gap-1 text-[10px] text-textdim font-body cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showAllModels}
+                    onChange={(e) => setShowAllModels(e.target.checked)}
+                  />
+                  Show all models
+                </label>
+              )}
+            </div>
             {settings.availableModels.length > 0 ? (
               <select
                 className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
@@ -149,8 +167,13 @@ export function SettingsPanel() {
                 }}
               >
                 <option value="">Select a model...</option>
-                {settings.availableModels.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
+                {(showAllModels
+                  ? settings.availableModels
+                  : settings.availableModels.filter((m) => m.supportsTools)
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.supportsTools ? '' : ' (no tools)'}
+                  </option>
                 ))}
               </select>
             ) : (
@@ -162,6 +185,20 @@ export function SettingsPanel() {
               />
             )}
           </label>
+
+          {(() => {
+            const selected = settings.availableModels.find((m) => m.id === modelId)
+            const legacyByModel = useTools && selected && !selected.supportsTools
+            const legacyByToggle = !useTools
+            if (!legacyByModel && !legacyByToggle) return null
+            return (
+              <p className="text-[10px] text-gold font-body border border-line bg-bg0 px-2 py-1">
+                {legacyByToggle
+                  ? 'Tools are off — the narrator uses the legacy text-block action protocol.'
+                  : 'This model does not support tool calling — the narrator will fall back to the legacy text-block action protocol.'}
+              </p>
+            )
+          })()}
 
           <div className="grid grid-cols-2 gap-3">
             <Slider label="Temperature" value={temperature} min={0} max={2} step={0.05} onChange={setTemperature} />
@@ -194,77 +231,95 @@ export function SettingsPanel() {
           <p className="text-[10px] text-textdim font-body">
             Max context: {settings.maxContextTokens.toLocaleString()} tokens
           </p>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+              <input
+                type="checkbox"
+                checked={useTools}
+                onChange={(e) => setUseTools(e.target.checked)}
+              />
+              Use tools (agent loop)
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Max Tool Rounds</span>
+              <input
+                type="number"
+                min={1}
+                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                value={maxToolRounds}
+                onChange={(e) => setMaxToolRounds(Math.max(1, Number(e.target.value) || 6))}
+              />
+            </label>
+          </div>
+          <p className="text-[10px] text-textdim font-body">
+            When on, the narrator calls tools (grant/equip/scene/etc.) over up to this many round-trips per turn. When off, it uses the legacy text-block protocol.
+          </p>
         </Section>
 
         {/* Narration */}
         <Section title="Narration">
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Narrator Instructions</span>
-            <textarea
+            <ExpandableTextarea
+              label="Narrator Instructions"
               className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
               rows={5}
               value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
+              onChange={setInstructions}
             />
           </label>
 
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">First Message</span>
-            <textarea
+            <ExpandableTextarea
+              label="First Message"
               className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={firstMessage}
               placeholder="The opening narration shown before the player's first turn."
-              onChange={(e) => setFirstMessage(e.target.value)}
+              onChange={setFirstMessage}
             />
             <span className="text-[10px] text-textdim font-body">
               Shown as the drop-capped opening message and included in context.
             </span>
           </label>
 
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Action Protocol</span>
-            <textarea
-              className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
-              rows={4}
-              value={actionInstruction}
-              onChange={(e) => setActionInstruction(e.target.value)}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              System instructions for item/equipment/location actions. Advanced.
-            </span>
-          </label>
+          <p className="text-[10px] text-textdim font-body">
+            The scenario is now a locked entry in Lorebook → World.
+          </p>
+        </Section>
 
+        {/* Advanced */}
+        <Section title="Advanced">
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Spotlight Rule</span>
-            <textarea
+            <ExpandableTextarea
+              label="Spotlight Rule"
               className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={spotlightRule}
-              onChange={(e) => setSpotlightRule(e.target.value)}
+              onChange={setSpotlightRule}
             />
             <span className="text-[10px] text-textdim font-body">
-              Governs when party members speak. Advanced.
+              Governs when party members speak.
             </span>
           </label>
 
           <label className="block space-y-1">
             <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Post-History Instructions</span>
-            <textarea
+            <ExpandableTextarea
+              label="Post-History Instructions"
               className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
               rows={4}
               value={postHistory}
               placeholder="Added to the very end of the prompt, right before your message. Empty by default."
-              onChange={(e) => setPostHistory(e.target.value)}
+              onChange={setPostHistory}
             />
             <span className="text-[10px] text-textdim font-body">
               Always injected last, immediately before your input.
             </span>
           </label>
-
-          <p className="text-[10px] text-textdim font-body">
-            The scenario is now a locked entry in Lorebook → World.
-          </p>
         </Section>
 
         {/* Adventure Settings (inventory + party) */}

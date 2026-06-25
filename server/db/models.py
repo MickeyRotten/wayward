@@ -67,6 +67,10 @@ class OpenRouterSettings(Base):
     max_context_tokens: Mapped[int] = mapped_column(Integer, default=128000)
     max_carry_slots: Mapped[int] = mapped_column(Integer, default=12)
     max_party_size: Mapped[int] = mapped_column(Integer, default=3)
+    # Agentic tool loop: cap on tool round-trips per turn, and a master toggle
+    # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.
+    max_tool_rounds: Mapped[int] = mapped_column(Integer, default=6)
+    use_tools: Mapped[bool] = mapped_column(Integer, default=True)
 
 
 class StorySummary(Base):

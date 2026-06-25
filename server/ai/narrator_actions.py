@@ -10,6 +10,7 @@ See CLAUDE.md > Narrator Actions for the full design.
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -335,6 +336,245 @@ def _is_slot_compatible(catalog_slot: str, equipment_field: str) -> bool:
     """Check if a catalog item's slot category is compatible with an Equipment field name."""
     compatible_fields = SLOT_COMPATIBILITY.get(catalog_slot, [])
     return equipment_field in compatible_fields
+
+
+async def _resolve_item(session: AsyncSession, name: str) -> LorebookEntry | None:
+    """Resolve an item by name (case-insensitive exact match) from Lore → Items."""
+    if not name:
+        return None
+    return (
+        await session.execute(
+            select(LorebookEntry).where(
+                LorebookEntry.cat == "items",
+                func.lower(LorebookEntry.title) == name.lower(),
+            )
+        )
+    ).scalars().first()
+
+
+# ---------------------------------------------------------------------------
+# Agentic tool handlers
+#
+# Each handler executes one narrator tool call against the DB (or reads state)
+# and returns a ToolEffect: a short natural-language ``result`` fed back to the
+# model, plus any deltas/changes to record on the ChatMessage for later
+# reversal. Unlike the legacy ``execute_actions`` text-block path, these run
+# *inside* the turn's agent loop so the model sees the outcome and can react.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ToolEffect:
+    result: str
+    inv_deltas: list[dict] = field(default_factory=list)
+    equip_changes: list[dict] = field(default_factory=list)
+    scene: dict = field(default_factory=dict)
+
+
+async def tool_set_scene(args: dict, session: AsyncSession) -> ToolEffect:
+    scene: dict = {}
+    loc = args.get("location")
+    if isinstance(loc, str) and loc.strip():
+        scene["location"] = loc.strip()
+    tod = args.get("timeOfDay")
+    if isinstance(tod, str) and tod.strip():
+        scene["timeOfDay"] = tod.strip()
+    wx = args.get("weather")
+    if isinstance(wx, str) and wx.strip():
+        scene["weather"] = wx.strip()
+    if not scene:
+        return ToolEffect(result="No scene fields provided; nothing changed.")
+    bits = ", ".join(f"{k}={v}" for k, v in scene.items())
+    return ToolEffect(result=f"Scene updated ({bits}).", scene=scene)
+
+
+async def _change_inventory(
+    session: AsyncSession, item_name: str, count: int, source: str
+) -> ToolEffect:
+    """Shared add/remove for grant_item / remove_item / consume_item."""
+    item = await _resolve_item(session, item_name)
+    if not item:
+        return ToolEffect(result=f"No item named '{item_name}' exists in the world. Use lookup_item or search_items first.")
+
+    existing = (
+        await session.execute(
+            select(InventoryStack).where(InventoryStack.item_id == item.id)
+        )
+    ).scalars().first()
+
+    if count > 0:
+        if existing:
+            existing.count += count
+        else:
+            total_stacks = (
+                await session.execute(select(func.count()).select_from(InventoryStack))
+            ).scalar()
+            settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+            max_slots = settings.max_carry_slots if settings else 12
+            if total_stacks >= max_slots:
+                return ToolEffect(result=f"Inventory is full ({total_stacks}/{max_slots}); could not add '{item.title}'.")
+            session.add(InventoryStack(item_id=item.id, count=count))
+        return ToolEffect(
+            result=f"Added {count}× {item.title} to the party inventory.",
+            inv_deltas=[{"itemId": item.id, "delta": count, "source": source}],
+        )
+
+    # Removal (count < 0)
+    if not existing:
+        return ToolEffect(result=f"'{item.title}' is not in the inventory; nothing removed.")
+    removed = min(existing.count, -count)
+    existing.count -= removed
+    if existing.count <= 0:
+        await session.delete(existing)
+    return ToolEffect(
+        result=f"Removed {removed}× {item.title} from the party inventory.",
+        inv_deltas=[{"itemId": item.id, "delta": -removed, "source": source}],
+    )
+
+
+async def tool_grant_item(args: dict, session: AsyncSession) -> ToolEffect:
+    count = int(args.get("count", 1) or 1)
+    if count < 1:
+        return ToolEffect(result="count must be at least 1.")
+    return await _change_inventory(session, args.get("itemName", ""), count, "narrator_grant")
+
+
+async def tool_remove_item(args: dict, session: AsyncSession) -> ToolEffect:
+    count = int(args.get("count", 1) or 1)
+    if count < 1:
+        return ToolEffect(result="count must be at least 1.")
+    return await _change_inventory(session, args.get("itemName", ""), -count, "narrator_grant")
+
+
+async def tool_consume_item(args: dict, session: AsyncSession) -> ToolEffect:
+    count = int(args.get("count", 1) or 1)
+    if count < 1:
+        return ToolEffect(result="count must be at least 1.")
+    return await _change_inventory(session, args.get("itemName", ""), -count, "player_action")
+
+
+async def tool_equip(args: dict, session: AsyncSession) -> ToolEffect:
+    char_name = args.get("characterName", "")
+    slot = args.get("slot", "")
+    item_name = args.get("itemName", "")
+    if not char_name or not slot or not item_name:
+        return ToolEffect(result="equip requires characterName, slot, and itemName.")
+    if slot not in VALID_EQUIPMENT_SLOTS:
+        return ToolEffect(result=f"'{slot}' is not a valid equipment slot.")
+
+    character, char_id = await _resolve_character(session, char_name)
+    if character is None:
+        return ToolEffect(result=f"No character named '{char_name}'.")
+
+    item = await _resolve_item(session, item_name)
+    if not item:
+        return ToolEffect(result=f"No item named '{item_name}' exists in the world.")
+    if item.item_type != "Equipment":
+        return ToolEffect(result=f"'{item.title}' is type '{item.item_type}', not Equipment; it cannot be equipped.")
+    if item.slot and not _is_slot_compatible(item.slot, slot):
+        return ToolEffect(result=f"'{item.title}' ({item.slot}) cannot go in slot '{slot}'.")
+
+    equipment = dict(character.equipment) if character.equipment else {}
+    previous_item_id = equipment.get(slot)
+    equipment[slot] = item.id
+    character.equipment = equipment
+    return ToolEffect(
+        result=f"{char_name} equipped {item.title} in {slot}.",
+        equip_changes=[{
+            "characterId": char_id, "slot": slot,
+            "previousItemId": previous_item_id, "newItemId": item.id,
+        }],
+    )
+
+
+async def tool_unequip(args: dict, session: AsyncSession) -> ToolEffect:
+    char_name = args.get("characterName", "")
+    slot = args.get("slot", "")
+    if not char_name or not slot:
+        return ToolEffect(result="unequip requires characterName and slot.")
+    if slot not in VALID_EQUIPMENT_SLOTS:
+        return ToolEffect(result=f"'{slot}' is not a valid equipment slot.")
+
+    character, char_id = await _resolve_character(session, char_name)
+    if character is None:
+        return ToolEffect(result=f"No character named '{char_name}'.")
+
+    equipment = dict(character.equipment) if character.equipment else {}
+    previous_item_id = equipment.get(slot)
+    if not previous_item_id:
+        return ToolEffect(result=f"{char_name}'s {slot} slot is already empty.")
+    equipment[slot] = None
+    character.equipment = equipment
+
+    existing_stack = (
+        await session.execute(
+            select(InventoryStack).where(InventoryStack.item_id == previous_item_id)
+        )
+    ).scalars().first()
+    if existing_stack:
+        existing_stack.count += 1
+    else:
+        session.add(InventoryStack(item_id=previous_item_id, count=1))
+
+    return ToolEffect(
+        result=f"{char_name} unequipped {slot}; the item returned to inventory.",
+        equip_changes=[{
+            "characterId": char_id, "slot": slot,
+            "previousItemId": previous_item_id, "newItemId": None,
+        }],
+        inv_deltas=[{"itemId": previous_item_id, "delta": 1, "source": "narrator_grant"}],
+    )
+
+
+async def tool_lookup_item(args: dict, session: AsyncSession) -> ToolEffect:
+    item = await _resolve_item(session, args.get("name", ""))
+    if not item:
+        return ToolEffect(result=f"No item named '{args.get('name', '')}' exists in the world.")
+    return ToolEffect(result=json.dumps({
+        "name": item.title, "type": item.item_type, "slot": item.slot,
+        "rarity": item.rarity, "description": item.content or "",
+    }, ensure_ascii=False))
+
+
+async def tool_search_items(args: dict, session: AsyncSession) -> ToolEffect:
+    query = (args.get("query", "") or "").lower().strip()
+    items = (
+        await session.execute(select(LorebookEntry).where(LorebookEntry.cat == "items"))
+    ).scalars().all()
+    matches = [
+        it.title for it in items
+        if not query or query in it.title.lower() or query in (it.content or "").lower()
+    ][:20]
+    if not matches:
+        return ToolEffect(result="No matching items found.")
+    return ToolEffect(result="Matching items: " + ", ".join(matches))
+
+
+async def tool_list_inventory(args: dict, session: AsyncSession) -> ToolEffect:
+    stacks = (await session.execute(select(InventoryStack))).scalars().all()
+    if not stacks:
+        return ToolEffect(result="The party inventory is empty.")
+    lines = []
+    for s in stacks:
+        item = await session.get(LorebookEntry, s.item_id)
+        name = item.title if item else s.item_id
+        lines.append(f"{name} ×{s.count}")
+    return ToolEffect(result="Inventory: " + "; ".join(lines))
+
+
+async def tool_get_character(args: dict, session: AsyncSession) -> ToolEffect:
+    character, _ = await _resolve_character(session, args.get("name", ""))
+    if character is None:
+        return ToolEffect(result=f"No character named '{args.get('name', '')}'.")
+    equipment = character.equipment or {}
+    equipped = {}
+    for slot, item_id in equipment.items():
+        if not item_id:
+            continue
+        item = await session.get(LorebookEntry, item_id)
+        equipped[slot] = item.title if item else item_id
+    name = character.basic_info.get("name", "Unknown")
+    return ToolEffect(result=json.dumps({"name": name, "equipped": equipped}, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------

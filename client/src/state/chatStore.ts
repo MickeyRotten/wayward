@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { ChatMessage } from '@shared/types/models'
 import { api } from '../lib/api'
+import { useItemsStore } from './itemsStore'
+import { usePartyStore } from './partyStore'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -183,8 +185,24 @@ async function _handleStream(url: string, body: object) {
               set({ thinkingStartedAt: null })
             }
             set({ streamingContent: get().streamingContent + event.content })
+          } else if (event.type === 'discard') {
+            // Agentic loop: content streamed on a tool-calling round was
+            // preamble, not the final narration — clear it.
+            set({ streamingContent: '' })
+          } else if (event.type === 'tool') {
+            // A narrator tool was executed mid-turn; keep the thinking
+            // indicator visible while the loop continues.
           } else if (event.type === 'done') {
             set({ contextTokens: event.contextTokens, maxContextTokens: event.maxContextTokens })
+            // The turn may have changed inventory (grant/consume/unequip) or
+            // equipment (equip/unequip); refresh the affected panels so the UI
+            // reflects the new DB state instead of going stale until reload.
+            if (Array.isArray(event.appliedInventoryDeltas) && event.appliedInventoryDeltas.length > 0) {
+              useItemsStore.getState().fetchInventory()
+            }
+            if (Array.isArray(event.appliedEquipmentChanges) && event.appliedEquipmentChanges.length > 0) {
+              usePartyStore.getState().fetchAll()
+            }
           } else if (event.type === 'error') {
             set({ error: event.content })
           }

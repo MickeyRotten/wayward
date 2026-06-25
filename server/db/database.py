@@ -32,6 +32,9 @@ async def _run_migrations():
         ("chat_messages", "speaker", "ALTER TABLE chat_messages ADD COLUMN speaker VARCHAR DEFAULT 'narrator'"),
         # Task 5.2: spotlight_reason column on chat_messages
         ("chat_messages", "spotlight_reason", "ALTER TABLE chat_messages ADD COLUMN spotlight_reason VARCHAR"),
+        # Agentic tool loop: settings columns
+        ("openrouter_settings", "max_tool_rounds", "ALTER TABLE openrouter_settings ADD COLUMN max_tool_rounds INTEGER DEFAULT 6"),
+        ("openrouter_settings", "use_tools", "ALTER TABLE openrouter_settings ADD COLUMN use_tools INTEGER DEFAULT 1"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

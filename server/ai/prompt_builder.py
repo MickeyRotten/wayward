@@ -47,6 +47,7 @@ def build_prompt(
     lore_config: LorebookConfig | None = None,
     max_context_tokens: int = 128000,
     max_response_tokens: int = 1000,
+    include_action_protocol: bool = True,
 ) -> list[dict]:
     messages: list[dict] = []
 
@@ -59,12 +60,14 @@ def build_prompt(
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})
 
-    # 1b. System: Narrator action protocol (editable in Config; falls back to
-    #     the built-in default when not customized)
-    messages.append({
-        "role": "system",
-        "content": getattr(narrator_config, "action_instruction", "") or ACTION_INSTRUCTION,
-    })
+    # 1b. System: Narrator action protocol — the legacy text-block path. Skipped
+    #     in the agentic tool loop (the narrator drives state through tool calls
+    #     instead). Falls back to the built-in default when not customized.
+    if include_action_protocol:
+        messages.append({
+            "role": "system",
+            "content": getattr(narrator_config, "action_instruction", "") or ACTION_INSTRUCTION,
+        })
 
     # 2. Scenario context now lives as a permanent World lorebook entry and is
     #    injected through the lorebook (see steps 7–8).

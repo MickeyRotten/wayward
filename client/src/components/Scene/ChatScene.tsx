@@ -902,6 +902,7 @@ function ActionsBar({
 // ── Edit Area (shared between all message types) ────────────────────
 
 import { forwardRef } from 'react'
+import { ExpandIconButton, TextEditorModal } from '../common/ExpandableTextarea'
 
 const EditArea = forwardRef<
   HTMLTextAreaElement,
@@ -912,25 +913,42 @@ const EditArea = forwardRef<
     onCancel: () => void
   }
 >(function EditArea({ value, onChange, onSave, onCancel }, ref) {
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="space-y-2">
-      <textarea
-        ref={ref}
-        title="Edit message"
-        className="w-full text-sm font-body text-text bg-bg0 border border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && e.ctrlKey) {
-            e.preventDefault()
-            onSave()
-          }
-          if (e.key === 'Escape') {
-            onCancel()
-          }
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
+      <div className="relative">
+        <textarea
+          ref={ref}
+          title="Edit message"
+          className="w-full text-sm font-body text-text bg-bg0 border border-line p-2 outline-none focus:border-line2 resize-y min-h-[48px]"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+              e.preventDefault()
+              onSave()
+            }
+            if (e.key === 'Escape') {
+              onCancel()
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+        <ExpandIconButton
+          onClick={() => setExpanded(true)}
+          className="absolute top-1 right-1"
+        />
+        {expanded && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <TextEditorModal
+              label="Edit Message"
+              value={value}
+              onChange={onChange}
+              onClose={() => setExpanded(false)}
+            />
+          </div>
+        )}
+      </div>
       <div className="flex gap-2">
         <button
           type="button"

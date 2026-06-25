@@ -16,6 +16,7 @@ from server.ai.item_detection import (
     detect_item_use,
     reverse_inventory_deltas,
 )
+from server.ai.narrator_agent import run_narrator_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -304,6 +305,8 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         maxContextTokens=s.max_context_tokens,
         maxCarrySlots=s.max_carry_slots,
         maxPartySize=s.max_party_size,
+        maxToolRounds=s.max_tool_rounds,
+        useTools=bool(s.use_tools),
         apiKeySet=bool(s.api_key),
     )
 
@@ -341,6 +344,8 @@ async def update_openrouter_settings(
     s.max_context_tokens = data.maxContextTokens
     s.max_carry_slots = data.maxCarrySlots
     s.max_party_size = data.maxPartySize
+    s.max_tool_rounds = data.maxToolRounds
+    s.use_tools = data.useTools
     await session.commit()
     return _or_response(s)
 
@@ -1021,6 +1026,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "maxContextTokens": settings.max_context_tokens if settings else 128000,
             "maxCarrySlots": settings.max_carry_slots if settings else 12,
             "maxPartySize": settings.max_party_size if settings else 3,
+            "maxToolRounds": settings.max_tool_rounds if settings else 6,
+            "useTools": bool(settings.use_tools) if settings else True,
         },
         "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
         "quests": [
@@ -1137,6 +1144,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         max_context_tokens=s.get("maxContextTokens", 128000),
         max_carry_slots=s.get("maxCarrySlots", 12),
         max_party_size=s.get("maxPartySize", 3),
+        max_tool_rounds=s.get("maxToolRounds", 6),
+        use_tools=s.get("useTools", True),
     ))
 
     # (Items are restored as part of the lorebook below — cat == "items".)
@@ -1332,6 +1341,24 @@ async def _load_game_context(session: AsyncSession):
     return settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config
 
 
+async def _should_use_tools(settings: OpenRouterSettings) -> bool:
+    """Agentic tool loop runs when enabled AND the selected model supports tools.
+
+    Falls back to the legacy text-block path otherwise. Model support is read
+    from the (cached) OpenRouter model list; on any failure we trust the toggle
+    and let the call surface an error rather than silently downgrading."""
+    if not settings.use_tools:
+        return False
+    try:
+        models = await fetch_models(settings.api_key)
+        m = next((x for x in models if x["id"] == settings.model_id), None)
+        if m is not None:
+            return bool(m.get("supportsTools"))
+    except Exception:
+        log.info("_should_use_tools: model list fetch failed; assuming tool support")
+    return True
+
+
 async def _maybe_summarize_and_build(
     settings, narrator, pc, party_list,
     history: list[ChatMessage],
@@ -1339,6 +1366,7 @@ async def _maybe_summarize_and_build(
     player_message: str,
     current_turn: int,
     session: AsyncSession,
+    agentic: bool = False,
     item_catalog: list[LorebookEntry] | None = None,
     quests: list[Quest] | None = None,
     quest_objectives: list[QuestObjective] | None = None,
@@ -1346,7 +1374,12 @@ async def _maybe_summarize_and_build(
     lore_config: LorebookConfig | None = None,
 ):
     """Check if summarization is needed, do it, then build the prompt.
-    Returns (prompt_messages, did_summarize, spotlight_signals)."""
+    Returns (prompt_messages, did_summarize, spotlight_signals, summarize_hint).
+
+    In agentic mode the deterministic second summarization call is skipped (the
+    model owns summarization via the update_summary tool); instead we return a
+    ``summarize_hint`` flag when context is getting long. The legacy path keeps
+    threshold-triggered auto-summary as before."""
 
     # Filter history to only unsummarized turns
     filtered = [m for m in history if m.turn_number > summary.summary_up_to_turn]
@@ -1383,12 +1416,20 @@ async def _maybe_summarize_and_build(
         lore_config=lore_config,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
+        include_action_protocol=not agentic,
     )
 
     preamble_tokens = estimate_prompt_tokens(test_prompt)
     did_summarize = False
+    summarize_hint = False
+    over_threshold = should_summarize(
+        preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response
+    )
 
-    if should_summarize(preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response):
+    if over_threshold and agentic:
+        # The model owns summarization via the update_summary tool; just nudge it.
+        summarize_hint = True
+    elif over_threshold:
         to_summarize, to_keep, new_boundary = pick_messages_to_summarize(filtered)
         if to_summarize:
             new_summary = await generate_summary(
@@ -1418,9 +1459,10 @@ async def _maybe_summarize_and_build(
         lore_config=lore_config,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
+        include_action_protocol=not agentic,
     )
 
-    return messages, did_summarize, spotlight_signals
+    return messages, did_summarize, spotlight_signals, summarize_hint
 
 
 @router.post("/chat/turn")
@@ -1436,19 +1478,22 @@ async def chat_turn(
     user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn, speaker=pc.id)
     session.add(user_msg)
 
-    # Deterministic item-use detection on the player's message. Detection runs
-    # now (against current inventory) but the decrement is deferred to the save
-    # transaction so a failed generation can't orphan the delta.
-    player_deltas = await _detect_player_deltas(data.message, session)
+    agentic = await _should_use_tools(settings)
+
+    # Legacy path: deterministic item-use detection on the player's message
+    # (decrement deferred to the save transaction). In agentic mode the
+    # consume_item tool replaces this, so detection is skipped.
+    player_deltas = [] if agentic else await _detect_player_deltas(data.message, session)
     await session.commit()
 
-    messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
+    messages, did_summarize, spotlight_signals, summarize_hint = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
         history=all_messages,
         summary=summary,
         player_message=data.message,
         current_turn=current_turn,
         session=session,
+        agentic=agentic,
         item_catalog=catalog,
         quests=quests,
         quest_objectives=quest_objectives,
@@ -1459,6 +1504,17 @@ async def chat_turn(
     variant_count = sum(
         1 for m in all_messages if m.turn_number == current_turn and m.role == "assistant"
     )
+
+    if agentic:
+        return _stream_agent_response(
+            messages=messages,
+            settings=settings,
+            party_list=party,
+            current_turn=current_turn,
+            variant=variant_count,
+            spotlight_signals=spotlight_signals,
+            summarize_hint=summarize_hint,
+        )
 
     return _stream_llm_response(
         messages=messages,
@@ -1501,17 +1557,19 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         latest_variant = max(turn_variants, key=lambda m: m.variant)
         await _reverse_message_effects(latest_variant, session)
     await session.commit()
-    # Re-detect against the now-restored inventory; application is deferred to
-    # the save transaction (see _detect_player_deltas).
-    player_deltas = await _detect_player_deltas(user_msg.content, session)
+    agentic = await _should_use_tools(settings)
+    # Re-detect against the now-restored inventory (legacy path only); agentic
+    # mode re-derives item use through the consume_item tool during the loop.
+    player_deltas = [] if agentic else await _detect_player_deltas(user_msg.content, session)
 
-    messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
+    messages, did_summarize, spotlight_signals, summarize_hint = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
         history=history,
         summary=summary,
         player_message=user_msg.content,
         current_turn=turn,
         session=session,
+        agentic=agentic,
         item_catalog=catalog,
         quests=quests,
         quest_objectives=quest_objectives,
@@ -1523,6 +1581,17 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     variant_count = sum(
         1 for m in all_messages if m.turn_number == turn and m.role == "assistant"
     )
+
+    if agentic:
+        return _stream_agent_response(
+            messages=messages,
+            settings=settings,
+            party_list=party,
+            current_turn=turn,
+            variant=variant_count,
+            spotlight_signals=spotlight_signals,
+            summarize_hint=summarize_hint,
+        )
 
     return _stream_llm_response(
         messages=messages,
@@ -1572,25 +1641,38 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
     )
 
     await session.commit()
-    # Re-run detection on the same player message against the restored inventory.
-    # Application is deferred to the save transaction (see _detect_player_deltas).
-    player_deltas = await _detect_player_deltas(last_user_msg.content, session)
+    agentic = await _should_use_tools(settings)
+    # Re-run detection on the same player message against the restored inventory
+    # (legacy path only; agentic mode uses the consume_item tool).
+    player_deltas = [] if agentic else await _detect_player_deltas(last_user_msg.content, session)
 
     history = [m for m in all_messages if m.turn_number < last_turn]
 
-    messages, did_summarize, spotlight_signals = await _maybe_summarize_and_build(
+    messages, did_summarize, spotlight_signals, summarize_hint = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
         history=history,
         summary=summary,
         player_message=last_user_msg.content,
         current_turn=last_turn,
         session=session,
+        agentic=agentic,
         item_catalog=catalog,
         quests=quests,
         quest_objectives=quest_objectives,
         lore_entries=lore_entries,
         lore_config=lore_config,
     )
+
+    if agentic:
+        return _stream_agent_response(
+            messages=messages,
+            settings=settings,
+            party_list=party,
+            current_turn=last_turn,
+            variant=0,
+            spotlight_signals=spotlight_signals,
+            summarize_hint=summarize_hint,
+        )
 
     # Start fresh at variant 0 since we wiped all previous variants
     return _stream_llm_response(
@@ -1778,6 +1860,132 @@ def _stream_llm_response(
         }
         if combined_inv_deltas:
             done_payload['appliedInventoryDeltas'] = combined_inv_deltas
+        if equip_changes:
+            done_payload['appliedEquipmentChanges'] = equip_changes
+        yield f"data: {json.dumps(done_payload)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+# ── Agentic streaming driver ──────────────────────────────────────
+
+def _stream_agent_response(
+    messages: list[dict],
+    settings: OpenRouterSettings,
+    party_list: list[PartyMember],
+    current_turn: int,
+    variant: int,
+    spotlight_signals: list[SpotlightSignal] | None = None,
+    summarize_hint: bool = False,
+):
+    """Drive the agentic narrator loop and stream its final narration.
+
+    Tool calls mutate the DB *during* the loop (inside run_narrator_agent), so
+    here we only record the accumulated deltas/scene on the ChatMessage for
+    reversal — we do not re-apply them."""
+    _save_prompt_log(messages)
+
+    context_tokens = estimate_prompt_tokens(messages)
+    max_context = settings.max_context_tokens
+
+    log.info(
+        "LLM AGENT REQUEST turn=%s variant=%s | model=%s | temp=%s | max_tokens=%s "
+        "max_context=%s max_tool_rounds=%s | ~%s prompt tokens",
+        current_turn, variant, settings.model_id, settings.temperature,
+        settings.max_tokens_response, max_context, settings.max_tool_rounds, context_tokens,
+    )
+    log.info(
+        "LLM AGENT PROMPT (%d messages):\n%s",
+        len(messages),
+        "\n".join(f"  ── [{m['role']}] ──\n{m.get('content', '')}" for m in messages),
+    )
+
+    async def stream():
+        yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
+
+        final_content = ""
+        scene: dict = {}
+        inv_deltas: list[dict] = []
+        equip_changes: list[dict] = []
+
+        try:
+            async for ev in run_narrator_agent(
+                settings=settings,
+                base_messages=messages,
+                current_turn=current_turn,
+                summarize_hint=summarize_hint,
+            ):
+                etype = ev["type"]
+                if etype == "content":
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif etype == "discard":
+                    yield f"data: {json.dumps({'type': 'discard'})}\n\n"
+                elif etype == "tool":
+                    yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result']})}\n\n"
+                elif etype == "final":
+                    final_content = ev["content"]
+                    scene = ev["scene"]
+                    inv_deltas = ev["inv_deltas"]
+                    equip_changes = ev["equip_changes"]
+        except Exception as e:
+            log.exception("Agent loop failed")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            return
+
+        log.info(
+            "LLM AGENT RESPONSE turn=%s variant=%s (%d chars) | scene=%s | inv_deltas=%s | equip_changes=%s",
+            current_turn, variant, len(final_content), scene, inv_deltas, equip_changes,
+        )
+
+        try:
+            async with async_session() as save_session:
+                speaker_ids: list[str] = []
+                if party_list:
+                    speaker_ids = detect_speakers(final_content, party_list)
+                    for pm in party_list:
+                        if pm.id in speaker_ids:
+                            db_pm = await save_session.get(PartyMember, pm.id)
+                            if db_pm:
+                                db_pm.last_spoke_turn = current_turn
+
+                spot_reason: str | None = None
+                if speaker_ids and spotlight_signals:
+                    signal_map = {s.member_id: s for s in spotlight_signals}
+                    for sid in speaker_ids:
+                        sig = signal_map.get(sid)
+                        if sig:
+                            if sig.directly_addressed:
+                                spot_reason = "Directly addressed"
+                            elif sig.field_skill_relevant:
+                                spot_reason = "Field skill · relevant"
+                            elif sig.turns_since_last_spoke >= 5:
+                                spot_reason = "Hasn't spoken in a while"
+                            break
+
+                assistant_msg = ChatMessage(
+                    role="assistant", content=final_content,
+                    turn_number=current_turn, variant=variant,
+                    speaker="narrator",
+                    location=scene.get("location"),
+                    time_of_day=scene.get("timeOfDay"),
+                    weather=scene.get("weather"),
+                    spotlight_reason=spot_reason,
+                    applied_inventory_deltas=inv_deltas if inv_deltas else None,
+                    applied_equipment_changes=equip_changes if equip_changes else None,
+                )
+                save_session.add(assistant_msg)
+                await save_session.commit()
+        except Exception:
+            log.exception("Failed to save agent response to DB")
+
+        response_tokens = len(final_content) // 4
+        done_payload: dict = {
+            'type': 'done',
+            'contextTokens': context_tokens + response_tokens,
+            'maxContextTokens': max_context,
+        }
+        if inv_deltas:
+            done_payload['appliedInventoryDeltas'] = inv_deltas
         if equip_changes:
             done_payload['appliedEquipmentChanges'] = equip_changes
         yield f"data: {json.dumps(done_payload)}\n\n"

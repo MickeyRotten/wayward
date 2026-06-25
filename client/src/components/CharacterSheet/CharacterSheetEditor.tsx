@@ -4,6 +4,7 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitUpload } from '../PortraitUpload'
+import { ExpandableTextarea } from '../common/ExpandableTextarea'
 
 const RARITY_COLORS: Record<Rarity, string> = {
   c: 'bg-rarity-c',
@@ -238,12 +239,13 @@ function TextArea({ label, value, onChange, onBlur }: {
   return (
     <label className="block">
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
-      <textarea
+      <ExpandableTextarea
+        label={label}
         className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
-        defaultValue={value}
-        onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
-        onChange={(e) => onChange(e.target.value)}
+        value={value}
+        onChange={onChange}
+        onBlur={onBlur ?? onChange}
       />
     </label>
   )

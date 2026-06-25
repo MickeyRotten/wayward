@@ -3,7 +3,9 @@ import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { SelectionBar } from '../SelectionBar'
-import type { LoreCategory } from '@shared/types/models'
+import { ItemCard } from '../ItemCard'
+import { CategoryIcon } from '../CategoryIcon'
+import type { LoreCategory, LorebookEntry } from '@shared/types/models'
 
 const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
   { id: 'world', label: 'World' },
@@ -15,6 +17,7 @@ const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
 
 export function LorePanel() {
   const entries = useLoreStore((s) => s.entries)
+  const catalog = useItemsStore((s) => s.catalog)
   const activeCategory = useLoreStore((s) => s.activeCategory)
   const searchQuery = useLoreStore((s) => s.searchQuery)
   const setCategory = useLoreStore((s) => s.setCategory)
@@ -27,28 +30,17 @@ export function LorePanel() {
   const [createError, setCreateError] = useState('')
 
   const isItems = activeCategory === 'items'
-
-  // Filter entries by active category
-  const categoryEntries = entries.filter((e) => e.cat === activeCategory)
-
-  // Filter by search query (title or keywords)
   const query = searchQuery.toLowerCase().trim()
-  const filteredEntries = query
-    ? categoryEntries.filter(
-        (e) =>
-          e.title.toLowerCase().includes(query) ||
-          e.keywords.some((k) => k.toLowerCase().includes(query))
-      )
-    : categoryEntries
 
-  // Items live in the lorebook but use the richer Item inspector.
-  const isSelected = (id: string) =>
-    isItems
-      ? selection?.kind === 'item' && selection.id === id
-      : selection?.kind === 'lore' && selection.id === id
+  // Items category draws from the catalog (full item data); other categories
+  // from the lorebook entries.
+  const itemList = catalog.filter((i) => !query || i.name.toLowerCase().includes(query))
+  const filteredEntries = entries
+    .filter((e) => e.cat === activeCategory)
+    .filter((e) => !query || e.title.toLowerCase().includes(query) || e.keywords.some((k) => k.toLowerCase().includes(query)))
 
-  const selectEntry = (id: string) =>
-    select(isItems ? { kind: 'item', id } : { kind: 'lore', id })
+  const isItemSelected = (id: string) => selection?.kind === 'item' && selection.id === id
+  const isLoreSelected = (id: string) => selection?.kind === 'lore' && selection.id === id
 
   const handleCreate = async () => {
     setCreateError('')
@@ -64,6 +56,8 @@ export function LorePanel() {
       setCreateError(e instanceof Error ? e.message : 'Failed to create entry')
     }
   }
+
+  const empty = isItems ? itemList.length === 0 : filteredEntries.length === 0
 
   return (
     <div className="flex flex-col h-full">
@@ -102,49 +96,30 @@ export function LorePanel() {
 
       {/* Entry list */}
       <div className="flex-1 overflow-y-auto px-3 pb-3">
-        {filteredEntries.length === 0 && (
+        {empty && (
           <p className="text-[12px] text-textdim font-body px-4 py-3 text-center">
             {query ? 'No matching entries' : 'No entries in this category'}
           </p>
         )}
 
-        <div className="space-y-1">
-          {filteredEntries.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors ${
-                isSelected(entry.id)
-                  ? 'border-line bg-bg3'
-                  : 'border-transparent hover:bg-bg2'
-              }`}
-              onClick={() => selectEntry(entry.id)}
-            >
-              <SelectionBar show={isSelected(entry.id)} />
-              <div className="flex items-center gap-2">
-                {/* Enabled indicator dot */}
-                <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    entry.enabled ? 'bg-[#5a9e6f]' : 'bg-textdim/40'
-                  }`}
-                  title={entry.enabled ? 'Enabled' : 'Disabled'}
+        <div className="space-y-1.5">
+          {isItems
+            ? itemList.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  selected={isItemSelected(item.id)}
+                  onClick={() => select({ kind: 'item', id: item.id })}
                 />
-                <span className="font-body text-sm text-text truncate flex-1">
-                  {entry.title || 'Untitled'}
-                </span>
-                {entry.locked && (
-                  <span className="font-ui text-[10px] text-gold2 shrink-0" title="Locked">
-                    &#128274;
-                  </span>
-                )}
-                {entry.keywords.length > 0 && (
-                  <span className="font-ui text-[10px] text-textsec shrink-0">
-                    {entry.keywords.length} kw
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
+              ))
+            : filteredEntries.map((entry) => (
+                <LoreCard
+                  key={entry.id}
+                  entry={entry}
+                  selected={isLoreSelected(entry.id)}
+                  onClick={() => select({ kind: 'lore', id: entry.id })}
+                />
+              ))}
         </div>
       </div>
 
@@ -162,5 +137,53 @@ export function LorePanel() {
         )}
       </div>
     </div>
+  )
+}
+
+function LockGlyph() {
+  return <span className="font-ui text-[10px] text-gold2 shrink-0" title="Locked">&#128274;</span>
+}
+
+/* Lorebook card. Characters use a PC-style edge-to-edge initial avatar; other
+   categories use the item-card layout with a category icon and no rarity bar.
+   Disabled entries are dimmed. */
+function LoreCard({ entry, selected, onClick }: { entry: LorebookEntry; selected: boolean; onClick: () => void }) {
+  const subtitle = `${entry.cat}${entry.keywords.length ? ` · ${entry.keywords.length} kw` : ''}`
+  const base = `group relative w-full text-left border rounded-md overflow-hidden transition-colors ${
+    selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
+  } ${entry.enabled ? '' : 'opacity-60'}`
+
+  if (entry.cat === 'characters') {
+    return (
+      <button type="button" className={`${base} flex items-stretch`} onClick={onClick}>
+        <SelectionBar show={selected} />
+        <div className="w-14 self-stretch shrink-0 border-r border-line bg-bg3 flex items-center justify-center">
+          <span className="font-disp text-[20px] text-textdim pt-[2px]">{(entry.title || '?')[0].toUpperCase()}</span>
+        </div>
+        <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
+          <div className="flex items-center gap-2">
+            <span className="font-body text-sm text-text truncate flex-1">{entry.title || 'Untitled'}</span>
+            {entry.locked && <LockGlyph />}
+          </div>
+          <span className="font-ui text-[8px] text-textdim tracking-wider uppercase">{subtitle}</span>
+        </div>
+      </button>
+    )
+  }
+
+  return (
+    <button type="button" className={`${base} pl-3 pr-3 py-2.5`} onClick={onClick}>
+      <SelectionBar show={selected} />
+      <div className="flex items-center gap-2.5">
+        <CategoryIcon cat={entry.cat} className="text-gold shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-body text-sm text-text truncate flex-1">{entry.title || 'Untitled'}</span>
+            {entry.locked && <LockGlyph />}
+          </div>
+          <span className="font-ui text-[8px] text-textdim tracking-wider uppercase">{subtitle}</span>
+        </div>
+      </div>
+    </button>
   )
 }

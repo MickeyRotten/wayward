@@ -1,24 +1,8 @@
 import { useState, useRef, useCallback } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
-import { ItemTypeIcon } from '../ItemTypeIcon'
+import { ItemCard, RARITY_COLORS } from '../ItemCard'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
-
-const RARITY_COLORS: Record<Rarity, string> = {
-  c: 'bg-rarity-c',  // gray/dim
-  u: 'bg-rarity-u',  // green
-  r: 'bg-rarity-r',  // blue
-  e: 'bg-rarity-e',  // purple
-  l: 'bg-rarity-l',       // gold
-}
-
-const RARITY_LABELS: Record<Rarity, string> = {
-  c: 'Common',
-  u: 'Uncommon',
-  r: 'Rare',
-  e: 'Epic',
-  l: 'Legendary',
-}
 
 export function ItemsPanel() {
   const inventory = useItemsStore((s) => s.inventory)
@@ -52,44 +36,13 @@ export function ItemsPanel() {
           const item = stack.item
           if (!item) return null
           return (
-            <button
+            <ItemCard
               key={stack.itemId}
-              type="button"
-              className={`relative w-full text-left pl-4 pr-3 py-2.5 border rounded-md overflow-hidden transition-colors ${
-                isSelected(stack.itemId)
-                  ? 'border-line bg-bg3'
-                  : 'border-line bg-bg2 hover:border-line2'
-              }`}
+              item={item}
+              count={stack.count}
+              selected={isSelected(stack.itemId)}
               onClick={() => select({ kind: 'item', id: stack.itemId })}
-            >
-              {/* Rarity — thick bar on the very left edge */}
-              <span
-                className={`absolute left-0 top-0 bottom-0 w-[3px] ${RARITY_COLORS[item.rarity as Rarity] || RARITY_COLORS.c}`}
-                title={RARITY_LABELS[item.rarity as Rarity] || 'Common'}
-              />
-              {/* Selection accent — offset right of the rarity bar so they don't overlap */}
-              {isSelected(stack.itemId) && (
-                <span className="absolute left-[6px] top-2.5 bottom-2.5 w-[2px] bg-gold" aria-hidden="true" />
-              )}
-              <div className="flex items-center gap-2.5">
-                <ItemTypeIcon type={item.type} className="text-gold shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-body text-sm text-text truncate">
-                      {item.name}
-                    </span>
-                    {stack.count > 1 && (
-                      <span className="font-ui text-[10px] text-textsec shrink-0">
-                        x{stack.count}
-                      </span>
-                    )}
-                  </div>
-                  <span className="font-ui text-[8px] text-textdim tracking-wider uppercase">
-                    {item.type}
-                  </span>
-                </div>
-              </div>
-            </button>
+            />
           )
         })}
 

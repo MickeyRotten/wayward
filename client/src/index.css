@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Canonical design tokens (mirrors docs/Wayward Design System.html → :root).
+/* Canonical design tokens (mirrors docs/Wayward Design System.dc.html → :root).
    Edit token values in theme.css; everything below maps Tailwind utilities and
    global styles onto those variables. */
 @import "./theme.css";

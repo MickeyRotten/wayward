@@ -4,7 +4,7 @@
    This :root block is the single source of truth for the visual style and is
    mirrored verbatim from the Design System:
 
-       docs/Wayward Design System.html  →  :root { ... }
+       docs/Wayward Design System.dc.html  →  :root { ... }
 
    TO UPDATE THE STYLE: when the Design System changes, copy its :root token
    values into the block below. Nothing else needs to change — Tailwind utility

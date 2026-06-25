@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
-import { SelectionBar } from '../SelectionBar'
+import { ItemTypeIcon } from '../ItemTypeIcon'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -55,20 +55,24 @@ export function ItemsPanel() {
             <button
               key={stack.itemId}
               type="button"
-              className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors ${
+              className={`relative w-full text-left pl-4 pr-3 py-2.5 border rounded-md overflow-hidden transition-colors ${
                 isSelected(stack.itemId)
                   ? 'border-line bg-bg3'
-                  : 'border-transparent hover:bg-bg2'
+                  : 'border-line bg-bg2 hover:border-line2'
               }`}
               onClick={() => select({ kind: 'item', id: stack.itemId })}
             >
-              <SelectionBar show={isSelected(stack.itemId)} />
+              {/* Rarity — thick bar on the very left edge */}
+              <span
+                className={`absolute left-0 top-0 bottom-0 w-[3px] ${RARITY_COLORS[item.rarity as Rarity] || RARITY_COLORS.c}`}
+                title={RARITY_LABELS[item.rarity as Rarity] || 'Common'}
+              />
+              {/* Selection accent — offset right of the rarity bar so they don't overlap */}
+              {isSelected(stack.itemId) && (
+                <span className="absolute left-[6px] top-2.5 bottom-2.5 w-[2px] bg-gold" aria-hidden="true" />
+              )}
               <div className="flex items-center gap-2.5">
-                {/* Rarity dot */}
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity as Rarity] || RARITY_COLORS.c}`}
-                  title={RARITY_LABELS[item.rarity as Rarity] || 'Common'}
-                />
+                <ItemTypeIcon type={item.type} className="text-gold shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-body text-sm text-text truncate">

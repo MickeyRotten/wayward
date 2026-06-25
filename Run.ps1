@@ -89,17 +89,17 @@ try {
     Ok "Frontend dependencies ready"
 
     # ---------------------------------------------------------------
-    # 5. Launch servers (each in its own window so logs are visible)
+    # 5. Launch both servers in THIS window (no extra console windows).
+    #    -NoNewWindow shares this console, so their logs interleave here
+    #    and closing this one window stops both.
     # ---------------------------------------------------------------
     Info "Starting backend  -> http://127.0.0.1:$BACKEND_PORT"
-    Start-Process -FilePath 'cmd.exe' -WorkingDirectory $root -ArgumentList @(
-        '/k', "title Wayward Backend & `"$venvPy`" -m uvicorn server.main:app --port $BACKEND_PORT"
-    ) | Out-Null
+    $backend = Start-Process -FilePath $venvPy -WorkingDirectory $root -NoNewWindow -PassThru `
+        -ArgumentList '-m', 'uvicorn', 'server.main:app', '--port', "$BACKEND_PORT"
 
     Info "Starting frontend -> $APP_URL"
-    Start-Process -FilePath 'cmd.exe' -WorkingDirectory $clientDir -ArgumentList @(
-        '/k', "title Wayward Frontend & npm run dev -- --port $FRONTEND_PORT --strictPort"
-    ) | Out-Null
+    $frontend = Start-Process -FilePath 'npm.cmd' -WorkingDirectory $clientDir -NoNewWindow -PassThru `
+        -ArgumentList 'run', 'dev', '--', '--port', "$FRONTEND_PORT", '--strictPort'
 
     # ---------------------------------------------------------------
     # 6. Wait for the frontend to respond, then open the browser
@@ -108,17 +108,26 @@ try {
     $up = $false
     for ($i = 0; $i -lt 60; $i++) {
         Start-Sleep -Milliseconds 500
-        try { Invoke-WebRequest $APP_URL -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true; break } catch {}
+        try {
+            Invoke-WebRequest $APP_URL -UseBasicParsing -TimeoutSec 2 | Out-Null
+            Invoke-WebRequest "http://127.0.0.1:$BACKEND_PORT/health" -UseBasicParsing -TimeoutSec 2 | Out-Null
+            $up = $true; break
+        } catch {}
     }
     if ($up) { Ok "App is live" } else { Write-Host "[warn] Frontend slow to start; opening browser anyway." -ForegroundColor Yellow }
     Start-Process $APP_URL
 
     Write-Host ""
-    Info "Wayward is running at $APP_URL"
-    Info "Two server windows opened (Wayward Backend / Wayward Frontend)."
-    Info "Close those windows to stop the servers."
+    Info "Wayward is running at $APP_URL  (backend + frontend log below)"
+    Info "Close this window to stop both servers."
     Write-Host ""
-    Start-Sleep -Seconds 3
+
+    # Keep this single window alive while the servers run; closing it stops both.
+    try {
+        Wait-Process -Id $backend.Id, $frontend.Id
+    } finally {
+        Stop-Process -Id $backend.Id, $frontend.Id -Force -ErrorAction SilentlyContinue
+    }
 }
 catch {
     Write-Host ""

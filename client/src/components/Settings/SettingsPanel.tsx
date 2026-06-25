@@ -111,8 +111,8 @@ export function SettingsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-        {/* API */}
-        <Section title="API" defaultOpen>
+        {/* API & Model */}
+        <Section title="API & Model" defaultOpen>
           <label className="block">
             <span className="text-[11px] text-textdim font-body">
               OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
@@ -134,10 +134,6 @@ export function SettingsPanel() {
               LOAD MODELS
             </button>
           )}
-        </Section>
-
-        {/* Model */}
-        <Section title="Model" defaultOpen>
           <label className="block">
             <span className="text-[11px] text-textdim font-body">Model</span>
             {settings.availableModels.length > 0 ? (

@@ -1,18 +1,9 @@
 import { useState } from 'react'
 import { usePartyStore } from '../../state/partyStore'
 import { useSettingsStore } from '../../state/settingsStore'
-import { useChatStore } from '../../state/chatStore'
 import { useUiStore } from '../../state/uiStore'
-import { deriveCurrentLocation } from '../../lib/location'
 import { SelectionBar } from '../SelectionBar'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
-
-// Static, hand-authored points of interest for the current scene (alpha stub).
-const POIS: { id: string; name: string; blurb: string }[] = [
-  { id: 'stone-pillars', name: 'Stone Pillars', blurb: 'Weathered monoliths ringing the clearing, carved with faded sigils.' },
-  { id: 'silver-pool', name: 'Silver Pool', blurb: 'A still pond that mirrors the sky a little too perfectly.' },
-  { id: 'misty-trail', name: 'Misty Trail', blurb: 'A narrow path that fades into low fog beyond the treeline.' },
-]
 
 export function HomeView() {
   const pc = usePartyStore((s) => s.playerCharacter)
@@ -20,17 +11,14 @@ export function HomeView() {
   const addMember = usePartyStore((s) => s.addPartyMember)
   const setMembership = usePartyStore((s) => s.setMembership)
   const maxPartySize = useSettingsStore((s) => s.maxPartySize)
-  const messages = useChatStore((s) => s.messages)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
   const [error, setError] = useState('')
-  const [openPoi, setOpenPoi] = useState<string | null>(null)
 
   const active = members.filter((m) => m.inParty)
   const benched = members.filter((m) => !m.inParty)
   const full = active.length >= maxPartySize
-  const locationName = deriveCurrentLocation(messages)
 
   const isMemberSelected = (id: string) =>
     selection?.kind === 'member' && 'id' in selection && selection.id === id
@@ -127,31 +115,6 @@ export function HomeView() {
         )}
 
         {error && <p className="text-[11px] text-danger font-body px-3 pt-1">{error}</p>}
-
-        {/* Scene */}
-        <SectionHeader label="Scene" trailing={
-          <span className="font-disp text-[13px] text-gold pt-[1px] leading-none truncate max-w-[160px]">{locationName}</span>
-        } />
-        <div className="space-y-1.5">
-          {POIS.map((poi) => {
-            const open = openPoi === poi.id
-            return (
-              <button
-                key={poi.id}
-                type="button"
-                className={`w-full text-left px-3 py-2 border rounded-md transition-colors ${
-                  open ? 'border-line2 bg-bg0' : 'border-line bg-bg2 hover:border-line2'
-                }`}
-                onClick={() => setOpenPoi(open ? null : poi.id)}
-              >
-                <span className="font-body text-sm text-text">{poi.name}</span>
-                {open && (
-                  <p className="text-[12px] text-textsec font-body mt-1.5 leading-snug">{poi.blurb}</p>
-                )}
-              </button>
-            )
-          })}
-        </div>
       </div>
     </div>
   )

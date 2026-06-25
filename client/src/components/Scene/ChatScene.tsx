@@ -1,11 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useNarratorStore } from '../../state/narratorStore'
-import { useUiStore } from '../../state/uiStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveSceneBanner } from '../../lib/location'
@@ -121,11 +119,12 @@ export function ChatScene() {
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
   const pcPortrait = playerCharacter?.basicInfo?.portrait || ''
 
-  // Items + party members for inline chip rendering (and click-to-inspect)
+  // Item and character names to highlight inline in the narration.
   const chipEntities: ChipEntity[] = [
     ...catalog.map((item) => ({ name: item.name, kind: 'item' as const, id: item.id })),
     ...partyMembers.map((m) => ({ name: m.basicInfo?.name || '', kind: 'member' as const, id: m.id })),
-  ].filter((e) => e.name.trim())
+    ...(playerCharacter ? [{ name: pcName, kind: 'member' as const, id: playerCharacter.id }] : []),
+  ].filter((e) => e.name.trim() && e.name !== 'Player')
 
   // Item id -> catalog entry, for resolving names in inventory/equipment notices
   const catalogMap = new Map(catalog.map((item) => [item.id, item]))
@@ -1054,9 +1053,8 @@ function formatNarration(text: string): string {
 
 export type ChipEntity = { name: string; kind: 'item' | 'member'; id: string }
 
-// Highlight item and party-member names as inline chips. Items render gold,
-// members blue; each carries data-entity/data-id so clicks can open the
-// relevant inspector (see handleEntityClick).
+// Highlight important item and character names inline. Non-interactive — just a
+// subtle gold emphasis so they stand out in the narration (no click-to-inspect).
 function applyEntityChips(html: string, entities: ChipEntity[]): string {
   const byName = new Map(entities.filter((e) => e.name.trim()).map((e) => [e.name.toLowerCase(), e]))
   if (byName.size === 0) return html
@@ -1069,32 +1067,14 @@ function applyEntityChips(html: string, entities: ChipEntity[]): string {
     return text.replace(re, (m: string) => {
       const e = byName.get(m.toLowerCase())
       if (!e) return m
-      const cls = e.kind === 'item'
-        ? 'text-gold2 bg-gold/10 px-1 rounded text-sm font-ui cursor-pointer hover:bg-gold/20'
-        : 'text-blue bg-blue/10 px-1 rounded text-sm font-ui cursor-pointer hover:bg-blue/20'
-      return `<span class="${cls}" data-entity="${e.kind}" data-id="${e.id}">${m}</span>`
+      return `<span class="text-gold2 font-medium">${m}</span>`
     })
   })
 }
 
-// Delegated click handler for entity chips rendered via dangerouslySetInnerHTML.
-// Opens the relevant inspector and stops the click from also triggering the
-// message's edit-on-click.
-function handleEntityClick(e: ReactMouseEvent) {
-  const el = (e.target as HTMLElement).closest('[data-entity]')
-  if (!el) return
-  const kind = el.getAttribute('data-entity')
-  const id = el.getAttribute('data-id')
-  if (!id) return
-  e.stopPropagation()
-  const selectInto = useUiStore.getState().selectInto
-  if (kind === 'item') selectInto({ kind: 'item', id })
-  else if (kind === 'member') selectInto({ kind: 'member', id })
-}
-
-// Renders narrator/chat HTML with entity-chip click handling.
+// Renders narrator/chat HTML (entity names are highlighted but not interactive).
 function NarrationHtml({ className, html }: { className: string; html: string }) {
-  return <div className={className} onClick={handleEntityClick} dangerouslySetInnerHTML={{ __html: html }} />
+  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 function formatNarrationWithDropCap(text: string): string {

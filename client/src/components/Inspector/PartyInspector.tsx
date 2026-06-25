@@ -319,7 +319,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
         </button>
         {showDeleteConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="bg-bg2 border border-line p-5 max-w-xs space-y-4">
+            <div className="bg-bg2 border border-line rounded-lg p-5 max-w-xs space-y-4">
               <p className="font-body text-sm text-text">
                 Delete <strong>{item.name || 'this item'}</strong> from the catalog? This also removes it from inventory.
               </p>
@@ -656,7 +656,7 @@ function QuestInspector({ quest, mode }: { quest: Quest; mode: 'view' | 'edit' }
         </button>
         {showDeleteConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="bg-bg2 border border-line p-5 max-w-xs space-y-4">
+            <div className="bg-bg2 border border-line rounded-lg p-5 max-w-xs space-y-4">
               <p className="font-body text-sm text-text">
                 Delete <strong>{quest.title || 'this quest'}</strong>? This removes all objectives.
               </p>
@@ -1053,7 +1053,7 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
         )}
         {showDeleteConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="bg-bg2 border border-line p-5 max-w-xs space-y-4">
+            <div className="bg-bg2 border border-line rounded-lg p-5 max-w-xs space-y-4">
               <p className="font-body text-sm text-text">
                 Delete <strong>{entry.title || 'this entry'}</strong> from the lorebook?
               </p>

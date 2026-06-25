@@ -138,7 +138,7 @@ export function HomeView() {
               <button
                 key={poi.id}
                 type="button"
-                className={`w-full text-left px-3 py-2 border transition-colors ${
+                className={`w-full text-left px-3 py-2 border rounded-md transition-colors ${
                   open ? 'border-line2 bg-bg0' : 'border-line bg-bg2 hover:border-line2'
                 }`}
                 onClick={() => setOpenPoi(open ? null : poi.id)}
@@ -179,7 +179,7 @@ function CharacterCard({
   return (
     <button
       type="button"
-      className={`w-full text-left px-3 py-2.5 border transition-colors flex items-center gap-3 ${
+      className={`w-full text-left px-3 py-2.5 border rounded-md transition-colors flex items-center gap-3 ${
         selected ? 'border-line2 bg-bg0' : 'border-line bg-bg2 hover:border-line2'
       }`}
       onClick={onSelect}
@@ -205,7 +205,7 @@ function MemberCard({
   const info = member.basicInfo
   return (
     <div
-      className={`group flex items-stretch border transition-colors ${
+      className={`group flex items-stretch border rounded-md transition-colors ${
         selected ? 'border-line2 bg-bg0' : 'border-line bg-bg2 hover:border-line2'
       } ${dimmed ? 'opacity-60' : ''}`}
     >
@@ -233,13 +233,13 @@ function MemberCard({
 function Avatar({ portrait, fallback }: { portrait?: string; fallback: string }) {
   if (portrait) {
     return (
-      <div className="w-12 h-12 border border-line overflow-hidden flex-shrink-0">
+      <div className="w-12 h-12 border border-line rounded-sm overflow-hidden flex-shrink-0">
         <img src={`/portraits/${portrait}`} alt="" className="w-full h-full object-cover object-top" />
       </div>
     )
   }
   return (
-    <div className="w-12 h-12 border border-line bg-bg3 flex items-center justify-center flex-shrink-0">
+    <div className="w-12 h-12 border border-line rounded-sm bg-bg3 flex items-center justify-center flex-shrink-0">
       <span className="font-ui text-[9px] text-textdim">{fallback}</span>
     </div>
   )

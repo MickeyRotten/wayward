@@ -298,7 +298,7 @@ export function ChatScene() {
             {toolsOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setToolsOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 w-44 bg-bg2 border border-line2 z-20 py-1">
+                <div className="absolute bottom-full left-0 mb-2 w-44 bg-bg2 border border-line2 rounded-md z-20 py-1">
                   <ToolMenuItem
                     label="Regenerate"
                     disabled={!showInputRegenerate}
@@ -566,7 +566,7 @@ function MessageBubble({
 
             {/* Message content */}
             <div
-              className="bg-bg2 border border-line px-4 py-3 cursor-pointer"
+              className="bg-bg2 border border-line rounded-md px-4 py-3 cursor-pointer"
               onClick={() => {
                 if (!editing && message.id > 0) setEditing(true)
               }}
@@ -1018,7 +1018,7 @@ function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg0/80">
-      <div className="bg-bg1 border border-line2 w-[720px] max-w-[90vw] max-h-[85vh] flex flex-col">
+      <div className="bg-bg1 border border-line2 rounded-lg w-[720px] max-w-[90vw] max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-3 border-b border-line2">
           <h2 className="font-ui text-[11px] tracking-wider">PROMPT LOG</h2>
           <button

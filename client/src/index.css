@@ -55,6 +55,16 @@ html, body, #root {
   font-family: var(--fbody);
 }
 
+/* Design System rounds all controls (inputs/buttons/tags ~2px). Applied as a
+   base default so every form control and button is consistently rounded;
+   explicit `rounded-*` utilities still override this where a different radius
+   is wanted (e.g. rounded-md cards, rounded-full dots). */
+@layer base {
+  input, textarea, select, button {
+    border-radius: var(--r-sm);
+  }
+}
+
 /* Scrollbars (Design System §Components) */
 * {
   scrollbar-width: thin;

@@ -89,7 +89,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
       <div className="space-y-6 p-6">
         {/* Portrait */}
         {d.basicInfo.portrait && (
-          <div className="w-full aspect-3/4 border border-line bg-bg2 overflow-hidden">
+          <div className="w-full aspect-3/4 border border-line rounded-md bg-bg2 overflow-hidden">
             <img
               src={`/portraits/${d.basicInfo.portrait}`}
               alt="Portrait"

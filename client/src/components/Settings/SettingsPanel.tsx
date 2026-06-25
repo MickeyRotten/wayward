@@ -416,7 +416,7 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="border border-line">
+    <section className="border border-line rounded-md">
       <button
         type="button"
         className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-bg2 transition-colors"

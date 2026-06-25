@@ -16,7 +16,7 @@ export function AppShell({ iconRail, left, middle, right }: AppShellProps) {
       <aside className="flex flex-col overflow-y-auto bg-bg1 border-r border-line">
         {left}
       </aside>
-      <main className="flex flex-col overflow-hidden bg-bg0">
+      <main className="flex flex-col overflow-hidden" style={{ background: 'var(--chat-bg)' }}>
         {middle}
       </main>
       <aside className="flex flex-col overflow-y-auto bg-bg1 border-l border-line">

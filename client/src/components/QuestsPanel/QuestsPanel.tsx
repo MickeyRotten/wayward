@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuestsStore } from '../../state/questsStore'
 import { useUiStore } from '../../state/uiStore'
+import { SelectionBar } from '../SelectionBar'
 import type { Quest } from '@shared/types/models'
 
 export function QuestsPanel() {
@@ -82,13 +83,14 @@ function QuestRow({
   return (
     <button
       type="button"
-      className={`w-full text-left px-3 py-2.5 border transition-colors ${
+      className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors ${
         selected
-          ? 'border-line2 bg-bg0'
+          ? 'border-line bg-bg3'
           : 'border-transparent hover:bg-bg2'
       }`}
       onClick={onSelect}
     >
+      <SelectionBar show={selected} />
       <div className="flex items-center justify-between gap-2">
         <span className="font-body text-sm text-text truncate">{quest.title}</span>
         {totalCount > 0 && (
@@ -134,13 +136,14 @@ function InactiveSection({
             <button
               key={quest.id}
               type="button"
-              className={`w-full text-left px-3 py-2.5 border transition-colors ${
+              className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors ${
                 isSelected(quest.id)
-                  ? 'border-line2 bg-bg0'
+                  ? 'border-line bg-bg3'
                   : 'border-transparent hover:bg-bg2'
               }`}
               onClick={() => onSelect(quest.id)}
             >
+              <SelectionBar show={isSelected(quest.id)} />
               <div className="flex items-center justify-between gap-2">
                 <span className="font-body text-sm text-textdim truncate">{quest.title}</span>
                 <span className={`font-ui text-[9px] tracking-wider shrink-0 ${

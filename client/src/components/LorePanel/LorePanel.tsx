@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
+import { SelectionBar } from '../SelectionBar'
 import type { LoreCategory } from '@shared/types/models'
 
 const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
@@ -112,13 +113,14 @@ export function LorePanel() {
             <button
               key={entry.id}
               type="button"
-              className={`w-full text-left px-3 py-2.5 border transition-colors ${
+              className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors ${
                 isSelected(entry.id)
-                  ? 'border-line2 bg-bg0'
+                  ? 'border-line bg-bg3'
                   : 'border-transparent hover:bg-bg2'
               }`}
               onClick={() => selectEntry(entry.id)}
             >
+              <SelectionBar show={isSelected(entry.id)} />
               <div className="flex items-center gap-2">
                 {/* Enabled indicator dot */}
                 <span

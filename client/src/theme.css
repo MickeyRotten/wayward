@@ -46,6 +46,9 @@
   --fbody: 'Quicksand', sans-serif;  /* body prose */
   --fui:   'Hanken Grotesk', sans-serif; /* UI chrome / labels */
 
+  /* Chat area background (Design System §Layout) */
+  --chat-bg: linear-gradient(180deg, #13110c, #100e0a);
+
   /* Border radius scale (Design System §Spacing) */
   --r-sm: 2px;   /* inputs, tags, chips, portraits */
   --r-md: 3px;   /* cards, panels */

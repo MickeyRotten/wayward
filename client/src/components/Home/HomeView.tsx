@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../state/settingsStore'
 import { useChatStore } from '../../state/chatStore'
 import { useUiStore } from '../../state/uiStore'
 import { deriveCurrentLocation } from '../../lib/location'
+import { SelectionBar } from '../SelectionBar'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
 
 // Static, hand-authored points of interest for the current scene (alpha stub).
@@ -179,11 +180,12 @@ function CharacterCard({
   return (
     <button
       type="button"
-      className={`w-full text-left px-3 py-2.5 border rounded-md transition-colors flex items-center gap-3 ${
-        selected ? 'border-line2 bg-bg0' : 'border-line bg-bg2 hover:border-line2'
+      className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors flex items-center gap-3 ${
+        selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
       }`}
       onClick={onSelect}
     >
+      <SelectionBar show={selected} />
       <Avatar portrait={portrait} fallback={fallback} />
       <div className="min-w-0">
         <span className="font-disp text-[19px] pt-[2px] block leading-tight truncate">{name}</span>
@@ -205,10 +207,11 @@ function MemberCard({
   const info = member.basicInfo
   return (
     <div
-      className={`group flex items-stretch border rounded-md transition-colors ${
-        selected ? 'border-line2 bg-bg0' : 'border-line bg-bg2 hover:border-line2'
+      className={`group relative flex items-stretch border rounded-md transition-colors ${
+        selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
       } ${dimmed ? 'opacity-60' : ''}`}
     >
+      <SelectionBar show={selected} />
       <button type="button" className="flex-1 text-left px-3 py-2.5 min-w-0 flex items-center gap-3" onClick={onSelect}>
         <Avatar portrait={info.portrait} fallback={(info.name || '?')[0].toUpperCase()} />
         <div className="min-w-0">

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
+import { SelectionBar } from '../SelectionBar'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -54,13 +55,14 @@ export function ItemsPanel() {
             <button
               key={stack.itemId}
               type="button"
-              className={`w-full text-left px-3 py-2.5 border transition-colors ${
+              className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors ${
                 isSelected(stack.itemId)
-                  ? 'border-line2 bg-bg0'
+                  ? 'border-line bg-bg3'
                   : 'border-transparent hover:bg-bg2'
               }`}
               onClick={() => select({ kind: 'item', id: stack.itemId })}
             >
+              <SelectionBar show={isSelected(stack.itemId)} />
               <div className="flex items-center gap-2.5">
                 {/* Rarity dot */}
                 <span

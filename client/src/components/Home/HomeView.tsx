@@ -180,14 +180,14 @@ function CharacterCard({
   return (
     <button
       type="button"
-      className={`relative w-full text-left px-3 py-2.5 border rounded-md transition-colors flex items-center gap-3 ${
+      className={`group relative w-full text-left border rounded-md overflow-hidden transition-colors flex items-stretch ${
         selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
       }`}
       onClick={onSelect}
     >
       <SelectionBar show={selected} />
-      <Avatar portrait={portrait} fallback={fallback} />
-      <div className="min-w-0">
+      <CardPortrait portrait={portrait} fallback={fallback} />
+      <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
         <span className="font-disp text-[19px] pt-[2px] block leading-tight truncate">{name}</span>
         <span className="text-[10px] text-textdim font-body">{subtitle}</span>
       </div>
@@ -207,14 +207,14 @@ function MemberCard({
   const info = member.basicInfo
   return (
     <div
-      className={`group relative flex items-stretch border rounded-md transition-colors ${
+      className={`group relative flex items-stretch border rounded-md overflow-hidden transition-colors ${
         selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
       } ${dimmed ? 'opacity-60' : ''}`}
     >
       <SelectionBar show={selected} />
-      <button type="button" className="flex-1 text-left px-3 py-2.5 min-w-0 flex items-center gap-3" onClick={onSelect}>
-        <Avatar portrait={info.portrait} fallback={(info.name || '?')[0].toUpperCase()} />
-        <div className="min-w-0">
+      <button type="button" className="flex-1 text-left min-w-0 flex items-stretch" onClick={onSelect}>
+        <CardPortrait portrait={info.portrait} fallback={(info.name || '?')[0].toUpperCase()} />
+        <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
           <span className="font-disp text-[19px] pt-[2px] block leading-tight truncate">{info.name || 'Unnamed'}</span>
           <span className="text-[10px] text-textdim font-body">{info.species}</span>
         </div>
@@ -233,17 +233,18 @@ function MemberCard({
   )
 }
 
-function Avatar({ portrait, fallback }: { portrait?: string; fallback: string }) {
+/* Portrait fills the card's full height, flush to the left edge. */
+function CardPortrait({ portrait, fallback }: { portrait?: string; fallback: string }) {
   if (portrait) {
     return (
-      <div className="w-12 h-12 border border-line rounded-sm overflow-hidden flex-shrink-0">
+      <div className="w-14 self-stretch shrink-0 border-r border-line overflow-hidden">
         <img src={`/portraits/${portrait}`} alt="" className="w-full h-full object-cover object-top" />
       </div>
     )
   }
   return (
-    <div className="w-12 h-12 border border-line rounded-sm bg-bg3 flex items-center justify-center flex-shrink-0">
-      <span className="font-ui text-[9px] text-textdim">{fallback}</span>
+    <div className="w-14 self-stretch shrink-0 border-r border-line bg-bg3 flex items-center justify-center">
+      <span className="font-disp text-[20px] text-textdim pt-[2px]">{fallback}</span>
     </div>
   )
 }

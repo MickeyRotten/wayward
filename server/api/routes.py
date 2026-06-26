@@ -1,9 +1,13 @@
+import datetime
+import io
 import json
 import logging
-import uuid
-from pathlib import Path
-
+import re
 import shutil
+import sqlite3
+import uuid
+import zipfile
+from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -311,6 +315,139 @@ async def delete_campaign_route(cid: str, session: AsyncSession = Depends(get_se
         switched_to = {"campaignId": other["id"], "adventureId": aid}
     shutil.rmtree(storage.campaign_dir(cid), ignore_errors=True)
     return {"deleted": cid, "switchedTo": switched_to}
+
+
+def _portrait_refs(db_path: Path) -> set[str]:
+    """Portrait filenames referenced by an adventure's PC + party members."""
+    refs: set[str] = set()
+    if not db_path.exists():
+        return refs
+    con = sqlite3.connect(str(db_path))
+    try:
+        for tbl in ("player_characters", "party_members"):
+            try:
+                for (bi,) in con.execute(f"SELECT basic_info FROM {tbl}"):
+                    try:
+                        p = (json.loads(bi) or {}).get("portrait")
+                    except (json.JSONDecodeError, TypeError):
+                        p = None
+                    if p:
+                        refs.add(p)
+            except sqlite3.OperationalError:
+                pass
+    finally:
+        con.close()
+    return refs
+
+
+@router.get("/campaigns/{cid}/export")
+async def export_campaign(cid: str, adventures: str | None = None):
+    """Export a campaign as a self-contained .zip (campaign + chosen adventures +
+    referenced portraits). `adventures` = comma-separated adventure ids, or omit
+    for all."""
+    cdir = storage.campaign_dir(cid)
+    if not cdir.exists():
+        raise HTTPException(404, "Campaign not found")
+    await storage.refresh_active_adventure_meta()
+    meta = storage.read_campaign_meta(cid) or {"id": cid, "name": "Campaign"}
+    all_advs = storage.list_adventures(cid)
+    if adventures is not None:
+        wanted = {a for a in adventures.split(",") if a}
+        advs = [a for a in all_advs if a["id"] in wanted]
+    else:
+        advs = all_advs
+
+    portraits: set[str] = set()
+    for a in advs:
+        portraits |= _portrait_refs(storage.adventure_db_path(cid, a["id"]))
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("campaign.json", json.dumps(meta, ensure_ascii=False))
+        z.write(storage.campaign_db_path(cid), "campaign.db")
+        for a in advs:
+            base = f"adventures/{a['id']}"
+            z.writestr(f"{base}/adventure.json", json.dumps(a, ensure_ascii=False))
+            z.write(storage.adventure_db_path(cid, a["id"]), f"{base}/adventure.db")
+        for fn in portraits:
+            p = PORTRAITS_DIR / fn
+            if p.exists():
+                z.write(p, f"portraits/{fn}")
+    buf.seek(0)
+    safe = re.sub(r"[^\w\-]+", "_", meta.get("name", "campaign")).strip("_") or "campaign"
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.zip"'},
+    )
+
+
+@router.post("/campaigns/import")
+async def import_campaign(file: UploadFile):
+    """Import a campaign zip as a NEW campaign (deduping its name). DB files are
+    portable as-is (scope is folder location, not a column); only folder ids +
+    json id fields are regenerated. Portraits are restored to the global dir."""
+    raw = await file.read()
+    try:
+        z = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "Not a valid zip file")
+    names = set(z.namelist())
+    if "campaign.db" not in names:
+        raise HTTPException(400, "Zip is not a Wayward campaign export")
+
+    try:
+        cmeta = json.loads(z.read("campaign.json")) if "campaign.json" in names else {}
+    except json.JSONDecodeError:
+        cmeta = {}
+    base_name = (cmeta.get("name") or "Imported Campaign").strip() or "Imported Campaign"
+    existing = {c.get("name") for c in storage.list_campaigns()}
+    name, i = base_name, 2
+    while name in existing:
+        name = f"{base_name} ({i})"
+        i += 1
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    new_cid = str(uuid.uuid4())
+    cdir = storage.campaign_dir(new_cid)
+    (cdir / "adventures").mkdir(parents=True, exist_ok=True)
+    (cdir / "portraits").mkdir(parents=True, exist_ok=True)
+    storage.campaign_db_path(new_cid).write_bytes(z.read("campaign.db"))
+    storage.write_campaign_meta(new_cid, {"id": new_cid, "name": name, "createdAt": now})
+
+    adv_ids = sorted({
+        n.split("/")[1] for n in names
+        if n.startswith("adventures/") and n.endswith("/adventure.db")
+    })
+    for old_aid in adv_ids:
+        new_aid = str(uuid.uuid4())
+        adir = storage.adventure_dir(new_cid, new_aid)
+        adir.mkdir(parents=True, exist_ok=True)
+        (adir / "portraits").mkdir(parents=True, exist_ok=True)
+        storage.adventure_db_path(new_cid, new_aid).write_bytes(
+            z.read(f"adventures/{old_aid}/adventure.db")
+        )
+        try:
+            ameta = json.loads(z.read(f"adventures/{old_aid}/adventure.json"))
+        except (KeyError, json.JSONDecodeError):
+            ameta = {}
+        ameta.update({"id": new_aid})
+        ameta.setdefault("name", "Adventure")
+        ameta.setdefault("createdAt", now)
+        ameta.setdefault("lastPlayedAt", now)
+        ameta.setdefault("day", 1)
+        storage.write_adventure_meta(new_cid, new_aid, ameta)
+
+    if not adv_ids:
+        await storage.create_adventure(new_cid, "Adventure 1")
+
+    for n in names:
+        if n.startswith("portraits/") and not n.endswith("/"):
+            fn = n.split("/", 1)[1]
+            dest = PORTRAITS_DIR / fn
+            if fn and not dest.exists():
+                dest.write_bytes(z.read(n))
+
+    return {"id": new_cid, "name": name}
 
 
 # ── Player Character ──────────────────────────────────────────────

@@ -465,7 +465,27 @@ function CampaignSection() {
   const [newName, setNewName] = useState('')
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const importRef = useRef<HTMLInputElement>(null)
+  const fetchCampaigns = useCampaignsStore((s) => s.fetch)
   const active = campaigns.find((c) => c.id === activeId)
+
+  const handleExport = () => {
+    if (activeId) window.open(`/api/campaigns/${activeId}/export`, '_blank')
+  }
+
+  const handleImport = async (file: File) => {
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/campaigns/import', { method: 'POST', body: form })
+      if (!res.ok) throw new Error(await res.text().catch(() => 'Import failed'))
+      await fetchCampaigns()
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const inputCls = 'w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2'
 
@@ -517,17 +537,43 @@ function CampaignSection() {
         </button>
       </div>
 
-      <button
-        type="button"
-        disabled={busy || campaigns.length <= 1}
-        className="font-ui text-[10px] tracking-wider text-danger border border-danger-border px-3 py-1.5 hover:text-danger-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        onClick={() => setConfirmDelete(true)}
-      >
-        DELETE CAMPAIGN
-      </button>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <button
+          type="button"
+          disabled={busy || !activeId}
+          className="font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-40"
+          onClick={handleExport}
+        >
+          EXPORT (.zip)
+        </button>
+        <button
+          type="button"
+          disabled={busy || importing}
+          className="font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-40"
+          onClick={() => importRef.current?.click()}
+        >
+          {importing ? 'IMPORTING…' : 'IMPORT (.zip)'}
+        </button>
+        <button
+          type="button"
+          disabled={busy || campaigns.length <= 1}
+          className="font-ui text-[10px] tracking-wider text-danger border border-danger-border px-3 py-1.5 hover:text-danger-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={() => setConfirmDelete(true)}
+        >
+          DELETE
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".zip"
+          title="Import campaign zip"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = '' }}
+        />
+      </div>
 
       <p className="text-[10px] text-textdim font-body">
-        Switching loads the campaign's latest adventure. A new campaign opens in Edit Mode to build its world.
+        Switching loads the campaign's latest adventure. A new campaign opens in Edit Mode to build its world. Export bundles the world + its adventures + portraits into a shareable zip; import always creates a new campaign.
       </p>
 
       {pendingSwitch && (

@@ -28,14 +28,14 @@ from server.api.routes import router
 
 PORTRAITS_DIR = Path(__file__).resolve().parent / "portraits"
 PORTRAITS_DIR.mkdir(exist_ok=True)
-from server.db.database import create_tables
-from server.db.seed import seed_defaults
+from server.db.database import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_tables()
-    await seed_defaults()
+    # Resolve/attach the active campaign+adventure (migrates a legacy wayward.db
+    # or seeds a fresh default scope on first run).
+    await init_db()
     yield
 
 

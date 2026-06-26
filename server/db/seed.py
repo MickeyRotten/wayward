@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
-from server.db.database import async_session
+from server.db.database import new_session
 from server.db.models import (
     InventoryStack,
     LorebookConfig,
@@ -357,7 +357,7 @@ SEED_CATALOG = [
 
 
 async def seed_defaults():
-    async with async_session() as session:
+    async with new_session() as session:
         existing = (await session.execute(select(PlayerCharacter))).scalars().first()
         if existing:
             return

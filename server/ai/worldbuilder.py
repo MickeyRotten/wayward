@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.ai.openrouter import chat_completion_agent_turn
-from server.db.database import async_session
+from server.db.database import new_session
 from server.db.models import (
     ChatMessage,
     LorebookEntry,
@@ -470,7 +470,7 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
     Clears any stale 'pending' proposals for this turn first (so swipe/regen
     don't accumulate duplicates). No-op when mode is 'disabled'.
     """
-    async with async_session() as session:
+    async with new_session() as session:
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
         if not settings or not settings.api_key or not settings.model_id:
             return []

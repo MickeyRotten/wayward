@@ -33,5 +33,8 @@ Thumbs.db
 # Uploaded portraits (keep seed files tracked with git add -f)
 
 
+# Campaign/Adventure data (per-campaign + per-adventure SQLite files + portraits)
+server/data/
+
 # Debug
 .prompt_log.json

@@ -29,7 +29,7 @@ from server.ai.narrator_actions import (
 )
 from server.ai.openrouter import chat_completion_agent_turn
 from server.ai.worldbuilder import LORE_CATS, QUEST_STATUSES, _resolve_lore, _resolve_quest
-from server.db.database import async_session
+from server.db.database import new_session
 from server.db.models import (
     ChatMessage,
     LorebookEntry,
@@ -452,7 +452,7 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
     Yields {"type":"content","text"}, {"type":"tool","name","result"}, and a
     terminal {"type":"final","content","pendingDeletes"}.
     """
-    async with async_session() as session:
+    async with new_session() as session:
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
         narrator = (await session.execute(select(NarratorConfig))).scalars().first()
         instructions = (getattr(narrator, "planner_instructions", "") or PLANNER_GUIDANCE) if narrator else PLANNER_GUIDANCE

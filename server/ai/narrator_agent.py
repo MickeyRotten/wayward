@@ -34,7 +34,7 @@ from server.ai.narrator_actions import (
     tool_unequip,
 )
 from server.ai.openrouter import chat_completion_agent_turn
-from server.db.database import async_session
+from server.db.database import new_session
 from server.db.models import StorySummary
 
 log = logging.getLogger("wayward.narrator_agent")
@@ -268,7 +268,7 @@ async def run_narrator_agent(
 
     max_rounds = max(1, settings.max_tool_rounds or 6)
 
-    async with async_session() as agent_session:
+    async with new_session() as agent_session:
         for round_idx in range(max_rounds):
             # On the last allowed round, drop tools so the model is forced to
             # produce final narration instead of requesting more tool calls.

@@ -28,7 +28,7 @@ from server.ai.summarizer import (
     pick_messages_to_summarize,
     should_summarize,
 )
-from server.db.database import async_session
+from server.db.database import new_session
 from server.api.schemas import (
     ChatMessageResponse,
     ChatMessageUpdate,
@@ -1891,7 +1891,7 @@ def _stream_planner_response(settings: OpenRouterSettings, turn: int):
                  turn, len(final_content), len(pending_deletes))
 
         try:
-            async with async_session() as save_session:
+            async with new_session() as save_session:
                 save_session.add(ChatMessage(
                     role="assistant", content=final_content, turn_number=turn,
                     variant=0, speaker="planner", mode="planner",
@@ -2022,7 +2022,7 @@ def _stream_llm_response(
         equip_changes: list[dict] = []
 
         try:
-            async with async_session() as save_session:
+            async with new_session() as save_session:
                 speaker_ids: list[str] = []
                 if party_list:
                     speaker_ids = detect_speakers(full_text, party_list)
@@ -2181,7 +2181,7 @@ def _stream_agent_response(
         )
 
         try:
-            async with async_session() as save_session:
+            async with new_session() as save_session:
                 speaker_ids: list[str] = []
                 if party_list:
                     speaker_ids = detect_speakers(final_content, party_list)

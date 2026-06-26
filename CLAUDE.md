@@ -1,169 +1,81 @@
-# Wayward — Alpha Build Plan
+# Wayward — Architecture & Working Notes
+
+> This file started as the alpha build plan; it now documents the **current
+> system**. The original alpha (a polished LLM narrative scene with a PC + party)
+> is built and has grown well past it — see the feature sections below. Combat,
+> grid/world navigation, and the Bond/Stunt system remain future vision, not yet
+> built. `feedback.md` (gitignored locally, but tracked) is the running log of
+> requests and what was done.
 
 ## What This Is
 
-Wayward is an AI-driven RPG suite — a more intelligent, purpose-built alternative to SillyTavern. The full vision includes grid-based world navigation, JRPG-style turn-based combat, a Bond/Stunt system for party members, and user-generated content tools. **None of that is in scope for this alpha.**
+Wayward is an AI-driven RPG suite — a more intelligent, purpose-built alternative to SillyTavern. The full vision includes grid-based world navigation, JRPG-style turn-based combat, a Bond/Stunt system for party members, and user-generated content tools.
 
-The alpha is a single, focused deliverable: **a polished LLM-driven narrative scene — chat-based roleplay with a player character and a party, done extremely well.** Everything else is designed and waiting, but deliberately not being built yet. Resist the urge to scaffold for future systems (combat, grid, lorebook automation) inside alpha code — build only what's listed below, cleanly.
+The heart of the app is a **polished, agentic LLM narrative scene** — chat-based roleplay with a player character and a party — wrapped in tooling to build and manage worlds.
 
-If prior design docs (`wayward-tech-stack.md`, `wayward-party-combat.md`, `wayward-style.html`) are present in the repo under `/docs`, treat them as background reference for the long-term vision — but this file is the source of truth for what to actually build right now.
+## What's built
 
----
+- **Narrator** — an agentic, multi-step tool-calling chat agent (see "The Narrator Agent Loop").
+- **Party spotlight** — deterministic signals decide when party members speak (see "Party Member Spotlight Logic").
+- **Chronicler** — a passive post-turn world-builder that proposes lore/quest/member additions.
+- **Edit Mode (the Editor)** — a foreground, conversational world-builder; full CRUD over the world.
+- **Lorebook** (world/characters/items/monsters/spells, with keyword injection), **quests + objectives**, **inventory + a unified item system** (items are lore entries), the **Scenario** (a locked lore entry), an in-game **day** counter.
+- **OpenRouter integration** — model list (filtered to tool-capable), sampling params, tool settings.
+- **Campaigns & Adventures** — separate worlds (campaigns) and save files (adventures), each its own SQLite file; Save/Load, campaign switching, and zip import/export for sharing (see "Campaigns & Adventures").
+- Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme.
 
-## Alpha Scope
-
-### In scope
-- Editable Narrator instructions (the system prompt governing the DM/narrator LLM)
-- Editable Scenario (freeform context describing the current setting/situation)
-- Editable Party — add and remove party members
-- Editable Player Character Sheet (full spec below)
-- Editable Party Member sheets, including a Field Skill (full spec below)
-- Party member narration logic — the spotlight system that decides when a party member reacts (this is the central technical problem of the alpha — see below)
-- OpenRouter integration — model list, model settings, max tokens, max context
-- Three-pane UI: left (character/party management), middle (chat), right (inspector showing current party)
-
-### Explicitly out of scope (do not build)
-- Grid/world navigation, towns, dungeons, the tile system
-- JRPG battle screen, AP economy, Bond Gauge, Combat Stunts, enemy AI
-- The player's own Skills/Stunts/Spells progression system (combat-facing)
-- Dice-based or any other formal mechanical resolution for skill checks — for this alpha, Attributes are **narrative flavor only**. The Narrator LLM should use them as characterization context, not run them through a formal mechanic. *(Flagging this as an assumption — see Open Questions at the end.)*
-- Lorebook, automated entry detection, world Currents/quests
-- General inventory/items beyond the fixed equipment slots on the character sheet
-- UGC tooling beyond the character/party editors already listed above
-- Supabase — alpha uses SQLite only, per the locked tech stack's "SQLite for prototyping" decision. Still follow the schema_version + stable ID conventions from the UGC strategy doc, even though no sharing exists yet.
+## Not yet built (future vision — don't scaffold for it)
+- Grid/world navigation, towns, dungeons, the tile system.
+- JRPG battle screen, AP economy, Bond Gauge, Combat Stunts, enemy AI.
+- The player's combat-facing Skills/Stunts/Spells progression.
+- Any dice/formal skill-check resolution — **Attributes (STR/CON/…) are narrative flavor only**; the Narrator uses them as characterization context, not a mechanic.
 
 ---
 
 ## Tech Stack
 
-Locked previously, repeated here for convenience:
-
 | Layer | Choice |
 |---|---|
 | Frontend | React + TypeScript |
-| Styling | CSS + Tailwind |
+| Styling | Tailwind v4 (`@theme inline` mapped to CSS vars) |
 | State | Zustand |
-| Backend | Python + FastAPI |
+| Backend | Python + FastAPI + SQLAlchemy (async, aiosqlite) |
 | AI | OpenRouter API (OpenAI-compatible) |
-| Database | SQLite (alpha) → Supabase later |
+| Database | SQLite — **multiple files**, one per campaign + per adventure, ATTACHed at runtime (see "Campaigns & Adventures") |
 
-Client owns game/UI logic; server owns AI calls, persistence, and prompt assembly.
+Client owns game/UI logic; server owns AI calls, persistence, and prompt assembly. Shared TS types live in `shared/types/models.ts`.
 
 ---
 
 ## Design System
 
-Monochrome only. No color anywhere. Backgrounds are always white or off-white — never a dark surface. Borders are 1.5px solid near-black. Three fonts, each with a distinct job:
+Dark, warm, gold-accented — **not** monochrome. Tokens are the single source of truth in [`client/src/theme.css`](client/src/theme.css) (the `:root` block) and are mapped onto Tailwind utilities (`bg-bg0`, `text-gold`, `border-line`, `font-disp`, …) in [`client/src/index.css`](client/src/index.css) via `@theme inline`. Edit a token in `theme.css` and it propagates everywhere — so prefer the utilities over literal colors.
 
-```css
-:root{
-  --white:    #ffffff;
-  --off:      #f5f4f1;
-  --off2:     #eceae6;
-  --border:   #1a1816;
-  --text:     #1a1816;
-  --text-sec: #666460;
-  --text-dim: #999793;
-  --mid:      #c0bebb;
+Key tokens (see theme.css for the full set):
+- Surfaces (dark, faintly warm): `--bg0 #100e0a` … `--bg3 #262016`.
+- Gold accents: `--gold #c9a558`, `--gold2 #e8cf8c`, `--golddeep`. Blue (`--blue`) marks the player character.
+- Borders are translucent gold: `--line` / `--line2`.
+- Three fonts: **Cinzel** (`--fdisp`, display/headers/names), **Quicksand** (`--fbody`, body prose), **Hanken Grotesk** (`--fui`, UI chrome/labels). Cinzel sits high in the line box → add a small `pt-[2-3px]` to Cinzel headings (see `.font-disp-corrected`).
+- Item rarity colors `--rarity-c…l` and danger tokens `--danger*`.
 
-  --font-h:  'Bokor', serif;          /* headers, names, world text */
-  --font-b:  'Rethink Sans', sans-serif; /* body prose, descriptions */
-  --font-ui: 'Silkscreen', sans-serif;   /* buttons, tags, UI chrome */
-}
-```
-
-**Bokor rules — both matter, easy to miss:**
-1. Never apply `font-weight: bold` to Bokor. It has no true bold and faux-bold renders badly. Always `font-weight: 400`.
-2. Bokor's ascent metrics sit high in the line box — glyphs look vertically misaligned without correction. Add `padding-top` to any Bokor element, scaled roughly to font size (a 52px heading needs ~6px, a 14px label needs ~2-3px).
-
-If `wayward-style.html` is available in the repo, treat it as the canonical visual reference and copy its component CSS (cards, tags, bars, buttons) directly rather than reinventing them.
+**Edit Mode re-skins the app** to a cool indigo/violet palette: when Edit Mode is active, `<body>` gets the `edit-mode` class and [`client/src/edit-theme.css`](client/src/edit-theme.css) overrides the same tokens at runtime. Warm/gold = Play (Narration); indigo/violet = Edit.
 
 ---
 
 ## Data Models
 
-```typescript
-interface AttributeBlock {
-  STR: number;
-  CON: number;
-  DEX: number;
-  INT: number;
-  WIS: number;
-  CHA: number;
-}
+**Source of truth: [`server/db/models.py`](server/db/models.py)** (SQLAlchemy) and [`shared/types/models.ts`](shared/types/models.ts) (the mirrored TS). Models are **schema-tagged by scope** (see "Campaigns & Adventures"): `app` (settings), `campaign` (the world), `adventure` (a save). Every entity keeps a stable UUID + `schema_version`.
 
-interface Equipment {
-  head: string;
-  neck: string;
-  torsoOver: string;
-  torsoUnder: string;
-  leftHand: string;
-  rightHand: string;
-  waist: string;
-  legsOver: string;
-  legsUnder: string;
-  feet: string;
-  accessory1: string;
-  accessory2: string;
-}
+Highlights / things that have changed from the original alpha plan:
+- **Equipment** is 12 fixed slots, but each value is now an **item id** referencing a lorebook item entry (not free text). `BasicInfo` (name/gender/species/age/height/weight/description/portrait/likes/dislikes/personality) and `FieldSkill` (name/description) are JSON on the PC/party rows.
+- **Items are lorebook entries** (`LorebookEntry`, `cat == "items"`, carrying type/slot/rarity/maxStack/uses) — there is no separate item table. The lorebook also holds world/characters/monsters/spells, with keyword-based injection (`LorebookConfig`).
+- **Scenario** is a permanent, **locked** World lore entry (not its own table); it reaches the narrator via lore injection.
+- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `planner_instructions` (each falls back to a built-in default when blank).
+- **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_carry_slots`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`.
+- **ChatMessage** (adventure-scoped) carries `role`, `content`, `turn_number`, `variant`, `speaker`, `mode` (`narrator`|`planner`), narrator-declared scene state (`location`, `time_of_day`, `weather`, `day`), `spotlight_reason`, and `applied_inventory_deltas`/`applied_equipment_changes` (for swipe/regenerate/delete reversal).
+- Also: `Quest` + `QuestObjective`, `InventoryStack`, `StorySummary`, `WorldbuildingProposal` (Chronicler), `AppState` (active campaign/adventure pointer).
 
-interface BasicInfo {
-  name: string;
-  gender: string;
-  species: string;
-  age: number;
-  heightCm: number;
-  weightKg: number;
-  description: string; // textarea
-}
-
-interface FieldSkill {
-  name: string;
-  description: string; // textarea — see writing guidance below
-}
-
-interface PlayerCharacter {
-  id: string;            // stable UUID — UGC convention, even though
-                          // nothing is shared yet
-  schemaVersion: 1;
-  basicInfo: BasicInfo;
-  attributes: AttributeBlock;
-  equipment: Equipment;
-}
-
-interface PartyMember {
-  id: string;
-  schemaVersion: 1;
-  basicInfo: BasicInfo;
-  attributes: AttributeBlock;
-  fieldSkill: FieldSkill;
-  equipment: Equipment;
-  lastSpokeTurn: number; // system-tracked, not user-edited —
-                          // used by the spotlight logic below
-}
-
-interface Scenario {
-  description: string; // freeform context, injected into every
-                        // narrator call
-}
-
-interface NarratorConfig {
-  instructions: string; // the editable system prompt
-}
-
-interface OpenRouterSettings {
-  apiKey: string;          // stored server-side only, never returned
-                            // to the client after save
-  modelId: string;         // e.g. "anthropic/claude-sonnet-4.6" —
-                            // populated from the fetched model list
-  temperature: number;     // 0–2, OpenRouter default range
-  maxTokensResponse: number; // default 1000
-  maxContextTokens: number;  // see note below — this is NOT inferred,
-                              // it's a direct field from the API
-}
-```
-
-**Equipment is exactly 12 fixed slots, all plain text fields for alpha** — no item objects, no effects grammar, no validation beyond basic text length. This is intentional simplification; the richer item system is designed but deferred.
+Attributes (STR/CON/…) are narrative flavor only — not currently surfaced as a hard mechanic.
 
 ---
 
@@ -279,56 +191,75 @@ Key points: the Chronicler reuses [`chat_completion_agent_turn`](server/ai/openr
 
 ---
 
-## Planning Mode (the Planner)
+## Edit Mode (the Editor)
 
-A **foreground** world-builder, toggled from the chat Tools menu. When on, the chat's primary agent becomes the **Planner** ([`server/ai/planner.py`](server/ai/planner.py)) — its own editable core instructions (`NarratorConfig.planner_instructions`) and full CRUD over lore (all categories), quests/objectives, party members, the PC, the **Scenario**, and the **Narrator's instructions**. You converse with it directly and it creates/edits many things per turn, then replies conversationally.
+A **foreground** world-builder. Engine-style framing: **Play mode = Narration** (runtime), **Edit Mode = building the game**. Toggle it with the Unity-style **Play button on the left of the chat location banner** (lit gold while playing). When on, the chat's primary agent becomes the **Editor** ([`server/ai/planner.py`](server/ai/planner.py) — internal names still say "planner"/`planner_instructions`/`/planner/...`) with full CRUD over lore (all categories incl. dedicated `create_item`/`update_item` with type/slot/rarity + `equip`/`unequip`), quests/objectives, party members, the PC, the **Scenario**, and the **Narrator's instructions**. You converse with it and it creates/edits many things per turn, then replies conversationally.
 
-- **Separate thread.** Planner messages are tagged `ChatMessage.mode = 'planner'` and live in their own conversation; toggling swaps the chat view. They **never enter narration context** — the narrator path filters `mode != 'planner'` in [`_load_game_context`](server/api/routes.py). Each thread numbers its own turns.
-- **Create/edit apply immediately** (committed each round, via `run_planner_agent` — same loop shape as the narrator). **Deletes are queued**, not executed: the handler returns a pending-delete; the turn's `done` event carries `pendingDeletes`; the client shows a ConfirmDialog → `POST /planner/deletes/apply`. Locked entries (e.g. the Scenario) can be edited via `set_scenario` but never deleted.
-- After a planner turn the client refreshes lore/quests/party/items/narrator panels; the Chronicler does **not** run for planner turns.
-- A future guided FTUE (Planner dialogue → Narrator) is intended but not built.
+- **Separate thread.** Editor messages are tagged `ChatMessage.mode = 'planner'` and live in their own conversation (the toggle swaps the chat view). They **never enter narration context** — the narrator path filters `mode != 'planner'` in [`_load_game_context`](server/api/routes.py). Each thread numbers its own turns.
+- **Create/edit apply immediately** (committed each round, via `run_planner_agent` — same loop shape as the narrator; multi-round prose is accumulated, not discarded). **Deletes are queued**: the turn's `done` event carries `pendingDeletes`; the client shows a ConfirmDialog → `POST /planner/deletes/apply`. Locked entries (the Scenario) can be edited via `set_scenario` but never deleted.
+- **Edit Mode drives the rest of the UI:** the right-hand Inspector is editable in Edit Mode and read-only (view) in Play; "+ New Entry" (Lore) and "+ Add Member" appear only in Edit Mode; the whole app re-skins to the indigo theme. (Exception: **equipment** on the PC/party sheets is editable in Play mode too — managing gear is a play action.)
+- After an Editor turn the client refreshes lore/quests/party/items/narrator panels; the Chronicler does **not** run for Editor turns.
+- A future guided FTUE (Editor dialogue → Narrator) is intended; a structured starter message already opens in Edit Mode for a freshly created campaign.
+
+---
+
+## Campaigns & Adventures
+
+Storage is **modular, per-world, shareable**. A **Campaign** is a world; an **Adventure** is a save file within it.
+
+- **On disk** (`server/data/`, gitignored): `app.db` (settings + active-scope pointer), then `campaigns/<id>/{campaign.json, campaign.db, portraits/, adventures/<id>/{adventure.json, adventure.db, portraits/}}`. Campaign DB = lore + items + narrator config; adventure DB = PC, party, quests, inventory, chat, summary, proposals. JSON sidecars are the cheap index for Save/Load cards.
+- **At runtime** ([`server/db/database.py`](server/db/database.py)): one engine on `app.db` **ATTACHes** the active `campaign.db` (AS `campaign`) and `adventure.db` (AS `adventure`) on every connection. Because models are schema-tagged, one session reads/writes all three transparently (`select(LorebookEntry)` → `campaign.lorebook_entries`). `switch_active()` swaps the attached paths and disposes pooled connections so they re-attach. Use `new_session()` (not a top-level import of the sessionmaker) so callers get the live engine. Cross-scope references (equipment/inventory → item ids) are resolved **in Python**, never via cross-file SQL joins.
+- **Storage helpers + migration** in [`server/db/storage.py`](server/db/storage.py): folder/json layout, list/create campaign+adventure, and a one-time migration that splits a legacy single `wayward.db` into the default scope (kept as a backup).
+- **Management:** Save/Load adventures in the **Saves** rail tab (new adventure = blank slate, sharing the campaign's world). Config → **Campaign** switches/creates/deletes campaigns (new campaign opens in Edit Mode). **Export/Import** a campaign as a self-contained `.zip` (DB files + referenced portraits); import always creates a new, name-deduped campaign.
 
 ---
 
 ## Prompt Assembly
 
-Every narration call assembles, in order:
+One isolated function — [`build_prompt`](server/ai/prompt_builder.py) — assembles every narration call, roughly in order:
 
 ```
-1. Narrator Instructions (user-editable system prompt)
-2. Scenario (user-editable context)
-3. Player Character summary (name, species, description, equipped items)
-4. Party roster summary (each member: name, species, description,
-   Field Skill name + description)
-5. PARTY SPOTLIGHT block (computed signals, see above)
-6. Recent chat history
-7. The player's new message
+1. Narrator Instructions (campaign NarratorConfig.instructions)
+2. (legacy action protocol — skipped in the agentic loop; tool guidance is
+   prepended by run_narrator_agent instead)
+3. Player Character summary (name, species, description, equipped items w/ descriptions)
+4. Party roster (each in-party member: description, personality/likes/dislikes,
+   Field Skill, equipped items)
+5. Active quests + objectives
+6. Story summary (auto-compressed older history)
+7. PARTY SPOTLIGHT block (computed signals — see below)
+8. Lorebook entries matched by keyword (injected at top / before-input / bottom
+   positions per LorebookConfig)
+9. Recent chat history (trimmed to the context budget; the editable First Message
+   is prepended as the opening assistant turn). Planner-thread messages are
+   excluded.
+10. Post-History Instructions (always last, right before the user message)
+11. The player's new message
 ```
 
-Keep this assembly in one clearly isolated function (`promptBuilder`) so it's easy to inspect and tune independently of the chat UI.
+Keep prompt assembly in `build_prompt` so it stays inspectable independently of the chat UI. The full assembled prompt + model settings + response are logged to the terminal (the `wayward` logger) and the last one is saved for the Tools → View Prompt Log modal.
 
 ---
 
 ## UI Layout
 
-Three-pane, full-bleed, no scroll on the outer shell:
+A narrow **icon rail** + left panel, a middle chat, and a right **Inspector** — full-bleed, no outer scroll ([`AppShell`](client/src/components/Layout/AppShell.tsx), [`App.tsx`](client/src/App.tsx) switches the left panel on the active rail tab):
 
 ```
-┌─────────────┬──────────────────────────┬──────────────┐
-│ LEFT         │ MIDDLE                   │ RIGHT        │
-│ Player char  │ Chat / scene view         │ Inspector    │
-│ sheet, Party │ (the actual narrative,    │ — alpha:     │
-│ roster list  │ message history, input)   │ current      │
-│ (add/remove, │                           │ party only   │
-│ click to     │                           │ (portraits,  │
-│ edit)        │                           │ names, Field │
-│              │                           │ Skill)       │
-└─────────────┴──────────────────────────┴──────────────┘
+┌──┬─────────────┬────────────────────────┬──────────────┐
+│██│ LEFT PANEL   │ MIDDLE                 │ RIGHT         │
+│  │ (per tab)    │ Chat / scene view       │ Inspector     │
+│Ho│ Home: PC +   │ banner (Play/Edit       │ selected      │
+│It│  party       │ toggle, location, day,  │ entity:       │
+│Qu│ Items / Lore │ time/weather)           │ PC / member / │
+│Lo│ / Quests /   │ message history + input │ item / quest /│
+│Id│ Ideas (Chron)│                         │ lore — view   │
+│Sa│ / Saves /    │                         │ or edit (by   │
+│Cf│  Config      │                         │ mode)         │
+└──┴─────────────┴────────────────────────┴──────────────┘
 ```
 
-The right sidebar is intentionally minimal for alpha — just the party roster. No HP/MP/AP/Bond display belongs here; none of that exists yet since there's no combat in this build. Resist adding it preemptively.
-
-If a prior chat mockup (`wayward-mockup.html`) exists in the repo, use its structure and component styling as the starting point — it already implements this exact three-pane shell. It will need its example content swapped from the old Mira/Runt roster to **Tifa and Rosalina**, and any combat-flavored UI (status effects, roll cards, active modifiers tied to the old resolution system) stripped out, since this alpha has no formal skill-check mechanic.
+Rail tabs: **Home** (PC + party), **Items**, **Quests**, **Lore**, **Ideas** (Chronicler suggestions, with a pending badge), **Saves** (adventures), **Config**. The right Inspector shows whatever is selected; its view/edit state follows the chat's Edit Mode (see "Edit Mode"). No HP/MP/AP/Bond display — there's no combat yet; don't add it preemptively.
 
 ---
 
@@ -351,64 +282,59 @@ A placeholder/example shown in the empty Field Skill text field in the UI is wor
 
 ---
 
-## Suggested Project Structure
+## Project Structure (current)
 
 ```
 wayward/
-├── client/
+├── client/src/
 │   ├── components/
-│   │   ├── Scene/           Chat/narrative interface — main deliverable
-│   │   ├── CharacterSheet/  Player character sheet editor
-│   │   ├── PartyMember/     Party member editor (sheet + Field Skill)
-│   │   ├── Inspector/       Right sidebar — party roster display
-│   │   ├── Settings/        Narrator instructions, scenario, OpenRouter config
-│   │   └── Layout/          Three-pane shell
-│   ├── state/
-│   │   ├── narratorStore.ts   Instructions + scenario text
-│   │   ├── partyStore.ts      Player character + party members (CRUD)
-│   │   ├── chatStore.ts       Message history, scene state
-│   │   └── settingsStore.ts   OpenRouter model + settings
-│   └── hooks/
-│       ├── useChat.ts         Sends a turn, receives narration
-│       └── useSpotlight.ts    Computes the deterministic spotlight signals
+│   │   ├── Scene/ChatScene.tsx     Chat + banner (Play/Edit toggle, scene state)
+│   │   ├── Home/                   PC + party (HomeView)
+│   │   ├── CharacterSheet/, PartyMember/   PC / member editors (view+edit)
+│   │   ├── Inspector/PartyInspector.tsx    Right pane — selected entity
+│   │   ├── ItemsPanel/, LorePanel/, QuestsPanel/   left panels
+│   │   ├── Suggestions/SuggestionsPanel.tsx  Chronicler proposals ("Ideas")
+│   │   ├── SaveLoad/SaveLoadView.tsx       adventures Save/Load
+│   │   ├── Settings/SettingsPanel.tsx      Config (campaign, API/model, narration…)
+│   │   ├── IconRail/, Layout/, common/ExpandableTextarea.tsx, ConfirmDialog.tsx
+│   ├── state/   chatStore, partyStore, narratorStore, settingsStore, itemsStore,
+│   │            questsStore, loreStore, worldbuildStore, adventuresStore,
+│   │            campaignsStore, uiStore   (Zustand)
+│   ├── lib/     api.ts, location.ts (scene-banner derivation)
+│   ├── theme.css / edit-theme.css / index.css   design tokens + Tailwind mapping
 │
 ├── server/
 │   ├── ai/
-│   │   ├── openrouter.py      Model list fetch, chat completion call
-│   │   └── prompt_builder.py  Assembles the full prompt (see above)
+│   │   ├── openrouter.py    model list (+ supportsTools) + chat_completion_stream
+│   │   │                    + chat_completion_agent_turn (streaming tool calls)
+│   │   ├── prompt_builder.py   build_prompt (see Prompt Assembly)
+│   │   ├── spotlight.py        deterministic spotlight signals
+│   │   ├── summarizer.py       threshold history compression (legacy path)
+│   │   ├── narrator_agent.py   run_narrator_agent (the agentic loop) + tool schemas
+│   │   ├── narrator_actions.py tool handlers + legacy <<<ACTIONS>>> parser/executor
+│   │   ├── worldbuilder.py     the Chronicler (post-turn world-building)
+│   │   ├── planner.py          the Editor (Edit Mode agent)
+│   │   └── item_detection.py   legacy deterministic item-use (non-tool path)
 │   ├── db/
-│   │   └── models.py          SQLAlchemy: PlayerCharacter, PartyMember,
-│   │                            Scenario, NarratorConfig, OpenRouterSettings,
-│   │                            ChatMessage
-│   └── api/
-│       └── routes.py          CRUD for character/party/scenario/settings,
-│                                POST /chat/turn
+│   │   ├── models.py    SQLAlchemy (schema-tagged: app / campaign / adventure)
+│   │   ├── database.py  multi-DB ATTACH engine, init_db, switch_active, new_session
+│   │   ├── storage.py   campaign/adventure folders + json + legacy migration
+│   │   └── seed.py      default demo content (Seraphine + Tifa + Rosalina + world)
+│   ├── api/routes.py    all REST + /chat/turn (+ swipe/regenerate) + agents + zip I/O
+│   ├── main.py          FastAPI app, lifespan → init_db, wayward stdout logger
+│   └── data/            (gitignored) per-campaign/per-adventure SQLite + json
 │
-└── shared/
-    └── types/                 TS interfaces mirroring the data models above
+└── shared/types/models.ts   TS types mirroring the server models
 ```
 
 ---
 
-## Definition of Alpha Done
+## Status & conventions
 
-- [ ] Narrator instructions are editable and persist
-- [ ] Scenario text is editable and persists
-- [ ] Player character sheet (all fields above) is fully editable and persists
-- [ ] Party members can be added, edited (all fields including Field Skill), and removed
-- [ ] OpenRouter model list loads into a picker; temperature, max tokens, and max context are configurable and respected
-- [ ] Chat scene works end to end: player message → assembled prompt → OpenRouter call → narrated response rendered
-- [ ] Party spotlight logic demonstrably works: direct address always gets a response; silence is the default; no more than one unprompted party reaction per beat
-- [ ] Three-pane UI matches the design system (monochrome, three-font rules, no combat-flavored UI elements)
-- [ ] Default seed content uses Seraphine (player) + Tifa + Rosalina as the example roster
+The original alpha is **done** (editable narrator/PC/party, persistent SQLite, OpenRouter picker, end-to-end chat, working spotlight, the design system, the Seraphine+Tifa+Rosalina seed). Everything in "What's built" above is live and verified. Notes for future work:
 
----
-
-## Open Questions / Assumptions Made Here
-
-These were inferred to keep this document buildable rather than left blank — flag if any are wrong before implementation goes far:
-
-1. **Attributes (STR/CON/DEX/INT/WIS/CHA) are narrative flavor only in this alpha** — no dice mechanic, no formal skill check resolution. The Narrator LLM sees them as characterization context. If you actually want some resolution mechanic active even at this stage, that needs to be specified — it wasn't in the original feature list.
-2. **Persistence is assumed** — character sheets, party, scenario, and narrator instructions should survive closing and reopening the app (stored in SQLite), not just live in memory for a session.
-3. **Single player-character / single active campaign** for alpha — no multi-campaign or multi-save-slot management yet, since it wasn't requested.
-4. **`lastSpokeTurn` tracking is system-internal**, not a user-facing field — it exists purely to drive the spotlight logic.
+- **Persistence** is per-campaign/per-adventure SQLite under `server/data/` (survives restart). The legacy single `wayward.db` is migrated once and kept as a backup.
+- **Multiple campaigns + adventures** exist (Save/Load, switching, zip share). `lastSpokeTurn` and scene state (`location`/`time_of_day`/`weather`/`day`) are system-tracked on rows, not user-edited.
+- **Reversal:** narration effects (inventory deltas, equipment changes, scene state) are recorded on the `ChatMessage` so swipe/regenerate/delete unwind cleanly (`_reverse_message_effects`).
+- **Agent reliability:** tool calling needs a tool-capable model; weaker models may narrate success without calling tools. The model picker defaults to tool-capable models; legacy fallbacks remain for non-tool models.
+- **Deferred refinements:** choosing which adventures to include on export (endpoint supports it, no UI yet); per-scope portrait folders (portraits are bundled from the global `server/portraits/` on export).

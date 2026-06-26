@@ -19,6 +19,8 @@ interface SettingsState {
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
+  summaryThreshold: number
+  summaryModelId: string
   apiKeySet: boolean
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
@@ -46,6 +48,8 @@ function applyResponse(s: SettingsResponse) {
     useTools: s.useTools,
     worldbuildingMode: s.worldbuildingMode,
     worldbuildingModelId: s.worldbuildingModelId,
+    summaryThreshold: s.summaryThreshold,
+    summaryModelId: s.summaryModelId,
     apiKeySet: s.apiKeySet,
   }
 }
@@ -67,6 +71,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   useTools: true,
   worldbuildingMode: 'confirmation',
   worldbuildingModelId: '',
+  summaryThreshold: 0.7,
+  summaryModelId: '',
   apiKeySet: false,
   availableModels: [],
 
@@ -94,6 +100,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       useTools: update.useTools ?? state.useTools,
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,
+      summaryThreshold: update.summaryThreshold ?? state.summaryThreshold,
+      summaryModelId: update.summaryModelId ?? state.summaryModelId,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),
     }
     const s = await api.put<SettingsResponse>('/settings/openrouter', payload)

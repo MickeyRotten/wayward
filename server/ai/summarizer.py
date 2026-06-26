@@ -17,10 +17,11 @@ def should_summarize(
     history_tokens: int,
     max_context: int,
     max_response: int,
+    threshold: float = SUMMARY_THRESHOLD,
 ) -> bool:
     total = preamble_tokens + history_tokens
     budget = max_context - max_response
-    return budget > 0 and total / budget > SUMMARY_THRESHOLD
+    return budget > 0 and total / budget > (threshold or SUMMARY_THRESHOLD)
 
 
 def pick_messages_to_summarize(

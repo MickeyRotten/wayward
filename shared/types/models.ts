@@ -90,6 +90,8 @@ export interface OpenRouterSettings {
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
+  summaryThreshold: number
+  summaryModelId: string
 }
 
 export type WorldbuildingMode = 'disabled' | 'confirmation' | 'auto'

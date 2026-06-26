@@ -654,6 +654,8 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         useTools=bool(s.use_tools),
         worldbuildingMode=s.worldbuilding_mode,
         worldbuildingModelId=s.worldbuilding_model_id,
+        summaryThreshold=getattr(s, "summary_threshold", 0.7) or 0.7,
+        summaryModelId=getattr(s, "summary_model_id", "") or "",
         apiKeySet=bool(s.api_key),
     )
 
@@ -695,6 +697,8 @@ async def update_openrouter_settings(
     s.use_tools = data.useTools
     s.worldbuilding_mode = data.worldbuildingMode
     s.worldbuilding_model_id = data.worldbuildingModelId
+    s.summary_threshold = data.summaryThreshold
+    s.summary_model_id = data.summaryModelId
     await session.commit()
     return _or_response(s)
 
@@ -1386,6 +1390,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "useTools": bool(settings.use_tools) if settings else True,
             "worldbuildingMode": settings.worldbuilding_mode if settings else "confirmation",
             "worldbuildingModelId": settings.worldbuilding_model_id if settings else "",
+            "summaryThreshold": getattr(settings, "summary_threshold", 0.7) if settings else 0.7,
+            "summaryModelId": getattr(settings, "summary_model_id", "") if settings else "",
         },
         "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
         "quests": [
@@ -1510,6 +1516,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         use_tools=s.get("useTools", True),
         worldbuilding_mode=s.get("worldbuildingMode", "confirmation"),
         worldbuilding_model_id=s.get("worldbuildingModelId", ""),
+        summary_threshold=s.get("summaryThreshold", 0.7),
+        summary_model_id=s.get("summaryModelId", ""),
     ))
 
     # (Items are restored as part of the lorebook below — cat == "items".)
@@ -1792,20 +1800,20 @@ async def _maybe_summarize_and_build(
 
     preamble_tokens = estimate_prompt_tokens(test_prompt)
     did_summarize = False
-    summarize_hint = False
+    summarize_hint = False  # kept for signature; deterministic summarisation below
     over_threshold = should_summarize(
-        preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response
+        preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response,
+        threshold=getattr(settings, "summary_threshold", None) or 0.7,
     )
 
-    if over_threshold and agentic:
-        # The model owns summarization via the update_summary tool; just nudge it.
-        summarize_hint = True
-    elif over_threshold:
+    # Deterministic summarisation in BOTH modes (reliable — not dependent on the
+    # model choosing to call update_summary). Uses the optional summary model.
+    if over_threshold:
         to_summarize, to_keep, new_boundary = pick_messages_to_summarize(filtered)
         if to_summarize:
             new_summary = await generate_summary(
                 api_key=settings.api_key,
-                model_id=settings.model_id,
+                model_id=(getattr(settings, "summary_model_id", "") or settings.model_id),
                 messages_to_summarize=to_summarize,
                 existing_summary=summary.content,
             )

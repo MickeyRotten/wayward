@@ -62,6 +62,10 @@ class OpenRouterSettings(Base):
     # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
     worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")
     worldbuilding_model_id: Mapped[str] = mapped_column(String, default="")
+    # History summarisation: compress older turns when context usage exceeds this
+    # fraction of the budget; optional separate model (blank => main model).
+    summary_threshold: Mapped[float] = mapped_column(Float, default=0.7)
+    summary_model_id: Mapped[str] = mapped_column(String, default="")
 
 
 # ── Campaign (the world) ──────────────────────────────────────────

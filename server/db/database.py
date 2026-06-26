@@ -123,6 +123,7 @@ async def init_db() -> None:
     # app.db tables (no active scope attached yet).
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=_tables_for_schema(None)))
+    await _run_app_migrations()
 
     from server.db import storage  # late import (storage imports this module)
     from server.db.models import AppState
@@ -164,6 +165,21 @@ async def init_db() -> None:
     elif source == "fresh":
         from server.db.seed import seed_defaults
         await seed_defaults()
+
+
+async def _run_app_migrations() -> None:
+    """Additive ALTERs for columns added to app.db (openrouter_settings) after a
+    user's app.db was first created."""
+    migrations = [
+        ("openrouter_settings", "summary_threshold", "ALTER TABLE openrouter_settings ADD COLUMN summary_threshold FLOAT DEFAULT 0.7"),
+        ("openrouter_settings", "summary_model_id", "ALTER TABLE openrouter_settings ADD COLUMN summary_model_id VARCHAR DEFAULT ''"),
+    ]
+    async with engine.begin() as conn:
+        for table, column, ddl in migrations:
+            result = await conn.execute(text(f"PRAGMA table_info({table})"))
+            cols = [row[1] for row in result.fetchall()]
+            if column not in cols:
+                await conn.execute(text(ddl))
 
 
 async def _run_scope_migrations() -> None:

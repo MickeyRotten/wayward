@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { useCampaignsStore } from '../../state/campaignsStore'
 import { api } from '../../lib/api'
-import type { LoreCategory, LorebookConfig } from '@shared/types/models'
+import type { LoreCategory, LorebookConfig, OpenRouterModel } from '@shared/types/models'
 
 const LORE_CATEGORIES: { id: LoreCategory; label: string }[] = [
   { id: 'world', label: 'World' },
@@ -45,6 +45,8 @@ export function SettingsPanel() {
   const [useTools, setUseTools] = useState(settings.useTools)
   const [wbMode, setWbMode] = useState(settings.worldbuildingMode)
   const [wbModelId, setWbModelId] = useState(settings.worldbuildingModelId)
+  const [summaryThreshold, setSummaryThreshold] = useState(settings.summaryThreshold)
+  const [summaryModelId, setSummaryModelId] = useState(settings.summaryModelId)
   const [showAllModels, setShowAllModels] = useState(false)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
@@ -69,7 +71,9 @@ export function SettingsPanel() {
     setUseTools(settings.useTools)
     setWbMode(settings.worldbuildingMode)
     setWbModelId(settings.worldbuildingModelId)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId])
+    setSummaryThreshold(settings.summaryThreshold)
+    setSummaryModelId(settings.summaryModelId)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.summaryThreshold, settings.summaryModelId])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -108,6 +112,8 @@ export function SettingsPanel() {
       useTools,
       worldbuildingMode: wbMode,
       worldbuildingModelId: wbModelId,
+      summaryThreshold,
+      summaryModelId,
     })
     await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions })
     // Carry-slot capacity is derived server-side; refetch inventory so the
@@ -350,8 +356,15 @@ export function SettingsPanel() {
           </label>
         </Section>
 
-        {/* World-building (Chronicler) */}
-        <Section title="World-building">
+        {/* Agents */}
+        <Section title="Agents">
+          <p className="text-[10px] text-textdim font-body leading-relaxed">
+            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story (its tool loop + main model live in API &amp; Model). The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/quests/companions after each turn — its settings are below, along with history summarisation.
+          </p>
+
+          <div className="pt-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Chronicler</span>
+          </div>
           <label className="block">
             <span className="text-[11px] text-textdim font-body">Mode</span>
             <select
@@ -370,32 +383,47 @@ export function SettingsPanel() {
 
           <label className="block">
             <span className="text-[11px] text-textdim font-body">Chronicler Model</span>
-            {settings.availableModels.length > 0 ? (
-              <select
-                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
-                value={wbModelId}
-                onChange={(e) => setWbModelId(e.target.value)}
-              >
-                <option value="">Use main model</option>
-                {(showAllModels
-                  ? settings.availableModels
-                  : settings.availableModels.filter((m) => m.supportsTools)
-                ).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}{m.supportsTools ? '' : ' (no tools)'}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
-                placeholder="(use main model)"
-                value={wbModelId}
-                onChange={(e) => setWbModelId(e.target.value)}
-              />
-            )}
+            <ModelPicker
+              value={wbModelId}
+              onChange={setWbModelId}
+              models={settings.availableModels}
+              showAll={showAllModels}
+            />
             <span className="text-[10px] text-textdim font-body">
               Optional. Leave as "Use main model", or pick a cheaper/faster tool-capable model for bookkeeping.
+            </span>
+          </label>
+
+          <div className="border-t border-line my-1" />
+          <div>
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Summarisation</span>
+          </div>
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Summarise at {Math.round(summaryThreshold * 100)}% of context</span>
+            <input
+              type="range"
+              min={0.3}
+              max={0.95}
+              step={0.05}
+              value={summaryThreshold}
+              onChange={(e) => setSummaryThreshold(Number(e.target.value))}
+              className="w-full accent-gold"
+            />
+            <span className="text-[10px] text-textdim font-body">
+              When the prompt reaches this fraction of the context budget, the oldest turns are compressed into a running "story so far" so the Narrator/Editor keep full history without overflowing.
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Summarisation Model</span>
+            <ModelPicker
+              value={summaryModelId}
+              onChange={setSummaryModelId}
+              models={settings.availableModels}
+              showAll={showAllModels}
+              toolsOnly={false}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Optional. A cheap/fast model is a good choice for summarising.
             </span>
           </label>
         </Section>
@@ -450,6 +478,38 @@ export function SettingsPanel() {
         <AdventureManagement />
       </div>
     </div>
+  )
+}
+
+function ModelPicker({ value, onChange, models, showAll, toolsOnly = true }: {
+  value: string
+  onChange: (v: string) => void
+  models: OpenRouterModel[]
+  showAll: boolean
+  toolsOnly?: boolean
+}) {
+  if (models.length === 0) {
+    return (
+      <input
+        className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+        placeholder="(use main model)"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+  const list = showAll || !toolsOnly ? models : models.filter((m) => m.supportsTools)
+  return (
+    <select
+      className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">Use main model</option>
+      {list.map((m) => (
+        <option key={m.id} value={m.id}>{m.name}{m.supportsTools ? '' : ' (no tools)'}</option>
+      ))}
+    </select>
   )
 }
 

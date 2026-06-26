@@ -263,10 +263,14 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
   Done: the Scenario is now always injected into the Editor's context (with a note to keep new content consistent with it). Added tools: get_narrator_instructions (read) + get_scenario (read), and set_first_message (set the opening narration) to round out the existing set_scenario / set_narrator_instructions writers. The guidance tells the Editor to consult the Narrator instructions/Scenario for tone consistency.
 
   ---
-  [ ] Ensure that the LLM (Narrator / Editor) also use the chat history for context - and that summarisation works. Expose summarisation settings in Config (when to summarise, which model is used for summarisation, etc.)
+  [x] Ensure that the LLM (Narrator / Editor) also use the chat history for context - and that summarisation works. Expose summarisation settings in Config (when to summarise, which model is used for summarisation, etc.)
+
+  Done: chat history is already included (build_prompt for the Narrator; the planner thread for the Editor). Summarisation is now DETERMINISTIC in both modes — it no longer relies on the model choosing to call update_summary; when the prompt exceeds the threshold, the oldest turns are compressed into the running "story so far". Exposed in Config → Agents → Summarisation: a "summarise at N% of context" slider (summary_threshold) and an optional summarisation model (summary_model_id, blank = main). Round-tripped through settings/export/import; existing app.db gets the new columns via an app migration.
 
   ---
-  [ ] World-Building category could be renamed to Agents with info on the existing agents and their settings, one of which is the Chronicler.
+  [x] World-Building category could be renamed to Agents with info on the existing agents and their settings, one of which is the Chronicler.
+
+  Done: Config → "World-building" is now "Agents" with a blurb naming the Narrator / Editor / Chronicler. It groups the Chronicler settings (mode + model) and the new Summarisation settings (threshold + model) under sub-headers. (The Narrator's tool-loop settings stay in API & Model for now.)
 
   ---
   [x] Occasionally I get an empty message as a reply from the Editor. Not sure why.

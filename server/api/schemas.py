@@ -117,6 +117,8 @@ class OpenRouterSettingsUpdate(BaseModel):
     useTools: bool = True
     worldbuildingMode: str = "confirmation"
     worldbuildingModelId: str = ""
+    summaryThreshold: float = 0.7
+    summaryModelId: str = ""
 
 
 class OpenRouterSettingsResponse(BaseModel):
@@ -136,6 +138,8 @@ class OpenRouterSettingsResponse(BaseModel):
     useTools: bool
     worldbuildingMode: str
     worldbuildingModelId: str
+    summaryThreshold: float
+    summaryModelId: str
     apiKeySet: bool
 
 

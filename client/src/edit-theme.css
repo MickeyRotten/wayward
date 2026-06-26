@@ -1,0 +1,46 @@
+/* ============================================================================
+   Edit Mode theme override
+   ----------------------------------------------------------------------------
+   When the chat's Edit Mode is active, <body> gets the `edit-mode` class. Because
+   index.css maps every Tailwind utility (bg-bg0, text-gold, border-line, …) to
+   var(--…) via `@theme inline`, overriding those variables here re-skins the
+   whole app at runtime — no component changes needed.
+
+   The default theme is warm/gold (Runtime / Play). Edit Mode shifts to a cool
+   indigo–violet palette so it's instantly clear you're in the "engine", not
+   playing. (See feedback: Edit Mode color scheme.)
+   ========================================================================== */
+
+body.edit-mode {
+  /* Surfaces — cool, faintly violet darks */
+  --bg0: #0c0d16;
+  --bg1: #111324;
+  --bg2: #181a2e;
+  --bg3: #20233c;
+
+  /* Lines / borders — periwinkle at the same opacities as the gold default */
+  --line:  rgba(139, 148, 245, 0.20);
+  --line2: rgba(139, 148, 245, 0.45);
+
+  /* Accent — indigo/violet stands in for gold everywhere */
+  --gold:     #8b94f5;
+  --gold2:    #c2bcfb;
+  --golddeep: #5b50a8;
+
+  /* Text hierarchy — cooled slightly to match */
+  --text:    #e7e6f3;
+  --text2:   #c6c3da;
+  --textsec: #908ead;
+  --textdim: #5f5d78;
+
+  /* Chat area background */
+  --chat-bg: linear-gradient(180deg, #0f1020, #0c0d16);
+}
+
+/* Scrollbar thumb (index.css uses a literal gold rgba) → periwinkle in Edit Mode */
+body.edit-mode {
+  scrollbar-color: rgba(139, 148, 245, 0.30) transparent;
+}
+body.edit-mode *::-webkit-scrollbar-thumb {
+  background: rgba(139, 148, 245, 0.30);
+}

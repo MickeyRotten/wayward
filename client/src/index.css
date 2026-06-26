@@ -5,6 +5,9 @@
    global styles onto those variables. */
 @import "./theme.css";
 
+/* Edit Mode re-skins the app to a cool indigo/violet palette (body.edit-mode). */
+@import "./edit-theme.css";
+
 /* Map Tailwind's theme onto the canonical Design System variables. `inline`
    makes utilities resolve straight to var(--…) so a change in theme.css (or the
    Design System) propagates without rebuilding token names here. */

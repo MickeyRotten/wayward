@@ -194,7 +194,9 @@ Done: run_planner_agent now accumulates the Editor's prose across every tool rou
 Done: the Inspector's view/edit state is now driven entirely by the chat's Edit Mode — Edit Mode on → the Inspector edits; Narration → it views. The per-entity EDIT/VIEW toggle button is replaced by a read-only EDITING/VIEW badge. Your current selection is preserved when you flip modes (selection lives in uiStore, the mode flag in chatStore), so toggling remembers what you have open and just swaps view↔edit. Adding is now Edit-Mode-only: the "+ NEW ENTRY" (Lore) and "+ ADD MEMBER" (Home) buttons only appear in Edit Mode. (Play vs Edit, engine-style.)
 
 ---
-[ ] When Edit Mode is active, switch over to an alternative color scheme (can be its own .css), to visually communicate which mode is currently active. This could be purple / blue in colour.
+[x] When Edit Mode is active, switch over to an alternative color scheme (can be its own .css), to visually communicate which mode is currently active. This could be purple / blue in colour.
+
+Done: added client/src/edit-theme.css — while Edit Mode is on, <body> gets an `edit-mode` class (toggled in App.tsx) that overrides the design tokens to a cool indigo/violet palette (surfaces, borders, the gold accent → periwinkle/violet, scrollbars). Because index.css maps every Tailwind utility to var(--…) via @theme inline, this re-skins the entire app at runtime with no component changes. Default warm/gold = Play; indigo/violet = Edit.
 
 ---
 [ ] Edit Mode - Deleting Lore entries manually: Let's add a "Remove entries" button above New Entry. Clicking Remove Entries will show a tick box next to the items in that current page. Remove Entries button changes to "Remove selected entries". New entry button is replaced with Cancel button. The operation is also canceled if I switch the view.

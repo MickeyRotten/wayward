@@ -24,7 +24,14 @@ function App() {
   const activeTab = useUiStore((s) => s.activeTab)
   const setActiveTab = useUiStore((s) => s.setActiveTab)
   const select = useUiStore((s) => s.select)
+  const editMode = useChatStore((s) => s.planningMode)
   const prevTabRef = useRef<TabId>('home')
+
+  // Re-skin the whole app (edit-theme.css) while Edit Mode is active.
+  useEffect(() => {
+    document.body.classList.toggle('edit-mode', editMode)
+    return () => document.body.classList.remove('edit-mode')
+  }, [editMode])
 
   // Esc clears the inspector selection (back to the default inspector view),
   // unless the user is typing in a field (let that field handle Escape).

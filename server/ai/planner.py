@@ -60,6 +60,7 @@ How you work:
 - Pick the right lore category for lore (world, characters, monsters, spells). For NPCs use 'characters'.
 - ITEMS: always use create_item (NOT create_lore) so the item gets a proper type, slot, and rarity. Choose the type deliberately — 'Equipment' for wearable/wieldable gear, 'Consumable' for potions/food, plus 'Tool', 'Key Item', 'Artifact', 'Other'. For Equipment, set the body slot (Head, Neck, Torso, Hands, Waist, Legs, Feet, Accessory) and a fitting rarity (c=Common is the default for ordinary gear; reserve u/r/e/l for genuinely special items). Give each item a vivid one-line description.
 - EQUIPPING: when you outfit a character, actually equip the gear with the equip tool, using the precise equipment slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Creating an item does NOT equip it — call equip too.
+- CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
 - If the player is just chatting or asking questions, answer normally without calling tools.
@@ -145,7 +146,11 @@ TOOL_SCHEMAS: list[dict] = [
          "personality": {"type": "string"}, "gender": {"type": "string"}}, []),
     _fn("set_scenario", "Rewrite the Scenario — the framing context for the whole adventure.",
         {"content": {"type": "string"}}, ["content"]),
+    _fn("get_scenario", "Read the current Scenario text.", {}, []),
     _fn("set_narrator_instructions", "Replace the Narrator's core system instructions (tone/rules of narration).",
+        {"content": {"type": "string"}}, ["content"]),
+    _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
+    _fn("set_first_message", "Set the opening narration shown before the player's first turn (the campaign's First Message).",
         {"content": {"type": "string"}}, ["content"]),
     _fn("list_world", "List the current world: lore by category, quests, party members, and the PC.", {}, []),
     _fn("get_entry", "Read the full content of a lore entry, quest, or member by name.",
@@ -190,6 +195,13 @@ async def _build_planner_context(session) -> str:
         lines.append("  party members: (none)")
     if pc:
         lines.append(f"  player character: {pc.basic_info.get('name', '(unnamed)')} — {pc.basic_info.get('species', '')}")
+
+    # Always give the Editor the Scenario so anything it creates fits the world.
+    scenario = next((e for e in lore if e.title.lower() == "scenario"), None)
+    if scenario and (scenario.content or "").strip():
+        lines.append("")
+        lines.append("SCENARIO (the framing context for this world — keep new content consistent with it):")
+        lines.append(scenario.content.strip())
     return "\n".join(lines)
 
 
@@ -402,6 +414,11 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         scn.content = args.get("content", "")
         return "Rewrote the Scenario.", None
 
+    if name == "get_scenario":
+        scn = (await session.execute(
+            select(LorebookEntry).where(func.lower(LorebookEntry.title) == "scenario"))).scalars().first()
+        return (scn.content or "(empty)") if scn else "(no Scenario set)", None
+
     if name == "set_narrator_instructions":
         cfg = (await session.execute(select(NarratorConfig))).scalars().first()
         if not cfg:
@@ -409,6 +426,18 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             session.add(cfg)
         cfg.instructions = args.get("content", "")
         return "Updated the Narrator's instructions.", None
+
+    if name == "get_narrator_instructions":
+        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
+        return (cfg.instructions or "(using the built-in default)") if cfg else "(none)", None
+
+    if name == "set_first_message":
+        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
+        if not cfg:
+            cfg = NarratorConfig()
+            session.add(cfg)
+        cfg.first_message = args.get("content", "")
+        return "Set the opening narration (First Message).", None
 
     # ---- Read ----
     if name == "list_world":

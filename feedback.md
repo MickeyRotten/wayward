@@ -258,7 +258,9 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
   Done: OpenRouter error chunks (previously swallowed by the stream parser) and content_filter / safety finishes now raise with the real provider message; non-2xx responses read the body for the actual error text. These surface as a prominent "GENERATION ERROR" bubble inline in the chat (danger-styled), instead of a tiny dim notice.
 
   ---
-  [ ] Give Editor the tool to read the Narrator's Instruction. Also, when the Editor is creating Lore entries, ensure that the Scenario is injected for context. Do a review of tools and create tools that you think are missing / are of use.
+  [x] Give Editor the tool to read the Narrator's Instruction. Also, when the Editor is creating Lore entries, ensure that the Scenario is injected for context. Do a review of tools and create tools that you think are missing / are of use.
+
+  Done: the Scenario is now always injected into the Editor's context (with a note to keep new content consistent with it). Added tools: get_narrator_instructions (read) + get_scenario (read), and set_first_message (set the opening narration) to round out the existing set_scenario / set_narrator_instructions writers. The guidance tells the Editor to consult the Narrator instructions/Scenario for tone consistency.
 
   ---
   [ ] Ensure that the LLM (Narrator / Editor) also use the chat history for context - and that summarisation works. Expose summarisation settings in Config (when to summarise, which model is used for summarisation, etc.)

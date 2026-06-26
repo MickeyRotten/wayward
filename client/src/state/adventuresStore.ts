@@ -23,7 +23,7 @@ interface AdventuresState {
 }
 
 /** Re-fetch every store after the active adventure/campaign changed. */
-async function reloadAll() {
+export async function reloadAll() {
   useUiStore.getState().select(null)
   await Promise.all([
     usePartyStore.getState().fetchAll(),

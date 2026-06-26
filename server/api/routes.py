@@ -209,6 +209,110 @@ async def delete_adventure_route(aid: str, session: AsyncSession = Depends(get_s
     return {"deleted": aid, "switchedTo": switched_to}
 
 
+# ── Campaigns (worlds) ────────────────────────────────────────────
+
+CAMPAIGN_STARTER = (
+    "Welcome to your new campaign — you're in **Edit Mode**, where we build the world.\n\n"
+    "Tell me what kind of adventure you want and I'll shape it for you. A good start:\n\n"
+    "1. **Setting & tone** — the world, genre, mood (e.g. \"a grim coastal fantasy of drowned gods\").\n"
+    "2. **A starting location** — where the first scene opens.\n"
+    "3. **Key characters** — any NPCs, and a starting party if you'd like one.\n"
+    "4. **A hook** — the quest or trouble that gets things moving.\n\n"
+    "Describe any of these and I'll create the lore, characters, items, and quests. "
+    "When the world feels ready, switch off Edit Mode to start playing."
+)
+
+
+async def _set_active(campaign_id: str, adventure_id: str) -> None:
+    async with new_session() as s:
+        st = (await s.execute(select(AppState))).scalars().first()
+        if st:
+            st.active_campaign_id = campaign_id
+            st.active_adventure_id = adventure_id
+            await s.commit()
+
+
+@router.get("/campaigns")
+async def list_campaigns_route(session: AsyncSession = Depends(get_session)):
+    cid, _ = await _active_ids(session)
+    return {"activeId": cid, "campaigns": storage.list_campaigns()}
+
+
+@router.post("/campaigns")
+async def create_campaign_route(
+    data: dict = Body(default={}),
+    session: AsyncSession = Depends(get_session),
+):
+    name = (data.get("name") or "New Campaign").strip() or "New Campaign"
+    await storage.refresh_active_adventure_meta()
+    cid = await storage.create_campaign(name)
+    aid = await storage.create_adventure(cid, "Adventure 1")
+    await switch_active(storage.campaign_db_path(cid), storage.adventure_db_path(cid, aid))
+    await _set_active(cid, aid)
+    async with new_session() as s:
+        if not (await s.execute(select(PlayerCharacter))).scalars().first():
+            s.add(PlayerCharacter())
+        # Structured Editor starter shown in Edit Mode for the new campaign.
+        s.add(ChatMessage(
+            role="assistant", content=CAMPAIGN_STARTER, turn_number=1, variant=0,
+            speaker="planner", mode="planner",
+        ))
+        await s.commit()
+    await storage.refresh_active_adventure_meta()
+    return {"id": cid, "adventureId": aid, "switched": True, "editMode": True}
+
+
+@router.post("/campaigns/{cid}/load")
+async def load_campaign_route(cid: str, session: AsyncSession = Depends(get_session)):
+    if not storage.campaign_dir(cid).exists():
+        raise HTTPException(404, "Campaign not found")
+    advs = storage.list_adventures(cid)
+    await storage.refresh_active_adventure_meta()
+    if advs:
+        aid = advs[-1]["id"]
+        seed_pc = False
+    else:
+        aid = await storage.create_adventure(cid, "Adventure 1")
+        seed_pc = True
+    await switch_active(storage.campaign_db_path(cid), storage.adventure_db_path(cid, aid))
+    await _set_active(cid, aid)
+    if seed_pc:
+        async with new_session() as s:
+            if not (await s.execute(select(PlayerCharacter))).scalars().first():
+                s.add(PlayerCharacter())
+                await s.commit()
+    return {"id": cid, "adventureId": aid, "switched": True}
+
+
+@router.put("/campaigns/{cid}")
+async def rename_campaign_route(cid: str, data: dict = Body(default={})):
+    meta = storage.read_campaign_meta(cid)
+    if not meta:
+        raise HTTPException(404, "Campaign not found")
+    if data.get("name"):
+        meta["name"] = data["name"].strip()
+        storage.write_campaign_meta(cid, meta)
+    return meta
+
+
+@router.delete("/campaigns/{cid}")
+async def delete_campaign_route(cid: str, session: AsyncSession = Depends(get_session)):
+    cur_cid, _ = await _active_ids(session)
+    camps = storage.list_campaigns()
+    if len(camps) <= 1:
+        raise HTTPException(400, "Can't delete the only campaign")
+    switched_to = None
+    if cid == cur_cid:
+        other = next(c for c in camps if c["id"] != cid)
+        advs = storage.list_adventures(other["id"])
+        aid = advs[-1]["id"] if advs else await storage.create_adventure(other["id"], "Adventure 1")
+        await switch_active(storage.campaign_db_path(other["id"]), storage.adventure_db_path(other["id"], aid))
+        await _set_active(other["id"], aid)
+        switched_to = {"campaignId": other["id"], "adventureId": aid}
+    shutil.rmtree(storage.campaign_dir(cid), ignore_errors=True)
+    return {"deleted": cid, "switchedTo": switched_to}
+
+
 # ── Player Character ──────────────────────────────────────────────
 
 @router.get("/player-character", response_model=PlayerCharacterResponse | None)

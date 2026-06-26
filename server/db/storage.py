@@ -169,6 +169,14 @@ def write_adventure_meta(cid: str, aid: str, meta: dict) -> None:
     _write_json(adventure_json_path(cid, aid), meta)
 
 
+def read_campaign_meta(cid: str) -> dict | None:
+    return _read_json(campaign_json_path(cid))
+
+
+def write_campaign_meta(cid: str, meta: dict) -> None:
+    _write_json(campaign_json_path(cid), meta)
+
+
 async def create_default_scope() -> tuple[str, str]:
     """Create the empty default Campaign + Adventure structure. Data (seed or
     legacy migration) is loaded by the caller after the DBs are attached."""

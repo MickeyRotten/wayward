@@ -19,6 +19,7 @@ import { useQuestsStore } from './state/questsStore'
 import { useLoreStore } from './state/loreStore'
 import { useWorldbuildStore } from './state/worldbuildStore'
 import { useAdventuresStore } from './state/adventuresStore'
+import { useCampaignsStore } from './state/campaignsStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 
@@ -59,8 +60,11 @@ function App() {
   const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
   const fetchProposals = useWorldbuildStore((s) => s.fetchProposals)
   const fetchAdventures = useAdventuresStore((s) => s.fetch)
+  const fetchCampaigns = useCampaignsStore((s) => s.fetch)
+  const switching = useCampaignsStore((s) => s.busy) || useAdventuresStore((s) => s.busy)
 
   useEffect(() => {
+    fetchCampaigns()
     fetchParty()
     fetchNarrator()
     fetchChat()
@@ -72,7 +76,7 @@ function App() {
     fetchLoreConfig()
     fetchProposals()
     fetchAdventures()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchProposals, fetchAdventures])
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchProposals, fetchAdventures, fetchCampaigns])
 
   const handleTabChange = (tab: TabId) => {
     prevTabRef.current = tab
@@ -101,12 +105,21 @@ function App() {
   })()
 
   return (
-    <AppShell
-      iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
-      left={leftPanel}
-      middle={<ChatScene />}
-      right={<PartyInspector />}
-    />
+    <>
+      <AppShell
+        iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
+        left={leftPanel}
+        middle={<ChatScene />}
+        right={<PartyInspector />}
+      />
+      {switching && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-bg0/85">
+          <span className="font-disp text-[20px] text-gold pt-[3px]">
+            Loading<span className="animate-pulse"> …</span>
+          </span>
+        </div>
+      )}
+    </>
   )
 }
 

@@ -7,6 +7,7 @@ import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
+import { useCampaignsStore } from '../../state/campaignsStore'
 import { api } from '../../lib/api'
 import type { LoreCategory, LorebookConfig } from '@shared/types/models'
 
@@ -125,8 +126,13 @@ export function SettingsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+        {/* Active Campaign */}
+        <Section title="Campaign" defaultOpen>
+          <CampaignSection />
+        </Section>
+
         {/* API & Model */}
-        <Section title="API & Model" defaultOpen>
+        <Section title="API & Model">
           <label className="block">
             <span className="text-[11px] text-textdim font-body">
               OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
@@ -443,6 +449,103 @@ export function SettingsPanel() {
         {/* Adventure Management */}
         <AdventureManagement />
       </div>
+    </div>
+  )
+}
+
+function CampaignSection() {
+  const campaigns = useCampaignsStore((s) => s.campaigns)
+  const activeId = useCampaignsStore((s) => s.activeId)
+  const busy = useCampaignsStore((s) => s.busy)
+  const create = useCampaignsStore((s) => s.create)
+  const load = useCampaignsStore((s) => s.load)
+  const rename = useCampaignsStore((s) => s.rename)
+  const remove = useCampaignsStore((s) => s.remove)
+
+  const [newName, setNewName] = useState('')
+  const [pendingSwitch, setPendingSwitch] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const active = campaigns.find((c) => c.id === activeId)
+
+  const inputCls = 'w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2'
+
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="text-[11px] text-textdim font-body">Active Campaign</span>
+        <select
+          className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+          value={activeId ?? ''}
+          disabled={busy}
+          onChange={(e) => { if (e.target.value && e.target.value !== activeId) setPendingSwitch(e.target.value) }}
+        >
+          {campaigns.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </label>
+
+      {active && (
+        <label className="block">
+          <span className="text-[11px] text-textdim font-body">Rename</span>
+          <input
+            key={active.id}
+            className={inputCls}
+            defaultValue={active.name}
+            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== active.name) rename(active.id, v) }}
+          />
+        </label>
+      )}
+
+      <div className="flex gap-2 items-end pt-1">
+        <label className="flex-1 block">
+          <span className="text-[11px] text-textdim font-body">New campaign</span>
+          <input
+            className={inputCls}
+            placeholder="Name…"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy}
+          className="font-ui text-[10px] tracking-wider bg-golddeep text-bg0 px-3 py-1.5 hover:bg-gold transition-colors disabled:opacity-40"
+          onClick={() => { create(newName.trim() || undefined); setNewName('') }}
+        >
+          CREATE
+        </button>
+      </div>
+
+      <button
+        type="button"
+        disabled={busy || campaigns.length <= 1}
+        className="font-ui text-[10px] tracking-wider text-danger border border-danger-border px-3 py-1.5 hover:text-danger-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        onClick={() => setConfirmDelete(true)}
+      >
+        DELETE CAMPAIGN
+      </button>
+
+      <p className="text-[10px] text-textdim font-body">
+        Switching loads the campaign's latest adventure. A new campaign opens in Edit Mode to build its world.
+      </p>
+
+      {pendingSwitch && (
+        <ConfirmDialog
+          confirmLabel="SWITCH"
+          message={`Switch to "${campaigns.find((c) => c.id === pendingSwitch)?.name}"? Your current adventure is saved first.`}
+          onConfirm={() => { load(pendingSwitch); setPendingSwitch(null) }}
+          onCancel={() => setPendingSwitch(null)}
+        />
+      )}
+      {confirmDelete && active && (
+        <ConfirmDialog
+          confirmLabel="DELETE"
+          message={`Delete campaign "${active.name}" and ALL of its adventures? This cannot be undone.`}
+          onConfirm={() => { remove(active.id); setConfirmDelete(false) }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   )
 }

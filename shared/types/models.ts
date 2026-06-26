@@ -140,6 +140,12 @@ export interface ChatMessage {
   createdAt: string
 }
 
+export interface Campaign {
+  id: string
+  name: string
+  createdAt: string
+}
+
 export interface Adventure {
   id: string
   name: string

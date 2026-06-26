@@ -475,6 +475,7 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
         # (e.g. "let me check… [acts] …done") is preserved in the chat log as one
         # growing message, rather than each round replacing the last.
         content_parts: list[str] = []
+        tool_results: list[str] = []  # for an empty-reply fallback
 
         log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, settings.model_id if settings else "?")
 
@@ -518,9 +519,23 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
                 text, pending = await _exec_tool(tc["name"], args, session)
                 if pending:
                     pending_deletes.append(pending)
+                tool_results.append(text)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
                 log.info("EDITOR TOOL turn=%s %s -> %s", turn_number, tc["name"], text)
                 yield {"type": "tool", "name": tc["name"], "result": text}
             await session.commit()
 
-    yield {"type": "final", "content": "\n\n".join(content_parts), "pendingDeletes": pending_deletes}
+        # The model occasionally calls tools but never writes a closing line —
+        # never leave an empty reply. Summarise what was done (or prompt the user).
+        final_content = "\n\n".join(content_parts).strip()
+        if not final_content:
+            if tool_results:
+                final_content = "Done:\n" + "\n".join(f"- {t}" for t in tool_results)
+            else:
+                final_content = (
+                    "I didn't make any changes that turn. Tell me what you'd like me to "
+                    "build or edit — a place, character, item, quest, or party member."
+                )
+            yield {"type": "content", "text": final_content}
+
+    yield {"type": "final", "content": final_content, "pendingDeletes": pending_deletes}

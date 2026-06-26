@@ -253,7 +253,9 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
 
   ---
 
-  [ ] Ensure that if the model returns an error or a safety layer is triggered, the message is posted into chat.
+  [x] Ensure that if the model returns an error or a safety layer is triggered, the message is posted into chat.
+
+  Done: OpenRouter error chunks (previously swallowed by the stream parser) and content_filter / safety finishes now raise with the real provider message; non-2xx responses read the body for the actual error text. These surface as a prominent "GENERATION ERROR" bubble inline in the chat (danger-styled), instead of a tiny dim notice.
 
   ---
   [ ] Give Editor the tool to read the Narrator's Instruction. Also, when the Editor is creating Lore entries, ensure that the Scenario is injected for context. Do a review of tools and create tools that you think are missing / are of use.
@@ -265,6 +267,8 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
   [ ] World-Building category could be renamed to Agents with info on the existing agents and their settings, one of which is the Chronicler.
 
   ---
-  [ ] Occasionally I get an empty message as a reply from the Editor. Not sure why. 
+  [x] Occasionally I get an empty message as a reply from the Editor. Not sure why.
+
+  Done: the Editor sometimes calls tools but never writes a closing line, leaving the final round's content empty. run_planner_agent now falls back: if no prose was produced, it posts a "Done:" summary of the tool results (or, if nothing happened, a prompt asking what to build), so the reply is never empty. 
 
   ---

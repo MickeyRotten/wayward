@@ -46,6 +46,28 @@ async def fetch_models(api_key: str = "") -> list[dict]:
     return models
 
 
+def _error_text(err) -> str:
+    if isinstance(err, dict):
+        meta = err.get("metadata") or {}
+        raw = meta.get("raw") if isinstance(meta, dict) else None
+        return err.get("message") or (str(raw) if raw else "") or json.dumps(err)
+    return str(err)
+
+
+async def _raise_on_http_error(res) -> None:
+    """On a non-2xx streaming response, read the body and raise with the real
+    provider/error message (so it can be surfaced to the player)."""
+    if res.status_code < 400:
+        return
+    try:
+        body = await res.aread()
+        data = json.loads(body)
+        msg = _error_text(data.get("error", data))
+    except Exception:
+        msg = f"{res.status_code} {res.reason_phrase}"
+    raise RuntimeError(f"Model error: {msg}")
+
+
 def _apply_sampling(
     body: dict,
     top_p: float | None,
@@ -105,7 +127,7 @@ async def chat_completion_stream(
             json=body,
             timeout=120,
         ) as res:
-            res.raise_for_status()
+            await _raise_on_http_error(res)
             async for line in res.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -114,12 +136,19 @@ async def chat_completion_stream(
                     break
                 try:
                     chunk = json.loads(payload)
-                    delta = chunk["choices"][0].get("delta", {})
-                    content = delta.get("content", "")
-                    if content:
-                        yield content
-                except (json.JSONDecodeError, KeyError, IndexError):
+                except json.JSONDecodeError:
                     continue
+                if isinstance(chunk, dict) and chunk.get("error"):
+                    raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
+                try:
+                    choice = chunk["choices"][0]
+                except (KeyError, IndexError):
+                    continue
+                if choice.get("finish_reason") == "content_filter":
+                    raise RuntimeError("The model's safety filter blocked this response.")
+                content = (choice.get("delta") or {}).get("content", "")
+                if content:
+                    yield content
 
 
 async def chat_completion_agent_turn(
@@ -171,7 +200,7 @@ async def chat_completion_agent_turn(
             json=body,
             timeout=180,
         ) as res:
-            res.raise_for_status()
+            await _raise_on_http_error(res)
             async for line in res.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -180,12 +209,19 @@ async def chat_completion_agent_turn(
                     break
                 try:
                     chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(chunk, dict) and chunk.get("error"):
+                    raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
+                try:
                     choice = chunk["choices"][0]
-                except (json.JSONDecodeError, KeyError, IndexError):
+                except (KeyError, IndexError):
                     continue
 
                 if choice.get("finish_reason"):
                     finish_reason = choice["finish_reason"]
+                    if finish_reason == "content_filter":
+                        raise RuntimeError("The model's safety filter blocked this response.")
 
                 delta = choice.get("delta", {})
                 content = delta.get("content")

@@ -335,8 +335,14 @@ export function ChatScene() {
         )}
 
         {error && (
-          <div className="mr-auto bg-bg1 border border-line px-4 py-3">
-            <p className="font-ui text-[10px] text-textdim">{error}</p>
+          <div className="mr-auto max-w-[85%] border border-danger-border bg-danger-bg rounded-md px-4 py-3">
+            <div className="flex items-center gap-2 mb-1">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-danger">
+                <circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" />
+              </svg>
+              <span className="font-ui text-[9px] tracking-wider uppercase text-danger">Generation Error</span>
+            </div>
+            <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{error}</p>
           </div>
         )}
       </div>

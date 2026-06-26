@@ -173,6 +173,11 @@ export function ChatScene() {
           <h1 className="font-disp text-[22px] leading-none text-gold pt-[3px] truncate">
             {planningMode ? 'Edit Mode' : banner.location}
           </h1>
+          {!planningMode && banner.day && (
+            <span className="font-ui text-[9px] tracking-wider uppercase text-textsec block mt-1">
+              Day {banner.day}
+            </span>
+          )}
         </div>
         {!planningMode && (banner.timeOfDay || banner.weather) && (
           <div className="shrink-0 text-right">

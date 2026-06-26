@@ -146,6 +146,13 @@ async def refresh_active_adventure_meta() -> None:
                 .order_by(ChatMessage.id.desc())
             )
         ).scalars().first()
+        day = (
+            await s.execute(
+                select(ChatMessage.day)
+                .where(ChatMessage.day.is_not(None))
+                .order_by(ChatMessage.id.desc())
+            )
+        ).scalars().first()
 
     meta = _read_json(adventure_json_path(cid, aid)) or {}
     pc_info = pc.basic_info if pc else {}
@@ -156,7 +163,9 @@ async def refresh_active_adventure_meta() -> None:
         "partyPortraits": [
             m.basic_info.get("portrait", "") for m in members if m.basic_info.get("portrait")
         ],
-        "location": location or meta.get("location", ""),
+        # Latest values declared anywhere in history (revert on delete).
+        "location": location or "",
+        "day": day or 1,
     })
     _write_json(adventure_json_path(cid, aid), meta)
 

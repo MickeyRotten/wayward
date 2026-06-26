@@ -152,6 +152,7 @@ class ChatMessageResponse(BaseModel):
     location: str | None = None
     timeOfDay: str | None = None
     weather: str | None = None
+    day: int | None = None
     spotlightReason: str | None = None
     appliedInventoryDeltas: list[dict] | None = None
     appliedEquipmentChanges: list[dict] | None = None

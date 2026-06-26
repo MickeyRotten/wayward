@@ -43,7 +43,7 @@ log = logging.getLogger("wayward.narrator_agent")
 TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them like this:
 - Call tools FIRST, in their own messages. Do NOT write narration in the same message as a tool call.
 - When you grant or equip an item, it must already exist in the world. If unsure, call lookup_item or search_items before grant_item/equip — guessing a name that doesn't exist does nothing.
-- Use set_scene whenever the location, time of day, or weather is first established or changes.
+- Use set_scene whenever the location, time of day, or weather is first established or changes. Also set the in-game `day` (starting at 1) when a new day begins — e.g. after the party sleeps or time skips to the next morning — incrementing by 1 each new day.
 - Use consume_item when the player uses up an item they carry (e.g. drinks a potion).
 - Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
 - Most turns need no tools at all — just narrate."""
@@ -67,13 +67,14 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "set_scene",
-            "description": "Declare the current location, time of day, and/or weather. Include only the fields that are being established or changed.",
+            "description": "Declare the current location, time of day, weather, and/or in-game day. Include only the fields that are being established or changed.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location": {"type": "string", "description": "Short place name, 2-4 words."},
                     "timeOfDay": {"type": "string", "enum": ["Morning", "Day", "Afternoon", "Evening", "Night"]},
                     "weather": {"type": "string", "description": "Short descriptor, e.g. 'Light rain'."},
+                    "day": {"type": "integer", "description": "In-game day number (starts at 1). Set when a new day begins, e.g. after sleeping or a time skip."},
                 },
             },
         },

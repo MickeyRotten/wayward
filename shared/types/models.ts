@@ -134,6 +134,7 @@ export interface ChatMessage {
   location?: string | null
   timeOfDay?: string | null
   weather?: string | null
+  day?: number | null
   spotlightReason?: string | null
   appliedInventoryDeltas?: InventoryDelta[] | null
   appliedEquipmentChanges?: EquipmentChange[] | null

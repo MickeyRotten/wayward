@@ -179,6 +179,8 @@ class ChatMessage(Base):
     location: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     time_of_day: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     weather: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    # In-game day number, declared by the narrator (like location/time/weather).
+    day: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)

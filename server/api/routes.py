@@ -1206,6 +1206,7 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             location=m.location,
             timeOfDay=m.time_of_day,
             weather=m.weather,
+            day=m.day,
             spotlightReason=m.spotlight_reason,
             appliedInventoryDeltas=m.applied_inventory_deltas,
             appliedEquipmentChanges=m.applied_equipment_changes,
@@ -1235,6 +1236,7 @@ async def edit_message(
         variant=msg.variant,
         speaker=msg.speaker or ("narrator" if msg.role == "assistant" else "player"),
         mode=msg.mode or "narrator",
+        day=msg.day,
         spotlightReason=msg.spotlight_reason,
         appliedInventoryDeltas=msg.applied_inventory_deltas,
         appliedEquipmentChanges=msg.applied_equipment_changes,
@@ -1362,6 +1364,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
                 "location": m.location,
                 "timeOfDay": m.time_of_day,
                 "weather": m.weather,
+                "day": m.day,
                 "spotlightReason": m.spotlight_reason,
                 "appliedInventoryDeltas": m.applied_inventory_deltas,
                 "appliedEquipmentChanges": m.applied_equipment_changes,
@@ -1478,6 +1481,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             location=msg.get("location"),
             time_of_day=msg.get("timeOfDay"),
             weather=msg.get("weather"),
+            day=msg.get("day"),
             spotlight_reason=msg.get("spotlightReason"),
             applied_inventory_deltas=msg.get("appliedInventoryDeltas"),
             applied_equipment_changes=msg.get("appliedEquipmentChanges"),
@@ -2387,6 +2391,7 @@ def _stream_llm_response(
                 location: str | None = None
                 time_of_day: str | None = None
                 weather: str | None = None
+                day: int | None = None
                 if actions:
                     loc = actions.get("location")
                     if isinstance(loc, str) and loc.strip():
@@ -2397,6 +2402,11 @@ def _stream_llm_response(
                     wx = actions.get("weather")
                     if isinstance(wx, str) and wx.strip():
                         weather = wx.strip()
+                    dy = actions.get("day")
+                    if isinstance(dy, int) and dy > 0:
+                        day = dy
+                    elif isinstance(dy, str) and dy.strip().isdigit():
+                        day = int(dy.strip())
 
                 # Execute narrator actions if present
                 if actions:
@@ -2421,6 +2431,7 @@ def _stream_llm_response(
                     location=location,
                     time_of_day=time_of_day,
                     weather=weather,
+                    day=day,
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=combined_inv_deltas if combined_inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,
@@ -2548,6 +2559,7 @@ def _stream_agent_response(
                     location=scene.get("location"),
                     time_of_day=scene.get("timeOfDay"),
                     weather=scene.get("weather"),
+                    day=scene.get("day"),
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=inv_deltas if inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,

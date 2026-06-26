@@ -21,17 +21,28 @@ function deriveLatest(messages: ChatMessage[], field: 'location' | 'timeOfDay' |
   return null
 }
 
+/** Most recently declared in-game day, or null if never declared. */
+function deriveLatestDay(messages: ChatMessage[]): number | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const v = messages[i].day
+    if (typeof v === 'number' && v > 0) return v
+  }
+  return null
+}
+
 export interface SceneBanner {
   location: string
   timeOfDay: string | null
   weather: string | null
+  day: number | null
 }
 
-/** Current location (default "The Void"), time of day, and weather for the banner. */
+/** Current location (default "The Void"), time of day, weather, and day for the banner. */
 export function deriveSceneBanner(messages: ChatMessage[]): SceneBanner {
   return {
     location: deriveLatest(messages, 'location') ?? DEFAULT_LOCATION,
     timeOfDay: deriveLatest(messages, 'timeOfDay'),
     weather: deriveLatest(messages, 'weather'),
+    day: deriveLatestDay(messages),
   }
 }

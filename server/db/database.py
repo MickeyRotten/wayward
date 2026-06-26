@@ -73,6 +73,8 @@ async def switch_active(campaign_path: Path | None, adventure_path: Path | None)
     _active_adventure_path = adventure_path
     if engine is not None:
         await engine.dispose()  # pooled conns re-attach the new paths on reconnect
+        if adventure_path is not None:
+            await _run_scope_migrations()  # bring this scope's schema up to date
 
 
 # ── Per-file table creation ───────────────────────────────────────
@@ -169,8 +171,7 @@ async def _run_scope_migrations() -> None:
     user's files were first created. (New files are created complete, so this is
     a no-op for them; kept for forward compatibility.)"""
     migrations: list[tuple[str, str, str]] = [
-        # (schema.table, column, DDL) — e.g.
-        # ("adventure.chat_messages", "mode", "ALTER TABLE adventure.chat_messages ADD COLUMN mode VARCHAR DEFAULT 'narrator'"),
+        ("adventure.chat_messages", "day", "ALTER TABLE adventure.chat_messages ADD COLUMN day INTEGER"),
     ]
     if not migrations:
         return

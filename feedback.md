@@ -199,10 +199,14 @@ Done: the Inspector's view/edit state is now driven entirely by the chat's Edit 
 Done: added client/src/edit-theme.css — while Edit Mode is on, <body> gets an `edit-mode` class (toggled in App.tsx) that overrides the design tokens to a cool indigo/violet palette (surfaces, borders, the gold accent → periwinkle/violet, scrollbars). Because index.css maps every Tailwind utility to var(--…) via @theme inline, this re-skins the entire app at runtime with no component changes. Default warm/gold = Play; indigo/violet = Edit.
 
 ---
-[ ] Edit Mode - Deleting Lore entries manually: Let's add a "Remove entries" button above New Entry. Clicking Remove Entries will show a tick box next to the items in that current page. Remove Entries button changes to "Remove selected entries". New entry button is replaced with Cancel button. The operation is also canceled if I switch the view.
+[x] Edit Mode - Deleting Lore entries manually: Let's add a "Remove entries" button above New Entry. Clicking Remove Entries will show a tick box next to the items in that current page. Remove Entries button changes to "Remove selected entries". New entry button is replaced with Cancel button. The operation is also canceled if I switch the view.
+
+Done: in Edit Mode the Lorebook footer has a "Remove Entries" button above "+ New Entry". Clicking it enters remove-mode: a checkbox appears next to each card in the current category, the button becomes "Remove Selected Entries (N)", and "+ New Entry" is replaced by "Cancel". Clicking a card toggles its checkbox; locked entries (e.g. Scenario) are disabled/un-checkable. Removing asks for a confirm, then deletes the selected lore/items. Switching category — or leaving Edit Mode / the panel — cancels the operation.
 
 ---
-[ ] Both Modes - Entry sorting. Below the search entry field, add a label: "Sorting:" and then a dropdown with By newest, Alphabetically, By type, By rarity, and then a button to switch Descending / Ascending next to that (just an arrow up or arrow down).
+[x] Both Modes - Entry sorting. Below the search entry field, add a label: "Sorting:" and then a dropdown with By newest, Alphabetically, By type, By rarity, and then a button to switch Descending / Ascending next to that (just an arrow up or arrow down).
+
+Done: a "Sorting:" row sits below the search field (in both modes) with a dropdown (By newest, Alphabetically, By type, By rarity) and an asc/desc arrow toggle. Newest uses insertion order; type sorts by item type (and is a no-op within a single lore category); rarity orders c→u→r→e→l (items). Applies to both the items catalog and lore-entry lists.
 
 ---
 [ ] Campaigns and Adventures, a huge, foundational, multi-step change. Give this a good think before you start implementing it. 

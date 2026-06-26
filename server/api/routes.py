@@ -17,6 +17,7 @@ from server.ai.item_detection import (
     reverse_inventory_deltas,
 )
 from server.ai.narrator_agent import run_narrator_agent
+from server.ai.worldbuilder import apply_proposal, run_worldbuilder
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -55,6 +56,8 @@ from server.api.schemas import (
     QuestObjectiveUpdate,
     QuestSchema,
     QuestUpdate,
+    WorldbuildProposalSchema,
+    WorldbuildRunRequest,
 )
 from server.db.database import get_session
 from server.db.models import (
@@ -69,6 +72,7 @@ from server.db.models import (
     Quest,
     QuestObjective,
     StorySummary,
+    WorldbuildingProposal,
 )
 
 router = APIRouter(prefix="/api")
@@ -307,6 +311,8 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         maxPartySize=s.max_party_size,
         maxToolRounds=s.max_tool_rounds,
         useTools=bool(s.use_tools),
+        worldbuildingMode=s.worldbuilding_mode,
+        worldbuildingModelId=s.worldbuilding_model_id,
         apiKeySet=bool(s.api_key),
     )
 
@@ -346,6 +352,8 @@ async def update_openrouter_settings(
     s.max_party_size = data.maxPartySize
     s.max_tool_rounds = data.maxToolRounds
     s.use_tools = data.useTools
+    s.worldbuilding_mode = data.worldbuildingMode
+    s.worldbuilding_model_id = data.worldbuildingModelId
     await session.commit()
     return _or_response(s)
 
@@ -1028,6 +1036,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "maxPartySize": settings.max_party_size if settings else 3,
             "maxToolRounds": settings.max_tool_rounds if settings else 6,
             "useTools": bool(settings.use_tools) if settings else True,
+            "worldbuildingMode": settings.worldbuilding_mode if settings else "confirmation",
+            "worldbuildingModelId": settings.worldbuilding_model_id if settings else "",
         },
         "inventory": [{"itemId": s.item_id, "count": s.count} for s in inventory],
         "quests": [
@@ -1080,6 +1090,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
     await session.execute(delete(PlayerCharacter))
     await session.execute(delete(NarratorConfig))
     await session.execute(delete(StorySummary))
+    await session.execute(delete(WorldbuildingProposal))
     await session.execute(delete(OpenRouterSettings))
 
     # Restore player character
@@ -1146,6 +1157,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         max_party_size=s.get("maxPartySize", 3),
         max_tool_rounds=s.get("maxToolRounds", 6),
         use_tools=s.get("useTools", True),
+        worldbuilding_mode=s.get("worldbuildingMode", "confirmation"),
+        worldbuilding_model_id=s.get("worldbuildingModelId", ""),
     ))
 
     # (Items are restored as part of the lorebook below — cat == "items".)
@@ -1221,6 +1234,7 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(PlayerCharacter))
     await session.execute(delete(NarratorConfig))
     await session.execute(delete(StorySummary))
+    await session.execute(delete(WorldbuildingProposal))
     await session.commit()
 
     # Re-seed (seed_defaults does not touch OpenRouterSettings)
@@ -1695,6 +1709,112 @@ async def get_summary(session: AsyncSession = Depends(get_session)):
     if not s or not s.content:
         return {"content": "", "summaryUpToTurn": 0}
     return {"content": s.content, "summaryUpToTurn": s.summary_up_to_turn}
+
+
+# ── World-building (Chronicler) ───────────────────────────────────
+
+def _proposal_to_schema(p: WorldbuildingProposal) -> WorldbuildProposalSchema:
+    return WorldbuildProposalSchema(
+        id=p.id, turnNumber=p.turn_number, kind=p.kind, operation=p.operation,
+        targetId=p.target_id, payload=p.payload or {}, summary=p.summary,
+        status=p.status, note=p.note,
+    )
+
+
+@router.post("/worldbuild/run", response_model=list[WorldbuildProposalSchema])
+async def worldbuild_run(
+    data: WorldbuildRunRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    turn = data.turn
+    if turn is None:
+        turn = (
+            await session.execute(select(func.max(ChatMessage.turn_number)))
+        ).scalar() or 0
+    if turn <= 0:
+        return []
+    proposals = await run_worldbuilder(turn)
+    return [_proposal_to_schema(p) for p in proposals]
+
+
+@router.get("/worldbuild/proposals", response_model=list[WorldbuildProposalSchema])
+async def worldbuild_list(
+    status: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(WorldbuildingProposal).order_by(WorldbuildingProposal.id.desc())
+    if status:
+        query = query.where(WorldbuildingProposal.status == status)
+    rows = (await session.execute(query)).scalars().all()
+    return [_proposal_to_schema(p) for p in rows]
+
+
+@router.get("/worldbuild/proposals/count")
+async def worldbuild_count(session: AsyncSession = Depends(get_session)):
+    n = (
+        await session.execute(
+            select(func.count()).select_from(WorldbuildingProposal)
+            .where(WorldbuildingProposal.status == "pending")
+        )
+    ).scalar()
+    return {"pending": n or 0}
+
+
+@router.post("/worldbuild/proposals/{proposal_id}/accept", response_model=WorldbuildProposalSchema)
+async def worldbuild_accept(
+    proposal_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    p = await session.get(WorldbuildingProposal, proposal_id)
+    if not p:
+        raise HTTPException(404, "Proposal not found")
+    if p.status == "accepted":
+        return _proposal_to_schema(p)
+    ok, note = await apply_proposal(p, session)
+    p.status = "accepted" if ok else "failed"
+    p.note = note
+    await session.commit()
+    return _proposal_to_schema(p)
+
+
+@router.post("/worldbuild/proposals/{proposal_id}/reject", response_model=WorldbuildProposalSchema)
+async def worldbuild_reject(
+    proposal_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    p = await session.get(WorldbuildingProposal, proposal_id)
+    if not p:
+        raise HTTPException(404, "Proposal not found")
+    p.status = "rejected"
+    await session.commit()
+    return _proposal_to_schema(p)
+
+
+@router.post("/worldbuild/proposals/accept-all", response_model=list[WorldbuildProposalSchema])
+async def worldbuild_accept_all(session: AsyncSession = Depends(get_session)):
+    rows = (
+        await session.execute(
+            select(WorldbuildingProposal).where(WorldbuildingProposal.status == "pending")
+        )
+    ).scalars().all()
+    for p in rows:
+        ok, note = await apply_proposal(p, session)
+        p.status = "accepted" if ok else "failed"
+        p.note = note
+    await session.commit()
+    return [_proposal_to_schema(p) for p in rows]
+
+
+@router.post("/worldbuild/proposals/reject-all", status_code=204)
+async def worldbuild_reject_all(session: AsyncSession = Depends(get_session)):
+    rows = (
+        await session.execute(
+            select(WorldbuildingProposal).where(WorldbuildingProposal.status == "pending")
+        )
+    ).scalars().all()
+    for p in rows:
+        p.status = "rejected"
+    await session.commit()
 
 
 # ── Shared streaming helper ───────────────────────────────────────

@@ -35,6 +35,9 @@ async def _run_migrations():
         # Agentic tool loop: settings columns
         ("openrouter_settings", "max_tool_rounds", "ALTER TABLE openrouter_settings ADD COLUMN max_tool_rounds INTEGER DEFAULT 6"),
         ("openrouter_settings", "use_tools", "ALTER TABLE openrouter_settings ADD COLUMN use_tools INTEGER DEFAULT 1"),
+        # Chronicler (world-building agent) settings columns
+        ("openrouter_settings", "worldbuilding_mode", "ALTER TABLE openrouter_settings ADD COLUMN worldbuilding_mode VARCHAR DEFAULT 'confirmation'"),
+        ("openrouter_settings", "worldbuilding_model_id", "ALTER TABLE openrouter_settings ADD COLUMN worldbuilding_model_id VARCHAR DEFAULT ''"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

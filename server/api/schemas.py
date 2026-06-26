@@ -113,6 +113,8 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxPartySize: int = 3
     maxToolRounds: int = 6
     useTools: bool = True
+    worldbuildingMode: str = "confirmation"
+    worldbuildingModelId: str = ""
 
 
 class OpenRouterSettingsResponse(BaseModel):
@@ -130,6 +132,8 @@ class OpenRouterSettingsResponse(BaseModel):
     maxPartySize: int
     maxToolRounds: int
     useTools: bool
+    worldbuildingMode: str
+    worldbuildingModelId: str
     apiKeySet: bool
 
 
@@ -153,6 +157,24 @@ class ChatMessageResponse(BaseModel):
 
 class ChatTurnRequest(BaseModel):
     message: str
+
+
+# --- World-building (Chronicler) ---
+
+class WorldbuildRunRequest(BaseModel):
+    turn: int | None = None
+
+
+class WorldbuildProposalSchema(BaseModel):
+    id: str
+    turnNumber: int
+    kind: str
+    operation: str
+    targetId: str | None = None
+    payload: dict
+    summary: str
+    status: str
+    note: str | None = None
 
 
 class ChatMessageUpdate(BaseModel):

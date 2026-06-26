@@ -42,6 +42,8 @@ export function SettingsPanel() {
   const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
   const [maxToolRounds, setMaxToolRounds] = useState(settings.maxToolRounds)
   const [useTools, setUseTools] = useState(settings.useTools)
+  const [wbMode, setWbMode] = useState(settings.worldbuildingMode)
+  const [wbModelId, setWbModelId] = useState(settings.worldbuildingModelId)
   const [showAllModels, setShowAllModels] = useState(false)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
@@ -63,7 +65,9 @@ export function SettingsPanel() {
     setMaxPartySize(settings.maxPartySize)
     setMaxToolRounds(settings.maxToolRounds)
     setUseTools(settings.useTools)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools])
+    setWbMode(settings.worldbuildingMode)
+    setWbModelId(settings.worldbuildingModelId)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -99,6 +103,8 @@ export function SettingsPanel() {
       maxPartySize,
       maxToolRounds,
       useTools,
+      worldbuildingMode: wbMode,
+      worldbuildingModelId: wbModelId,
     })
     await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory })
     // Carry-slot capacity is derived server-side; refetch inventory so the
@@ -318,6 +324,56 @@ export function SettingsPanel() {
             />
             <span className="text-[10px] text-textdim font-body">
               Always injected last, immediately before your input.
+            </span>
+          </label>
+        </Section>
+
+        {/* World-building (Chronicler) */}
+        <Section title="World-building">
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Mode</span>
+            <select
+              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+              value={wbMode}
+              onChange={(e) => setWbMode(e.target.value as typeof wbMode)}
+            >
+              <option value="disabled">Disabled — never creates or changes anything</option>
+              <option value="confirmation">Confirmation — suggest, you approve</option>
+              <option value="auto">Auto — apply changes automatically</option>
+            </select>
+            <span className="text-[10px] text-textdim font-body">
+              The Chronicler reviews each turn and records new lore, quests, and companions. New party members always need your approval, even in Auto.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Chronicler Model</span>
+            {settings.availableModels.length > 0 ? (
+              <select
+                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+                value={wbModelId}
+                onChange={(e) => setWbModelId(e.target.value)}
+              >
+                <option value="">Use main model</option>
+                {(showAllModels
+                  ? settings.availableModels
+                  : settings.availableModels.filter((m) => m.supportsTools)
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.supportsTools ? '' : ' (no tools)'}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                placeholder="(use main model)"
+                value={wbModelId}
+                onChange={(e) => setWbModelId(e.target.value)}
+              />
+            )}
+            <span className="text-[10px] text-textdim font-body">
+              Optional. Leave as "Use main model", or pick a cheaper/faster tool-capable model for bookkeeping.
             </span>
           </label>
         </Section>

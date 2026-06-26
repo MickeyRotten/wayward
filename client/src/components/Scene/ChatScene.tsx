@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useChatStore } from '../../state/chatStore'
+import { useWorldbuildStore } from '../../state/worldbuildStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
@@ -29,6 +30,9 @@ export function ChatScene() {
   const clearHistory = useChatStore((s) => s.clearHistory)
   const contextTokens = useChatStore((s) => s.contextTokens)
   const maxContextTokens = useChatStore((s) => s.maxContextTokens)
+  const worldbuildRunning = useWorldbuildStore((s) => s.running)
+  // Block input until the narrator AND the post-turn Chronicler are both done.
+  const busy = isLoading || worldbuildRunning
   const activeVariants = useChatStore((s) => s.activeVariants)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
@@ -62,7 +66,7 @@ export function ChatScene() {
 
   const handleSend = () => {
     const text = input.trim()
-    if (!text || isLoading) return
+    if (!text || busy) return
     setInput('')
     sendTurn(text)
   }
@@ -94,7 +98,7 @@ export function ChatScene() {
   // Show regenerate in input area when last message is from assistant,
   // or user sent something but no assistant response exists yet
   const showInputRegenerate =
-    !isLoading &&
+    !busy &&
     messages.length > 0 &&
     (
       (lastVisibleMsg && lastVisibleMsg.role === 'assistant') ||
@@ -221,9 +225,9 @@ export function ChatScene() {
                 : Math.min(count - 1, current + 1)
               setActiveVariant(m.turnNumber, next)
             } : undefined}
-            onSwipeNew={m.role === 'assistant' && !isLoading ? () => swipe(m.turnNumber) : undefined}
+            onSwipeNew={m.role === 'assistant' && !busy ? () => swipe(m.turnNumber) : undefined}
             isLastAssistant={m.role === 'assistant' && m.turnNumber === lastTurn}
-            onDelete={!isLoading && m.id > 0 ? () => setConfirmAction({ message: 'Delete this message and everything after it?', action: () => deleteMessageAndAfter(m.id) }) : undefined}
+            onDelete={!busy && m.id > 0 ? () => setConfirmAction({ message: 'Delete this message and everything after it?', action: () => deleteMessageAndAfter(m.id) }) : undefined}
             isFirstNarrator={idx === firstNarratorIdx}
             pcName={pcName}
             pcPortrait={pcPortrait}
@@ -263,6 +267,23 @@ export function ChatScene() {
             </div>
             <div className="pt-2">
               <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+            </div>
+          </div>
+        )}
+
+        {/* Chronicler (world-building) indicator — runs after the narration */}
+        {!isLoading && worldbuildRunning && (
+          <div className="flex items-start gap-3 mr-auto px-1 py-3">
+            <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gold">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+              </svg>
+            </div>
+            <div className="pt-2">
+              <span className="font-ui text-[10px] text-textdim tracking-wider">
+                THE CHRONICLER IS RECORDING
+                <span className="animate-pulse"> ···</span>
+              </span>
             </div>
           </div>
         )}
@@ -340,7 +361,7 @@ export function ChatScene() {
             rows={1}
             placeholder={apiKeySet ? 'What do you do?' : 'Set API key in Settings...'}
             value={input}
-            disabled={!apiKeySet || isLoading}
+            disabled={!apiKeySet || busy}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -362,7 +383,7 @@ export function ChatScene() {
             <button
               type="button"
               className="shrink-0 font-ui text-[10px] bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors disabled:opacity-40"
-              disabled={!apiKeySet || !input.trim()}
+              disabled={!apiKeySet || !input.trim() || busy}
               onClick={handleSend}
             >
               SEND

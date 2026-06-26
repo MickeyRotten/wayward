@@ -71,6 +71,10 @@ class OpenRouterSettings(Base):
     # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.
     max_tool_rounds: Mapped[int] = mapped_column(Integer, default=6)
     use_tools: Mapped[bool] = mapped_column(Integer, default=True)
+    # Chronicler (world-building agent): when/how it creates lore/quests/members.
+    # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
+    worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")
+    worldbuilding_model_id: Mapped[str] = mapped_column(String, default="")
 
 
 class StorySummary(Base):
@@ -159,6 +163,29 @@ class Quest(Base):
     desc: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     related_lore: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class WorldbuildingProposal(Base):
+    """A Chronicler-proposed create/update to lore, quests, or party members.
+
+    Tool calls from the world-building agent are captured here rather than
+    executed directly, so Confirmation mode can surface them for approval and
+    Auto mode can apply + record them. ``payload`` holds the operation fields.
+    """
+    __tablename__ = "worldbuilding_proposals"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    turn_number: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String)          # lore | quest | quest_objective | member
+    operation: Mapped[str] = mapped_column(String)     # create | update
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="pending")  # pending | accepted | rejected | failed
+    note: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
 
 
 class QuestObjective(Base):

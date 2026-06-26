@@ -88,6 +88,22 @@ export interface OpenRouterSettings {
   maxPartySize: number
   maxToolRounds: number
   useTools: boolean
+  worldbuildingMode: WorldbuildingMode
+  worldbuildingModelId: string
+}
+
+export type WorldbuildingMode = 'disabled' | 'confirmation' | 'auto'
+
+export interface WorldbuildProposal {
+  id: string
+  turnNumber: number
+  kind: 'lore' | 'quest' | 'quest_objective' | 'member'
+  operation: 'create' | 'update'
+  targetId: string | null
+  payload: Record<string, unknown>
+  summary: string
+  status: 'pending' | 'accepted' | 'rejected' | 'failed'
+  note: string | null
 }
 
 export interface OpenRouterSettingsUpdate extends OpenRouterSettings {

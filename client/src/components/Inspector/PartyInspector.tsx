@@ -132,7 +132,7 @@ export function PartyInspector() {
       )}
 
       {/* Inspector Body — single scrollable child */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto relative">
         {hasSelection && <SaveIndicator />}
         {selIsPC ? (
           <CharacterSheetEditor mode={mode} />
@@ -163,9 +163,11 @@ function SaveIndicator() {
     return () => clearTimeout(timer)
   }, [lastSavedAt])
 
+  // Overlay (absolute) so it never reserves vertical space between the header
+  // and the content — it just briefly floats in the top-right after a save.
   return (
     <div
-      className={`sticky top-0 z-10 text-right pr-6 pt-2 font-ui text-[9px] text-textdim tracking-wider transition-opacity duration-300 ${
+      className={`absolute top-2 right-6 z-10 pointer-events-none font-ui text-[9px] text-textdim tracking-wider transition-opacity duration-300 ${
         visible ? 'opacity-100' : 'opacity-0'
       }`}
     >

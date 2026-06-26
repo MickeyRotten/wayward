@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { TabId } from '../../state/uiStore'
+import { useWorldbuildStore } from '../../state/worldbuildStore'
 
 const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   {
@@ -44,6 +45,17 @@ const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    id: 'suggestions',
+    label: 'Ideas',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 18h6" />
+        <path d="M10 22h4" />
+        <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1v.2h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" />
+      </svg>
+    ),
+  },
+  {
     id: 'config',
     label: 'Config',
     icon: (
@@ -62,10 +74,12 @@ export function IconRail({
   activeTab: TabId
   onTabChange: (tab: TabId) => void
 }) {
+  const pendingCount = useWorldbuildStore((s) => s.pendingCount)
   return (
     <div className="flex flex-col pt-3">
       {TABS.map((tab) => {
         const isActive = activeTab === tab.id
+        const badge = tab.id === 'suggestions' && pendingCount > 0 ? pendingCount : 0
         return (
           <button
             key={tab.id}
@@ -83,6 +97,11 @@ export function IconRail({
               <div className="absolute left-0 top-2 bottom-2 w-[2px] bg-gold" />
             )}
             {tab.icon}
+            {badge > 0 && (
+              <span className="absolute top-1.5 right-2.5 min-w-[15px] h-[15px] px-1 flex items-center justify-center rounded-full bg-gold text-bg0 font-ui text-[8px] leading-none">
+                {badge > 9 ? '9+' : badge}
+              </span>
+            )}
             <span className="font-ui text-[8px] tracking-wider mt-1">
               {tab.label.toUpperCase()}
             </span>

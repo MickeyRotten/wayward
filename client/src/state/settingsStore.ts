@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { OpenRouterModel, OpenRouterSettings } from '@shared/types/models'
+import type { OpenRouterModel, OpenRouterSettings, WorldbuildingMode } from '@shared/types/models'
 import { api } from '../lib/api'
 
 interface SettingsState {
@@ -17,6 +17,8 @@ interface SettingsState {
   maxPartySize: number
   maxToolRounds: number
   useTools: boolean
+  worldbuildingMode: WorldbuildingMode
+  worldbuildingModelId: string
   apiKeySet: boolean
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
@@ -42,6 +44,8 @@ function applyResponse(s: SettingsResponse) {
     maxPartySize: s.maxPartySize,
     maxToolRounds: s.maxToolRounds,
     useTools: s.useTools,
+    worldbuildingMode: s.worldbuildingMode,
+    worldbuildingModelId: s.worldbuildingModelId,
     apiKeySet: s.apiKeySet,
   }
 }
@@ -61,6 +65,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   maxPartySize: 3,
   maxToolRounds: 6,
   useTools: true,
+  worldbuildingMode: 'confirmation',
+  worldbuildingModelId: '',
   apiKeySet: false,
   availableModels: [],
 
@@ -86,6 +92,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       maxPartySize: update.maxPartySize ?? state.maxPartySize,
       maxToolRounds: update.maxToolRounds ?? state.maxToolRounds,
       useTools: update.useTools ?? state.useTools,
+      worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
+      worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),
     }
     const s = await api.put<SettingsResponse>('/settings/openrouter', payload)

@@ -3,6 +3,7 @@ import type { ChatMessage } from '@shared/types/models'
 import { api } from '../lib/api'
 import { useItemsStore } from './itemsStore'
 import { usePartyStore } from './partyStore'
+import { useWorldbuildStore } from './worldbuildStore'
 
 interface ChatState {
   messages: ChatMessage[]
@@ -225,6 +226,14 @@ async function _handleStream(url: string, body: object) {
     }
 
     await get().fetchHistory()
+
+    // After a completed turn, let the Chronicler (world-building agent) review
+    // it. The store no-ops when the mode is disabled. Fire-and-forget so it
+    // never blocks the chat UI.
+    if (!_aborted) {
+      const latestTurn = get().messages.reduce((m, x) => Math.max(m, x.turnNumber), 0)
+      if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
+    }
   } catch (e) {
     if (_aborted) {
       await get().fetchHistory()

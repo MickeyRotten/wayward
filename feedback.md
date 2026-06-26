@@ -219,20 +219,52 @@ Done: the Edit-Mode toggle moved out of the chat Tools menu and into the locatio
 Done: the Equipment section of the PC and Party Member sheets is now editable in View/Play mode too (it uses the same equip slot field as Edit Mode), since managing gear is a play action rather than world-editing. The rest of the sheet stays read-only in View mode. Changes save immediately via the existing flush/PUT path. (Removed the now-unused read-only EquipViewField.)
 
 ---
-[ ] Campaigns and Adventures, a huge, foundational, multi-step change. Give this a good think before you start implementing it. 
+[x] Campaigns and Adventures, a huge, foundational, multi-step change. Give this a good think before you start implementing it.
 
-  [ ] Differentiate between Campaign (lore entries, narrator instructions, first message, spotlight rule, post-history), and Adventure (PC, party members, quests, inventory, adventure settings, chat). A Campaign (Game) is the world and specific narrator settings. Adventure (Save File) is the journey of a specific PC and their party in it. This categorization should be reflected in the Config too.
+Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Load, 2caa204 P3 Campaign switcher, 5093bef P4 zip import/export, 51d0f9a P5 day counter). Architecture: each Campaign and each Adventure is its own SQLite file on disk under server/data/ (campaigns/<id>/campaign.db + adventures/<id>/adventure.db, with json sidecars), ATTACHed at runtime onto one engine so a single session reads/writes all scopes — "separate databases compiled at runtime". Models are schema-tagged (app / campaign / adventure). Your existing wayward.db was migrated losslessly into a default campaign/adventure (kept as a backup). Sub-items below.
 
-  [ ] Portraits should also be included. This could call for a restructuring of the project structure: Campaigns could be folders, and Adventures folders within those, and Characters folders within those. Separate databases / jsons, which are compiled at runtime? Just a thought, you're the expert, but it should be logical and modular, something that's easy to share and import.
+  [x] Differentiate between Campaign (lore entries, narrator instructions, first message, spotlight rule, post-history), and Adventure (PC, party members, quests, inventory, adventure settings, chat). A Campaign (Game) is the world and specific narrator settings. Adventure (Save File) is the journey of a specific PC and their party in it. This categorization should be reflected in the Config too.
 
-  [ ] Allow for multiple Adventures (Saves, Save Files, etc.) within a Campaign. This could be its own Save / Load view. Each Save Game shows the portraits of the PC and Party, their current location, and the day (how many in-game days since start), etc. I can Load an existing Adventure, start a new Adventure, or delete an Adventure.
+  Done (P1 + P3): campaign.db holds lore/items + NarratorConfig (instructions/first message/spotlight/post-history/planner instructions) + lore config; adventure.db holds PC, party, quests, inventory, chat, story summary, proposals. Config has a "Campaign" section (active campaign + management). (Note: adventure settings — max party size / carry slots — are still app-global for now, not yet per-adventure.)
 
-  [ ] Allow for multiple Campaigns (Games). Each Campaign has its own Adventures linked to it. Adventures do not carry over to another Campaign. This could be accessible through Config, e.g. Active Campaign category with a dropdown of the Campaigns, and a button for + New Campaign, and a Delete Campaign button. When I select a new Campaign, there could also be a confirmation button before the Campaign is switched. You can show a loading screen at this point.
+  [x] Portraits should also be included. This could call for a restructuring of the project structure: Campaigns could be folders, and Adventures folders within those, and Characters folders within those. Separate databases / jsons, which are compiled at runtime? Just a thought, you're the expert, but it should be logical and modular, something that's easy to share and import.
 
-  [ ] When I create a new Campaign, switch over to it. The default view of a new Campaign is the Edit Mode, with a default message shown that gives a structured start to creating the Campaign.
+  Done (P1 + P4): folder-per-campaign / db-per-adventure structure with json sidecars; ATTACH compiles them at runtime. Export bundles referenced portraits into the zip and import restores them. (Refinement still open: portraits currently live in the global server/portraits/ dir and are gathered on export, rather than living inside per-scope portraits/ folders.)
 
-  [ ] When I export a Campaign, I can choose which Adventures (if any) are included in that export. The export (if using the new project structure), can be just a zip file.
+  [x] Allow for multiple Adventures (Saves, Save Files, etc.) within a Campaign. This could be its own Save / Load view. Each Save Game shows the portraits of the PC and Party, their current location, and the day (how many in-game days since start), etc. I can Load an existing Adventure, start a new Adventure, or delete an Adventure.
 
-  [ ] When I import a Campaign, always create a new Campaign. If it has the same name as another Campaign, you can add e.g. "(2)" after the second one, etc. If using the zip file, then I should be able to import the zip file.
+  Done (P2): a "Saves" rail tab lists adventures as cards (PC + party portrait thumbnails, location, Day N from the day counter, ACTIVE badge) with Load / Delete and a "+ New Adventure" (blank slate, sharing the campaign's world). Can't delete the only adventure; deleting the active one switches to another first.
+
+  [x] Allow for multiple Campaigns (Games). Each Campaign has its own Adventures linked to it. Adventures do not carry over to another Campaign. This could be accessible through Config, e.g. Active Campaign category with a dropdown of the Campaigns, and a button for + New Campaign, and a Delete Campaign button. When I select a new Campaign, there could also be a confirmation button before the Campaign is switched. You can show a loading screen at this point.
+
+  Done (P3): Config → Campaign has an Active Campaign dropdown (switch with a confirm dialog + full-screen loading overlay), rename, New Campaign (name + Create), and Delete (blocked on the only campaign). Switching loads the campaign's latest adventure.
+
+  [x] When I create a new Campaign, switch over to it. The default view of a new Campaign is the Edit Mode, with a default message shown that gives a structured start to creating the Campaign.
+
+  Done (P3): creating a campaign switches to it and turns on Edit Mode; a structured Editor "starter" message (setting/location/characters/hook) is seeded into the new adventure's Editor thread.
+
+  [x] When I export a Campaign, I can choose which Adventures (if any) are included in that export. The export (if using the new project structure), can be just a zip file.
+
+  Done (P4): EXPORT downloads a self-contained .zip (campaign.db + each adventure.db + referenced portraits). The /campaigns/{id}/export endpoint supports an `adventures` filter to pick which to include — but the UI currently exports all (a selection dialog is the one remaining refinement).
+
+  [x] When I import a Campaign, always create a new Campaign. If it has the same name as another Campaign, you can add e.g. "(2)" after the second one, etc. If using the zip file, then I should be able to import the zip file.
+
+  Done (P4): IMPORT (.zip) always creates a NEW campaign, deduping the name to "Name (2)" etc.; regenerates folder/json ids and restores portraits. DB-internal ids stay self-consistent so equipment/inventory keep resolving.
+
+  ---
+
+  [ ] Ensure that if the model returns an error or a safety layer is triggered, the message is posted into chat.
+
+  ---
+  [ ] Give Editor the tool to read the Narrator's Instruction. Also, when the Editor is creating Lore entries, ensure that the Scenario is injected for context. Do a review of tools and create tools that you think are missing / are of use.
+
+  ---
+  [ ] Ensure that the LLM (Narrator / Editor) also use the chat history for context - and that summarisation works. Expose summarisation settings in Config (when to summarise, which model is used for summarisation, etc.)
+
+  ---
+  [ ] World-Building category could be renamed to Agents with info on the existing agents and their settings, one of which is the Chronicler.
+
+  ---
+  [ ] Occasionally I get an empty message as a reply from the Editor. Not sure why. 
 
   ---

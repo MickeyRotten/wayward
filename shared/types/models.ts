@@ -140,6 +140,18 @@ export interface ChatMessage {
   createdAt: string
 }
 
+export interface Adventure {
+  id: string
+  name: string
+  createdAt: string
+  lastPlayedAt: string
+  day: number
+  location: string
+  pcName: string
+  pcPortrait: string
+  partyPortraits: string[]
+}
+
 export interface PlannerDelete {
   kind: 'lore' | 'quest' | 'quest_objective' | 'member'
   targetId: string

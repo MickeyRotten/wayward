@@ -122,6 +122,53 @@ async def create_adventure(cid: str, name: str) -> str:
     return aid
 
 
+async def refresh_active_adventure_meta() -> None:
+    """Rewrite the active adventure's json sidecar from its live DB so the
+    Save/Load cards (PC + party portraits, location, last played) stay current.
+    Only the active adventure is attached, so only its sidecar is refreshed."""
+    from sqlalchemy import select
+
+    from server.db.models import AppState, ChatMessage, PartyMember, PlayerCharacter
+
+    async with db.new_session() as s:
+        st = (await s.execute(select(AppState))).scalars().first()
+        if not st or not st.active_campaign_id or not st.active_adventure_id:
+            return
+        cid, aid = st.active_campaign_id, st.active_adventure_id
+        pc = (await s.execute(select(PlayerCharacter))).scalars().first()
+        members = (
+            await s.execute(select(PartyMember).where(PartyMember.in_party == True))  # noqa: E712
+        ).scalars().all()
+        location = (
+            await s.execute(
+                select(ChatMessage.location)
+                .where(ChatMessage.location.is_not(None))
+                .order_by(ChatMessage.id.desc())
+            )
+        ).scalars().first()
+
+    meta = _read_json(adventure_json_path(cid, aid)) or {}
+    pc_info = pc.basic_info if pc else {}
+    meta.update({
+        "lastPlayedAt": _now(),
+        "pcName": pc_info.get("name", "") or "",
+        "pcPortrait": pc_info.get("portrait", "") or "",
+        "partyPortraits": [
+            m.basic_info.get("portrait", "") for m in members if m.basic_info.get("portrait")
+        ],
+        "location": location or meta.get("location", ""),
+    })
+    _write_json(adventure_json_path(cid, aid), meta)
+
+
+def read_adventure_meta(cid: str, aid: str) -> dict | None:
+    return _read_json(adventure_json_path(cid, aid))
+
+
+def write_adventure_meta(cid: str, aid: str, meta: dict) -> None:
+    _write_json(adventure_json_path(cid, aid), meta)
+
+
 async def create_default_scope() -> tuple[str, str]:
     """Create the empty default Campaign + Adventure structure. Data (seed or
     legacy migration) is loaded by the caller after the DBs are attached."""

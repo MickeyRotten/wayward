@@ -6,6 +6,7 @@ import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
 import { QuestsPanel } from './components/QuestsPanel/QuestsPanel'
 import { LorePanel } from './components/LorePanel/LorePanel'
 import { SuggestionsPanel } from './components/Suggestions/SuggestionsPanel'
+import { SaveLoadView } from './components/SaveLoad/SaveLoadView'
 import { ChatScene } from './components/Scene/ChatScene'
 import { PartyInspector } from './components/Inspector/PartyInspector'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
@@ -17,6 +18,7 @@ import { useItemsStore } from './state/itemsStore'
 import { useQuestsStore } from './state/questsStore'
 import { useLoreStore } from './state/loreStore'
 import { useWorldbuildStore } from './state/worldbuildStore'
+import { useAdventuresStore } from './state/adventuresStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 
@@ -56,6 +58,7 @@ function App() {
   const fetchLoreEntries = useLoreStore((s) => s.fetchEntries)
   const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
   const fetchProposals = useWorldbuildStore((s) => s.fetchProposals)
+  const fetchAdventures = useAdventuresStore((s) => s.fetch)
 
   useEffect(() => {
     fetchParty()
@@ -68,7 +71,8 @@ function App() {
     fetchLoreEntries()
     fetchLoreConfig()
     fetchProposals()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchProposals])
+    fetchAdventures()
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchProposals, fetchAdventures])
 
   const handleTabChange = (tab: TabId) => {
     prevTabRef.current = tab
@@ -87,6 +91,8 @@ function App() {
         return <LorePanel />
       case 'suggestions':
         return <SuggestionsPanel />
+      case 'saves':
+        return <SaveLoadView />
       case 'config':
         return <SettingsPanel />
       default:

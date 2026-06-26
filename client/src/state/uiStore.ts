@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type TabId = 'home' | 'items' | 'quests' | 'lore' | 'suggestions' | 'config'
+export type TabId = 'home' | 'items' | 'quests' | 'lore' | 'suggestions' | 'saves' | 'config'
 
 export type SelectionKind =
   | { kind: 'player' }

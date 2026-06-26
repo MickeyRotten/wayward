@@ -3,7 +3,9 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+import shutil
+
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +30,8 @@ from server.ai.summarizer import (
     pick_messages_to_summarize,
     should_summarize,
 )
-from server.db.database import new_session
+from server.db.database import new_session, switch_active
+from server.db import storage
 from server.api.schemas import (
     ChatMessageResponse,
     ChatMessageUpdate,
@@ -70,6 +73,7 @@ from server.db.models import (
     NarratorConfig,
     OpenRouterSettings,
     PartyMember,
+    AppState,
     PlayerCharacter,
     Quest,
     QuestObjective,
@@ -112,6 +116,97 @@ async def _active_party_count(session: AsyncSession) -> int:
 async def _max_party_size(session: AsyncSession) -> int:
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     return settings.max_party_size if settings else 3
+
+
+# ── Adventures (save files in the active campaign) ────────────────
+
+async def _active_ids(session: AsyncSession) -> tuple[str | None, str | None]:
+    st = (await session.execute(select(AppState))).scalars().first()
+    return (st.active_campaign_id, st.active_adventure_id) if st else (None, None)
+
+
+async def _set_active_adventure(aid: str) -> None:
+    async with new_session() as s:
+        st = (await s.execute(select(AppState))).scalars().first()
+        if st:
+            st.active_adventure_id = aid
+            await s.commit()
+
+
+@router.get("/adventures")
+async def list_adventures_route(session: AsyncSession = Depends(get_session)):
+    cid, aid = await _active_ids(session)
+    if not cid:
+        return {"activeId": None, "adventures": []}
+    await storage.refresh_active_adventure_meta()
+    return {"activeId": aid, "adventures": storage.list_adventures(cid)}
+
+
+@router.post("/adventures")
+async def create_adventure_route(
+    data: dict = Body(default={}),
+    session: AsyncSession = Depends(get_session),
+):
+    cid, _ = await _active_ids(session)
+    if not cid:
+        raise HTTPException(400, "No active campaign")
+    name = (data.get("name") or "New Adventure").strip() or "New Adventure"
+    await storage.refresh_active_adventure_meta()  # save the one we're leaving
+    aid = await storage.create_adventure(cid, name)
+    await switch_active(storage.campaign_db_path(cid), storage.adventure_db_path(cid, aid))
+    await _set_active_adventure(aid)
+    # Blank slate: seed an empty editable PC so the sheet renders.
+    async with new_session() as s:
+        if not (await s.execute(select(PlayerCharacter))).scalars().first():
+            s.add(PlayerCharacter())
+            await s.commit()
+    await storage.refresh_active_adventure_meta()
+    return {"id": aid, "switched": True}
+
+
+@router.post("/adventures/{aid}/load")
+async def load_adventure_route(aid: str, session: AsyncSession = Depends(get_session)):
+    cid, _ = await _active_ids(session)
+    if not cid or not storage.adventure_dir(cid, aid).exists():
+        raise HTTPException(404, "Adventure not found")
+    await storage.refresh_active_adventure_meta()  # save current
+    await switch_active(storage.campaign_db_path(cid), storage.adventure_db_path(cid, aid))
+    await _set_active_adventure(aid)
+    return {"id": aid, "switched": True}
+
+
+@router.put("/adventures/{aid}")
+async def rename_adventure_route(
+    aid: str,
+    data: dict = Body(default={}),
+    session: AsyncSession = Depends(get_session),
+):
+    cid, _ = await _active_ids(session)
+    meta = storage.read_adventure_meta(cid, aid) if cid else None
+    if not meta:
+        raise HTTPException(404, "Adventure not found")
+    if data.get("name"):
+        meta["name"] = data["name"].strip()
+        storage.write_adventure_meta(cid, aid, meta)
+    return meta
+
+
+@router.delete("/adventures/{aid}")
+async def delete_adventure_route(aid: str, session: AsyncSession = Depends(get_session)):
+    cid, cur = await _active_ids(session)
+    if not cid:
+        raise HTTPException(400, "No active campaign")
+    advs = storage.list_adventures(cid)
+    if len(advs) <= 1:
+        raise HTTPException(400, "Can't delete the only adventure in a campaign")
+    switched_to: str | None = None
+    if aid == cur:
+        other = next(a for a in advs if a["id"] != aid)
+        await switch_active(storage.campaign_db_path(cid), storage.adventure_db_path(cid, other["id"]))
+        await _set_active_adventure(other["id"])
+        switched_to = other["id"]
+    shutil.rmtree(storage.adventure_dir(cid, aid), ignore_errors=True)
+    return {"deleted": aid, "switchedTo": switched_to}
 
 
 # ── Player Character ──────────────────────────────────────────────

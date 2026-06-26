@@ -45,7 +45,6 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
   const remove = usePartyStore((s) => s.removePartyMember)
   const catalog = useItemsStore((s) => s.catalog)
   const select = useUiStore((s) => s.select)
-  const selectInto = useUiStore((s) => s.selectInto)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PartyMember>(structuredClone(member))
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -77,11 +76,6 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
     draft.current.equipment[key] = value
     setEditDirty(true)
     immediate ? flush() : scheduleFlush()
-  }
-
-  const lookupItem = (id: string | null): ItemCatalogEntry | undefined => {
-    if (!id) return undefined
-    return catalog.find((i) => i.id === id)
   }
 
   const updateSkill = (key: keyof FieldSkill, value: string, immediate?: boolean) => {
@@ -141,20 +135,19 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
           </Section>
         )}
 
-        {/* Equipment */}
+        {/* Equipment — editable in View/Play mode too (gear management is a
+            play action, not world-editing). */}
         <Section title="Equipment">
-          <div className="grid grid-cols-1 gap-y-1">
-            {EQUIP_SLOTS.map(({ key, label }) => {
-              const item = lookupItem(d.equipment[key])
-              return (
-                <EquipViewField
-                  key={key}
-                  label={label}
-                  item={item}
-                  onSelect={item ? () => selectInto({ kind: 'item', id: item.id }) : undefined}
-                />
-              )
-            })}
+          <div className="space-y-3">
+            {EQUIP_SLOTS.map(({ key, label }) => (
+              <EquipSlotField
+                key={key}
+                label={label}
+                value={d.equipment[key]}
+                catalog={catalog}
+                onChange={(id) => updateEquip(key, id, true)}
+              />
+            ))}
           </div>
         </Section>
       </div>
@@ -297,30 +290,6 @@ function TextArea({ label, value, onChange, onBlur, placeholder }: {
         onBlur={onBlur ?? onChange}
       />
     </label>
-  )
-}
-
-function EquipViewField({ label, item, onSelect }: { label: string; item?: ItemCatalogEntry; onSelect?: () => void }) {
-  return (
-    <div className="flex items-center gap-1.5 py-1 px-1">
-      <span className="text-[11px] text-textdim font-body w-[92px] shrink-0">{label}</span>
-      {item ? (
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 text-left group"
-          onClick={onSelect}
-          title="Inspect item"
-        >
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity] || RARITY_COLORS.c}`}
-            title={RARITY_LABELS[item.rarity] || 'Common'}
-          />
-          <span className="text-sm font-body text-text group-hover:text-gold transition-colors">{item.name}</span>
-        </button>
-      ) : (
-        <span className="text-sm font-body text-textdim italic">Empty</span>
-      )}
-    </div>
   )
 }
 

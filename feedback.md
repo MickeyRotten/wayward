@@ -209,6 +209,16 @@ Done: in Edit Mode the Lorebook footer has a "Remove Entries" button above "+ Ne
 Done: a "Sorting:" row sits below the search field (in both modes) with a dropdown (By newest, Alphabetically, By type, By rarity) and an asc/desc arrow toggle. Newest uses insertion order; type sorts by item type (and is a no-op within a single lore category); rarity orders c→u→r→e→l (items). Applies to both the items catalog and lore-entry lists.
 
 ---
+[x] Move the Mode toggle into the location banner, e.g. on the left side of the location headers (a Play button, like in Unity editor?)
+
+Done: the Edit-Mode toggle moved out of the chat Tools menu and into the location banner as a Unity-style Play button on the left of the location/mode header. It's lit gold while playing (Narration) and a dim "edit" glyph in Edit Mode; clicking toggles between Play and Edit. The banner title still reads "Edit Mode" when active.
+
+---
+[x] Switching Equipment for characters should be availabe in View / Play Mode.
+
+Done: the Equipment section of the PC and Party Member sheets is now editable in View/Play mode too (it uses the same equip slot field as Edit Mode), since managing gear is a play action rather than world-editing. The rest of the sheet stays read-only in View mode. Changes save immediately via the existing flush/PUT path. (Removed the now-unused read-only EquipViewField.)
+
+---
 [ ] Campaigns and Adventures, a huge, foundational, multi-step change. Give this a good think before you start implementing it. 
 
   [ ] Differentiate between Campaign (lore entries, narrator instructions, first message, spotlight rule, post-history), and Adventure (PC, party members, quests, inventory, adventure settings, chat). A Campaign (Game) is the world and specific narrator settings. Adventure (Save File) is the journey of a specific PC and their party in it. This categorization should be reflected in the Config too.
@@ -224,3 +234,5 @@ Done: a "Sorting:" row sits below the search field (in both modes) with a dropdo
   [ ] When I export a Campaign, I can choose which Adventures (if any) are included in that export. The export (if using the new project structure), can be just a zip file.
 
   [ ] When I import a Campaign, always create a new Campaign. If it has the same name as another Campaign, you can add e.g. "(2)" after the second one, etc. If using the zip file, then I should be able to import the zip file.
+
+  ---

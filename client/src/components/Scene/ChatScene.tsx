@@ -166,7 +166,28 @@ export function ChatScene() {
           backgroundSize: '4px 4px',
         }}
       >
-        <div className="min-w-0">
+        <div className="flex items-start gap-2.5 min-w-0">
+          {/* Play / Edit mode toggle (Unity-style): lit while playing (Narration). */}
+          <button
+            type="button"
+            disabled={busy}
+            title={planningMode ? 'Exit Edit Mode — back to play' : 'Edit Mode — work on the world'}
+            onClick={() => setPlanningMode(!planningMode)}
+            className={`shrink-0 mt-[1px] w-7 h-7 flex items-center justify-center border rounded-sm transition-colors disabled:opacity-40 ${
+              planningMode
+                ? 'border-line2 text-textsec hover:text-text'
+                : 'border-gold text-gold bg-gold/10'
+            }`}
+          >
+            {planningMode ? (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83a.996.996 0 0 0 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29z" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            )}
+          </button>
+          <div className="min-w-0">
           <span className="font-ui text-[8px] tracking-[0.2em] uppercase text-textdim block">
             {planningMode ? 'Mode' : 'Location'}
           </span>
@@ -178,6 +199,7 @@ export function ChatScene() {
               Day {banner.day}
             </span>
           )}
+          </div>
         </div>
         {!planningMode && (banner.timeOfDay || banner.weather) && (
           <div className="shrink-0 text-right">
@@ -343,18 +365,6 @@ export function ChatScene() {
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setToolsOpen(false)} />
                 <div className="absolute bottom-full left-0 mb-2 w-48 bg-bg2 border border-line2 rounded-md z-20 py-1">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => { setToolsOpen(false); setPlanningMode(!planningMode) }}
-                    className="w-full text-left font-ui text-[10px] tracking-wider uppercase px-3 py-2 flex items-center justify-between hover:bg-bg3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <span className={planningMode ? 'text-gold' : 'text-textsec'}>Edit Mode</span>
-                    <span className={`font-ui text-[9px] ${planningMode ? 'text-gold' : 'text-textdim'}`}>
-                      {planningMode ? 'ON' : 'OFF'}
-                    </span>
-                  </button>
-                  <div className="border-t border-line my-1" />
                   <ToolMenuItem
                     label="Regenerate"
                     disabled={!showInputRegenerate || planningMode}

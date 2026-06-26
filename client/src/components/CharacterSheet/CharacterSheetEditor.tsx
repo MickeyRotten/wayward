@@ -42,7 +42,6 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const save = usePartyStore((s) => s.savePlayerCharacter)
   const catalog = useItemsStore((s) => s.catalog)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
-  const selectInto = useUiStore((s) => s.selectInto)
   const draft = useRef<PlayerCharacter | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -80,11 +79,6 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
     immediate ? flush() : scheduleFlush()
   }
 
-  const lookupItem = (id: string | null): ItemCatalogEntry | undefined => {
-    if (!id) return undefined
-    return catalog.find((i) => i.id === id)
-  }
-
   if (mode === 'view') {
     return (
       <div className="space-y-6 p-6">
@@ -115,20 +109,19 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
           </div>
         </Section>
 
-        {/* Equipment */}
+        {/* Equipment — editable even in View/Play mode (managing gear is a
+            play action, not world-editing). */}
         <Section title="Equipment">
-          <div className="grid grid-cols-1 gap-y-1">
-            {EQUIP_SLOTS.map(({ key, label }) => {
-              const item = lookupItem(d.equipment[key])
-              return (
-                <EquipViewField
-                  key={key}
-                  label={label}
-                  item={item}
-                  onSelect={item ? () => selectInto({ kind: 'item', id: item.id }) : undefined}
-                />
-              )
-            })}
+          <div className="space-y-3">
+            {EQUIP_SLOTS.map(({ key, label }) => (
+              <EquipSlotField
+                key={key}
+                label={label}
+                value={d.equipment[key]}
+                catalog={catalog}
+                onChange={(id) => updateEquip(key, id, true)}
+              />
+            ))}
           </div>
         </Section>
       </div>
@@ -248,30 +241,6 @@ function TextArea({ label, value, onChange, onBlur }: {
         onBlur={onBlur ?? onChange}
       />
     </label>
-  )
-}
-
-function EquipViewField({ label, item, onSelect }: { label: string; item?: ItemCatalogEntry; onSelect?: () => void }) {
-  return (
-    <div className="flex items-center gap-1.5 py-1 px-1">
-      <span className="text-[11px] text-textdim font-body w-[92px] shrink-0">{label}</span>
-      {item ? (
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 text-left hover:text-gold transition-colors group"
-          onClick={onSelect}
-          title="Inspect item"
-        >
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity] || RARITY_COLORS.c}`}
-            title={RARITY_LABELS[item.rarity] || 'Common'}
-          />
-          <span className="text-sm font-body text-text group-hover:text-gold transition-colors">{item.name}</span>
-        </button>
-      ) : (
-        <span className="text-sm font-body text-textdim italic">Empty</span>
-      )}
-    </div>
   )
 }
 

@@ -4,6 +4,7 @@ import { useItemsStore } from '../../state/itemsStore'
 import { useQuestsStore } from '../../state/questsStore'
 import { useLoreStore } from '../../state/loreStore'
 import { useUiStore } from '../../state/uiStore'
+import { useChatStore } from '../../state/chatStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
@@ -18,11 +19,14 @@ export function PartyInspector() {
   const loreEntries = useLoreStore((s) => s.entries)
   const selection = useUiStore((s) => s.selection)
   const everSelected = useUiStore((s) => s.everSelected)
-  const mode = useUiStore((s) => s.mode)
   const editDirty = useUiStore((s) => s.editDirty)
-  const setMode = useUiStore((s) => s.setMode)
   const back = useUiStore((s) => s.back)
   const goBack = useUiStore((s) => s.goBack)
+  // The Inspector's view/edit state is now driven by the chat's Edit Mode:
+  // Edit Mode → always editing; Narration → always viewing. (Game-engine style:
+  // Play vs Edit.) The current selection is preserved when you toggle modes.
+  const editMode = useChatStore((s) => s.planningMode)
+  const mode: 'view' | 'edit' = editMode ? 'edit' : 'view'
 
   if (!everSelected) return <EmptyState />
 
@@ -114,18 +118,15 @@ export function PartyInspector() {
                   title="Unsaved changes"
                 />
               )}
-              {/* View/Edit toggle */}
-              <button
-                type="button"
-                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
-                  mode === 'view'
-                    ? 'text-textsec border-line hover:text-text hover:border-line2'
-                    : 'text-gold border-gold/40 hover:border-gold/60'
+              {/* Mode is driven by the chat's Edit Mode — read-only badge */}
+              <span
+                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border ${
+                  mode === 'edit' ? 'text-gold border-gold/40' : 'text-textdim border-line'
                 }`}
-                onClick={() => setMode(mode === 'view' ? 'edit' : 'view')}
+                title={mode === 'edit' ? 'Edit Mode is on' : 'Toggle Edit Mode in chat to edit'}
               >
-                {mode === 'view' ? 'EDIT' : 'VIEW'}
-              </button>
+                {mode === 'edit' ? 'EDITING' : 'VIEW'}
+              </span>
             </div>
           </div>
         </div>

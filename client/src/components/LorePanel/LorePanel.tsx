@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
+import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
 import { ItemCard } from '../ItemCard'
 import { CategoryIcon } from '../CategoryIcon'
@@ -24,6 +25,7 @@ export function LorePanel() {
   const setSearchQuery = useLoreStore((s) => s.setSearchQuery)
   const createEntry = useLoreStore((s) => s.createEntry)
   const createItem = useItemsStore((s) => s.createItem)
+  const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
@@ -123,19 +125,21 @@ export function LorePanel() {
         </div>
       </div>
 
-      {/* New entry button */}
-      <div className="shrink-0 px-4 pb-4">
-        <button
-          type="button"
-          className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
-          onClick={handleCreate}
-        >
-          + NEW ENTRY
-        </button>
-        {createError && (
-          <p className="text-[11px] text-danger font-body mt-1 px-1">{createError}</p>
-        )}
-      </div>
+      {/* New entry button — adding entries is the domain of Edit Mode */}
+      {editMode && (
+        <div className="shrink-0 px-4 pb-4">
+          <button
+            type="button"
+            className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
+            onClick={handleCreate}
+          >
+            + NEW ENTRY
+          </button>
+          {createError && (
+            <p className="text-[11px] text-danger font-body mt-1 px-1">{createError}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { usePartyStore } from '../../state/partyStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { useUiStore } from '../../state/uiStore'
+import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
 
 export function HomeView() {
   const pc = usePartyStore((s) => s.playerCharacter)
   const members = usePartyStore((s) => s.partyMembers)
+  const editMode = useChatStore((s) => s.planningMode)
   const addMember = usePartyStore((s) => s.addPartyMember)
   const setMembership = usePartyStore((s) => s.setMembership)
   const maxPartySize = useSettingsStore((s) => s.maxPartySize)
@@ -83,15 +85,17 @@ export function HomeView() {
           <p className="text-[11px] text-textdim font-body px-3 py-1">No active party members.</p>
         )}
 
-        <button
-          type="button"
-          disabled={full}
-          title={full ? 'Party is full — raise Max Party Size in Config' : undefined}
-          className="w-full font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-30 disabled:hover:border-line disabled:hover:text-textsec disabled:cursor-not-allowed"
-          onClick={handleAdd}
-        >
-          + ADD MEMBER
-        </button>
+        {editMode && (
+          <button
+            type="button"
+            disabled={full}
+            title={full ? 'Party is full — raise Max Party Size in Config' : undefined}
+            className="w-full font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-30 disabled:hover:border-line disabled:hover:text-textsec disabled:cursor-not-allowed"
+            onClick={handleAdd}
+          >
+            + ADD MEMBER
+          </button>
+        )}
 
         {benched.length > 0 && (
           <>

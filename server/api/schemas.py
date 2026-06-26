@@ -85,6 +85,7 @@ class NarratorUpdate(BaseModel):
     spotlightRule: str | None = None
     firstMessage: str | None = None
     postHistoryInstructions: str | None = None
+    plannerInstructions: str | None = None
 
 
 class NarratorResponse(BaseModel):
@@ -93,6 +94,7 @@ class NarratorResponse(BaseModel):
     spotlightRule: str
     firstMessage: str
     postHistoryInstructions: str
+    plannerInstructions: str
 
 
 # --- OpenRouter Settings ---
@@ -146,6 +148,7 @@ class ChatMessageResponse(BaseModel):
     turnNumber: int
     variant: int
     speaker: str = "narrator"
+    mode: str = "narrator"
     location: str | None = None
     timeOfDay: str | None = None
     weather: str | None = None
@@ -157,6 +160,19 @@ class ChatMessageResponse(BaseModel):
 
 class ChatTurnRequest(BaseModel):
     message: str
+    mode: str = "narrator"  # 'narrator' | 'planner'
+
+
+# --- Planner (Planning mode) ---
+
+class PlannerDelete(BaseModel):
+    kind: str          # lore | quest | quest_objective | member
+    targetId: str
+    label: str = ""
+
+
+class PlannerDeletesApply(BaseModel):
+    deletes: list[PlannerDelete] = []
 
 
 # --- World-building (Chronicler) ---

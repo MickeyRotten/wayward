@@ -130,6 +130,7 @@ export interface ChatMessage {
   turnNumber: number
   variant: number
   speaker: string
+  mode?: 'narrator' | 'planner'
   location?: string | null
   timeOfDay?: string | null
   weather?: string | null
@@ -137,6 +138,12 @@ export interface ChatMessage {
   appliedInventoryDeltas?: InventoryDelta[] | null
   appliedEquipmentChanges?: EquipmentChange[] | null
   createdAt: string
+}
+
+export interface PlannerDelete {
+  kind: 'lore' | 'quest' | 'quest_objective' | 'member'
+  targetId: string
+  label: string
 }
 
 export interface SpotlightSignal {

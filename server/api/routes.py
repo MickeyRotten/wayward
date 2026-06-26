@@ -18,6 +18,7 @@ from server.ai.item_detection import (
 )
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai.worldbuilder import apply_proposal, run_worldbuilder
+from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -49,6 +50,7 @@ from server.api.schemas import (
     PartyMembershipUpdate,
     PartyMemberResponse,
     PartyMemberUpdate,
+    PlannerDeletesApply,
     PlayerCharacterResponse,
     PlayerCharacterUpdate,
     QuestCreate,
@@ -236,6 +238,7 @@ def _narrator_response(n: NarratorConfig) -> NarratorResponse:
         spotlightRule=n.spotlight_rule or DEFAULT_SPOTLIGHT_RULE,
         firstMessage=n.first_message or "",
         postHistoryInstructions=n.post_history_instructions or "",
+        plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
     )
 
 
@@ -268,6 +271,8 @@ async def update_narrator(
         n.first_message = data.firstMessage
     if data.postHistoryInstructions is not None:
         n.post_history_instructions = data.postHistoryInstructions
+    if data.plannerInstructions is not None:
+        n.planner_instructions = data.plannerInstructions
     await session.commit()
     return _narrator_response(n)
 
@@ -861,6 +866,7 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             turnNumber=m.turn_number,
             variant=m.variant,
             speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
+            mode=m.mode or "narrator",
             location=m.location,
             timeOfDay=m.time_of_day,
             weather=m.weather,
@@ -892,6 +898,7 @@ async def edit_message(
         turnNumber=msg.turn_number,
         variant=msg.variant,
         speaker=msg.speaker or ("narrator" if msg.role == "assistant" else "player"),
+        mode=msg.mode or "narrator",
         spotlightReason=msg.spotlight_reason,
         appliedInventoryDeltas=msg.applied_inventory_deltas,
         appliedEquipmentChanges=msg.applied_equipment_changes,
@@ -1008,12 +1015,14 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "spotlightRule": narrator.spotlight_rule if narrator else "",
             "firstMessage": narrator.first_message if narrator else "",
             "postHistoryInstructions": narrator.post_history_instructions if narrator else "",
+            "plannerInstructions": getattr(narrator, "planner_instructions", "") if narrator else "",
         },
         "chatMessages": [
             {
                 "role": m.role, "content": m.content,
                 "turnNumber": m.turn_number, "variant": m.variant,
                 "speaker": m.speaker or ("narrator" if m.role == "assistant" else "player"),
+                "mode": m.mode or "narrator",
                 "location": m.location,
                 "timeOfDay": m.time_of_day,
                 "weather": m.weather,
@@ -1120,6 +1129,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         spotlight_rule=nar.get("spotlightRule", ""),
         first_message=nar.get("firstMessage", ""),
         post_history_instructions=nar.get("postHistoryInstructions", ""),
+        planner_instructions=nar.get("plannerInstructions", ""),
     ))
 
     # Restore chat
@@ -1128,6 +1138,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
             role=msg["role"], content=msg["content"],
             turn_number=msg.get("turnNumber", 0), variant=msg.get("variant", 0),
             speaker=msg.get("speaker", "narrator" if msg["role"] == "assistant" else "player"),
+            mode=msg.get("mode", "narrator"),
             location=msg.get("location"),
             time_of_day=msg.get("timeOfDay"),
             weather=msg.get("weather"),
@@ -1333,8 +1344,14 @@ async def _load_game_context(session: AsyncSession):
     party = list(
         (await session.execute(select(PartyMember).where(PartyMember.in_party == True))).scalars().all()  # noqa: E712
     )
+    # Narration only ever sees the 'narrator' thread — Planning-mode messages
+    # live in their own thread and never enter narration context.
     all_messages = list(
-        (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
+        (await session.execute(
+            select(ChatMessage)
+            .where(func.coalesce(ChatMessage.mode, "narrator") != "planner")
+            .order_by(ChatMessage.id)
+        )).scalars().all()
     )
     summary = (await session.execute(select(StorySummary))).scalars().first()
     if not summary:
@@ -1484,6 +1501,9 @@ async def chat_turn(
     data: ChatTurnRequest,
     session: AsyncSession = Depends(get_session),
 ):
+    if data.mode == "planner":
+        return await _planner_turn(data, session)
+
     settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
@@ -1815,6 +1835,109 @@ async def worldbuild_reject_all(session: AsyncSession = Depends(get_session)):
     for p in rows:
         p.status = "rejected"
     await session.commit()
+
+
+# ── Planner (Planning mode) ───────────────────────────────────────
+
+async def _planner_turn(data: ChatTurnRequest, session: AsyncSession):
+    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    if not settings or not settings.api_key:
+        raise HTTPException(400, "OpenRouter API key not configured")
+    if not settings.model_id:
+        raise HTTPException(400, "No model selected")
+    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+
+    max_turn = (
+        await session.execute(
+            select(func.max(ChatMessage.turn_number)).where(ChatMessage.mode == "planner")
+        )
+    ).scalar() or 0
+    turn = max_turn + 1
+
+    session.add(ChatMessage(
+        role="user", content=data.message, turn_number=turn,
+        speaker=pc.id if pc else "player", mode="planner",
+    ))
+    await session.commit()
+    return _stream_planner_response(settings, turn)
+
+
+def _stream_planner_response(settings: OpenRouterSettings, turn: int):
+    max_context = settings.max_context_tokens
+
+    async def stream():
+        yield f"data: {json.dumps({'type': 'meta', 'maxContextTokens': max_context})}\n\n"
+
+        final_content = ""
+        pending_deletes: list[dict] = []
+        try:
+            async for ev in run_planner_agent(turn):
+                t = ev["type"]
+                if t == "content":
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif t == "discard":
+                    yield f"data: {json.dumps({'type': 'discard'})}\n\n"
+                elif t == "tool":
+                    yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result']})}\n\n"
+                elif t == "final":
+                    final_content = ev["content"]
+                    pending_deletes = ev["pendingDeletes"]
+        except Exception as e:
+            log.exception("Planner loop failed")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            return
+
+        log.info("PLANNER RESPONSE turn=%s (%d chars) | pendingDeletes=%d",
+                 turn, len(final_content), len(pending_deletes))
+
+        try:
+            async with async_session() as save_session:
+                save_session.add(ChatMessage(
+                    role="assistant", content=final_content, turn_number=turn,
+                    variant=0, speaker="planner", mode="planner",
+                ))
+                await save_session.commit()
+        except Exception:
+            log.exception("Failed to save planner response")
+
+        done: dict = {"type": "done"}
+        if pending_deletes:
+            done["pendingDeletes"] = pending_deletes
+        yield f"data: {json.dumps(done)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@router.post("/planner/deletes/apply")
+async def planner_apply_deletes(
+    data: PlannerDeletesApply,
+    session: AsyncSession = Depends(get_session),
+):
+    applied = 0
+    for d in data.deletes:
+        if d.kind == "lore":
+            e = await session.get(LorebookEntry, d.targetId)
+            if e and not e.locked:
+                await session.delete(e)
+                applied += 1
+        elif d.kind == "quest":
+            q = await session.get(Quest, d.targetId)
+            if q:
+                await session.execute(delete(QuestObjective).where(QuestObjective.quest_id == q.id))
+                await session.delete(q)
+                applied += 1
+        elif d.kind == "quest_objective":
+            o = await session.get(QuestObjective, d.targetId)
+            if o:
+                await session.delete(o)
+                applied += 1
+        elif d.kind == "member":
+            m = await session.get(PartyMember, d.targetId)
+            if m:
+                await session.delete(m)
+                applied += 1
+    await session.commit()
+    return {"applied": applied}
 
 
 # ── Shared streaming helper ───────────────────────────────────────

@@ -7,6 +7,7 @@ interface NarratorConfigResponse {
   spotlightRule: string
   firstMessage: string
   postHistoryInstructions: string
+  plannerInstructions: string
 }
 
 interface NarratorState {
@@ -15,6 +16,7 @@ interface NarratorState {
   spotlightRule: string
   firstMessage: string
   postHistoryInstructions: string
+  plannerInstructions: string
   fetchConfig: () => Promise<void>
   save: (update: Partial<NarratorConfigResponse>) => Promise<void>
 }
@@ -25,6 +27,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
   spotlightRule: '',
   firstMessage: '',
   postHistoryInstructions: '',
+  plannerInstructions: '',
 
   fetchConfig: async () => {
     const n = await api.get<NarratorConfigResponse>('/narrator')
@@ -34,6 +37,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       spotlightRule: n.spotlightRule,
       firstMessage: n.firstMessage,
       postHistoryInstructions: n.postHistoryInstructions,
+      plannerInstructions: n.plannerInstructions,
     })
   },
 
@@ -45,6 +49,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       spotlightRule: n.spotlightRule,
       firstMessage: n.firstMessage,
       postHistoryInstructions: n.postHistoryInstructions,
+      plannerInstructions: n.plannerInstructions,
     })
   },
 }))

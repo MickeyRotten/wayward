@@ -48,6 +48,9 @@ class NarratorConfig(Base):
     # The opening narration shown before the player's first turn (drop-capped,
     # included in context). Editable in Config.
     first_message: Mapped[str] = mapped_column(Text, default="")
+    # Core instructions for the Planner persona (Planning mode). Editable in
+    # Config; falls back to the built-in default when blank.
+    planner_instructions: Mapped[str] = mapped_column(Text, default="")
 
 
 class OpenRouterSettings(Base):
@@ -94,6 +97,9 @@ class ChatMessage(Base):
     turn_number: Mapped[int] = mapped_column(Integer)
     variant: Mapped[int] = mapped_column(Integer, default=0)
     speaker: Mapped[str] = mapped_column(String, default="narrator")
+    # Which chat thread this message belongs to: 'narrator' (the story) or
+    # 'planner' (Planning mode). Planner messages never enter narration context.
+    mode: Mapped[str] = mapped_column(String, default="narrator")
     location: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     time_of_day: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     weather: Mapped[str | None] = mapped_column(String, nullable=True, default=None)

@@ -1,13 +1,29 @@
 import { create } from 'zustand'
-import type { ChatMessage } from '@shared/types/models'
+import type { ChatMessage, PlannerDelete } from '@shared/types/models'
 import { api } from '../lib/api'
 import { useItemsStore } from './itemsStore'
 import { usePartyStore } from './partyStore'
 import { useWorldbuildStore } from './worldbuildStore'
+import { useLoreStore } from './loreStore'
+import { useQuestsStore } from './questsStore'
+import { useNarratorStore } from './narratorStore'
+
+const PLANNING_KEY = 'wayward.planningMode'
+
+/** Highest turn number within the active thread (narrator vs planner). */
+function threadMaxTurn(messages: ChatMessage[], planning: boolean): number {
+  const mode = planning ? 'planner' : 'narrator'
+  return messages.reduce(
+    (mx, m) => ((m.mode ?? 'narrator') === mode ? Math.max(mx, m.turnNumber) : mx),
+    0,
+  )
+}
 
 interface ChatState {
   messages: ChatMessage[]
   currentTurn: number
+  planningMode: boolean
+  pendingDeletes: PlannerDelete[]
   isLoading: boolean
   isSummarizing: boolean
   streamingContent: string
@@ -25,6 +41,9 @@ interface ChatState {
   deleteMessageAndAfter: (id: number) => Promise<void>
   setActiveVariant: (turn: number, variant: number) => void
   clearHistory: () => Promise<void>
+  setPlanningMode: (v: boolean) => void
+  applyPendingDeletes: () => Promise<void>
+  dismissPendingDeletes: () => void
 }
 
 let nextOptimisticId = -1
@@ -34,6 +53,8 @@ let _aborted = false
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   currentTurn: 0,
+  planningMode: (() => { try { return localStorage.getItem(PLANNING_KEY) === '1' } catch { return false } })(),
+  pendingDeletes: [],
   isLoading: false,
   isSummarizing: false,
   streamingContent: '',
@@ -45,7 +66,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchHistory: async () => {
     const messages = await api.get<ChatMessage[]>('/chat/messages')
-    const maxTurn = messages.reduce((max, m) => Math.max(max, m.turnNumber), 0)
+    const maxTurn = threadMaxTurn(messages, get().planningMode)
 
     const variants: Record<number, number> = { ...get().activeVariants }
     for (const m of messages) {
@@ -60,7 +81,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendTurn: async (message) => {
-    const turn = get().currentTurn + 1
+    const planning = get().planningMode
+    const mode = planning ? 'planner' : 'narrator'
+    const turn = threadMaxTurn(get().messages, planning) + 1
 
     const optimisticMsg: ChatMessage = {
       id: nextOptimisticId--,
@@ -69,6 +92,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       turnNumber: turn,
       variant: 0,
       speaker: 'player',
+      mode,
       createdAt: new Date().toISOString(),
     }
     set((s) => ({
@@ -80,7 +104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       thinkingStartedAt: Date.now(),
     }))
 
-    await _handleStream('/api/chat/turn', { message })
+    await _handleStream('/api/chat/turn', { message, mode })
   },
 
   regenerate: async () => {
@@ -138,7 +162,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await api.del('/chat/messages')
     set({ messages: [], currentTurn: 0, activeVariants: {}, contextTokens: null, maxContextTokens: null })
   },
+
+  setPlanningMode: (v) => {
+    try { localStorage.setItem(PLANNING_KEY, v ? '1' : '0') } catch { /* ignore */ }
+    // Re-derive the active thread's turn number on switch.
+    set((s) => ({ planningMode: v, currentTurn: threadMaxTurn(s.messages, v), pendingDeletes: [] }))
+  },
+
+  applyPendingDeletes: async () => {
+    const deletes = get().pendingDeletes
+    if (deletes.length === 0) return
+    set({ pendingDeletes: [] })
+    await api.post('/planner/deletes/apply', { deletes })
+    refreshWorldPanels()
+  },
+
+  dismissPendingDeletes: () => set({ pendingDeletes: [] }),
 }))
+
+/** Refresh every panel a planner turn may have changed. */
+function refreshWorldPanels() {
+  useLoreStore.getState().fetchEntries()
+  useQuestsStore.getState().fetchQuests()
+  usePartyStore.getState().fetchAll()
+  useItemsStore.getState().fetchCatalog()
+  useNarratorStore.getState().fetchConfig()
+}
 
 async function _handleStream(url: string, body: object) {
   const { set, get } = { set: useChatStore.setState, get: useChatStore.getState }
@@ -180,7 +229,9 @@ async function _handleStream(url: string, body: object) {
           if (event.type === 'summarized') {
             set({ isSummarizing: false })
           } else if (event.type === 'meta') {
-            set({ contextTokens: event.contextTokens, maxContextTokens: event.maxContextTokens })
+            // Planner turns omit contextTokens — only update when present.
+            if (event.contextTokens !== undefined) set({ contextTokens: event.contextTokens })
+            if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
           } else if (event.type === 'chunk') {
             if (get().thinkingStartedAt !== null) {
               set({ thinkingStartedAt: null })
@@ -194,7 +245,8 @@ async function _handleStream(url: string, body: object) {
             // A narrator tool was executed mid-turn; keep the thinking
             // indicator visible while the loop continues.
           } else if (event.type === 'done') {
-            set({ contextTokens: event.contextTokens, maxContextTokens: event.maxContextTokens })
+            if (event.contextTokens !== undefined) set({ contextTokens: event.contextTokens })
+            if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
             // The turn may have changed inventory (grant/consume/unequip) or
             // equipment (equip/unequip); refresh the affected panels so the UI
             // reflects the new DB state instead of going stale until reload.
@@ -203,6 +255,10 @@ async function _handleStream(url: string, body: object) {
             }
             if (Array.isArray(event.appliedEquipmentChanges) && event.appliedEquipmentChanges.length > 0) {
               usePartyStore.getState().fetchAll()
+            }
+            // Planner turn: surface any queued deletions for confirmation.
+            if (Array.isArray(event.pendingDeletes) && event.pendingDeletes.length > 0) {
+              set({ pendingDeletes: event.pendingDeletes })
             }
           } else if (event.type === 'error') {
             set({ error: event.content })
@@ -213,9 +269,11 @@ async function _handleStream(url: string, body: object) {
 
     _activeReader = null
 
-    // If stopped mid-stream, save partial content
+    const isPlanner = (body as { mode?: string }).mode === 'planner'
+
+    // If stopped mid-stream, save partial content (narrator thread only).
     const partial = get().streamingContent
-    if (_aborted && partial) {
+    if (_aborted && partial && !isPlanner) {
       try {
         await fetch('/api/chat/save-partial', {
           method: 'POST',
@@ -227,12 +285,16 @@ async function _handleStream(url: string, body: object) {
 
     await get().fetchHistory()
 
-    // After a completed turn, let the Chronicler (world-building agent) review
-    // it. The store no-ops when the mode is disabled. Fire-and-forget so it
-    // never blocks the chat UI.
     if (!_aborted) {
-      const latestTurn = get().messages.reduce((m, x) => Math.max(m, x.turnNumber), 0)
-      if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
+      if (isPlanner) {
+        // Planner create/edit ops already applied server-side — refresh panels.
+        refreshWorldPanels()
+      } else {
+        // After a narration turn, let the Chronicler review it (no-op when
+        // disabled). Fire-and-forget so it never blocks the chat UI.
+        const latestTurn = threadMaxTurn(get().messages, false)
+        if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
+      }
     }
   } catch (e) {
     if (_aborted) {

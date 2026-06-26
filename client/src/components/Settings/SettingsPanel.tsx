@@ -49,6 +49,7 @@ export function SettingsPanel() {
   const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
   const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
+  const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -74,7 +75,8 @@ export function SettingsPanel() {
     setFirstMessage(narrator.firstMessage)
     setSpotlightRule(narrator.spotlightRule)
     setPostHistory(narrator.postHistoryInstructions)
-  }, [narrator.instructions, narrator.firstMessage, narrator.spotlightRule, narrator.postHistoryInstructions])
+    setPlannerInstructions(narrator.plannerInstructions)
+  }, [narrator.instructions, narrator.firstMessage, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -106,7 +108,7 @@ export function SettingsPanel() {
       worldbuildingMode: wbMode,
       worldbuildingModelId: wbModelId,
     })
-    await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory })
+    await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions })
     // Carry-slot capacity is derived server-side; refetch inventory so the
     // Items panel reflects the new max immediately.
     await useItemsStore.getState().fetchInventory()
@@ -324,6 +326,20 @@ export function SettingsPanel() {
             />
             <span className="text-[10px] text-textdim font-body">
               Always injected last, immediately before your input.
+            </span>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Editor Instructions</span>
+            <ExpandableTextarea
+              label="Editor Instructions"
+              className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+              rows={4}
+              value={plannerInstructions}
+              onChange={setPlannerInstructions}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Core instructions for the Editor persona (Edit Mode in chat). Advanced.
             </span>
           </label>
         </Section>

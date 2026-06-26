@@ -279,6 +279,17 @@ Key points: the Chronicler reuses [`chat_completion_agent_turn`](server/ai/openr
 
 ---
 
+## Planning Mode (the Planner)
+
+A **foreground** world-builder, toggled from the chat Tools menu. When on, the chat's primary agent becomes the **Planner** ([`server/ai/planner.py`](server/ai/planner.py)) — its own editable core instructions (`NarratorConfig.planner_instructions`) and full CRUD over lore (all categories), quests/objectives, party members, the PC, the **Scenario**, and the **Narrator's instructions**. You converse with it directly and it creates/edits many things per turn, then replies conversationally.
+
+- **Separate thread.** Planner messages are tagged `ChatMessage.mode = 'planner'` and live in their own conversation; toggling swaps the chat view. They **never enter narration context** — the narrator path filters `mode != 'planner'` in [`_load_game_context`](server/api/routes.py). Each thread numbers its own turns.
+- **Create/edit apply immediately** (committed each round, via `run_planner_agent` — same loop shape as the narrator). **Deletes are queued**, not executed: the handler returns a pending-delete; the turn's `done` event carries `pendingDeletes`; the client shows a ConfirmDialog → `POST /planner/deletes/apply`. Locked entries (e.g. the Scenario) can be edited via `set_scenario` but never deleted.
+- After a planner turn the client refreshes lore/quests/party/items/narrator panels; the Chronicler does **not** run for planner turns.
+- A future guided FTUE (Planner dialogue → Narrator) is intended but not built.
+
+---
+
 ## Prompt Assembly
 
 Every narration call assembles, in order:

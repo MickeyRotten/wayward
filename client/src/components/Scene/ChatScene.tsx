@@ -37,6 +37,11 @@ export function ChatScene() {
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const planningMode = useChatStore((s) => s.planningMode)
+  const setPlanningMode = useChatStore((s) => s.setPlanningMode)
+  const pendingDeletes = useChatStore((s) => s.pendingDeletes)
+  const applyPendingDeletes = useChatStore((s) => s.applyPendingDeletes)
+  const dismissPendingDeletes = useChatStore((s) => s.dismissPendingDeletes)
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
@@ -80,12 +85,16 @@ export function ChatScene() {
     }
   }
 
+  // Restrict to the active thread: narration vs the Planning conversation.
+  const threadMode = planningMode ? 'planner' : 'narrator'
+  const threadMessages = messages.filter((m) => (m.mode ?? 'narrator') === threadMode)
+
   // Build the visible message list — one assistant message per turn (the active variant)
-  const visibleMessages = buildVisibleMessages(messages, activeVariants)
-  const lastTurn = Math.max(0, ...messages.map((m) => m.turnNumber))
+  const visibleMessages = buildVisibleMessages(threadMessages, activeVariants)
+  const lastTurn = Math.max(0, ...threadMessages.map((m) => m.turnNumber))
 
   // Get variant info for each turn
-  const variantCounts = getVariantCounts(messages)
+  const variantCounts = getVariantCounts(threadMessages)
 
   // Determine if we should show the "What do you do?" divider
   const lastVisibleMsg = visibleMessages[visibleMessages.length - 1]
@@ -107,7 +116,7 @@ export function ChatScene() {
 
   // Find first narrator message index for drop-cap. When a configured First
   // Message is shown, IT carries the drop-cap, so real messages never do.
-  const hasFirstMessage = !!firstMessage.trim()
+  const hasFirstMessage = !planningMode && !!firstMessage.trim()
   const firstNarratorIdx = hasFirstMessage
     ? -1
     : visibleMessages.findIndex(
@@ -148,7 +157,7 @@ export function ChatScene() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat header — location + time/weather banner (does not scroll) */}
+      {/* Chat header — location banner, or a PLANNING banner in Planning mode */}
       <div
         className="flex-shrink-0 border-b border-line2 bg-bg2 px-4 pt-3 pb-2.5 flex items-start justify-between gap-3"
         style={{
@@ -159,13 +168,13 @@ export function ChatScene() {
       >
         <div className="min-w-0">
           <span className="font-ui text-[8px] tracking-[0.2em] uppercase text-textdim block">
-            Location
+            {planningMode ? 'Mode' : 'Location'}
           </span>
           <h1 className="font-disp text-[22px] leading-none text-gold pt-[3px] truncate">
-            {banner.location}
+            {planningMode ? 'Edit Mode' : banner.location}
           </h1>
         </div>
-        {(banner.timeOfDay || banner.weather) && (
+        {!planningMode && (banner.timeOfDay || banner.weather) && (
           <div className="shrink-0 text-right">
             {banner.timeOfDay && (
               <div className="flex items-center justify-end gap-1.5 text-gold">
@@ -197,15 +206,19 @@ export function ChatScene() {
           </div>
         )}
 
-        {messages.length === 0 && !isLoading && !hasFirstMessage && (
+        {threadMessages.length === 0 && !isLoading && !hasFirstMessage && (
           <div className="flex items-center justify-center h-full">
-            <p className="font-ui text-[10px] text-textdim tracking-wider">
-              {apiKeySet ? 'BEGIN YOUR ADVENTURE' : 'SET API KEY IN SETTINGS TO BEGIN'}
+            <p className="font-ui text-[10px] text-textdim tracking-wider text-center px-6">
+              {!apiKeySet
+                ? 'SET API KEY IN SETTINGS TO BEGIN'
+                : planningMode
+                  ? 'EDIT MODE — DESCRIBE WHAT TO BUILD OR CHANGE'
+                  : 'BEGIN YOUR ADVENTURE'}
             </p>
           </div>
         )}
 
-        {messages.length === 0 && !isLoading && hasFirstMessage && !apiKeySet && (
+        {threadMessages.length === 0 && !isLoading && hasFirstMessage && !apiKeySet && (
           <p className="font-ui text-[10px] text-textdim tracking-wider px-4">
             SET API KEY IN SETTINGS TO BEGIN
           </p>
@@ -259,14 +272,20 @@ export function ChatScene() {
           </div>
         )}
 
-        {/* Generating indicator — narrator avatar with animated dots */}
+        {/* Generating indicator — narrator/planner avatar with animated dots */}
         {isLoading && !streamingContent && (
           <div className="flex items-start gap-3 mr-auto px-1 py-3">
             <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
-              <span className="font-disp text-[16px] text-gold pt-[2px]">N</span>
+              <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
             </div>
             <div className="pt-2">
-              <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+              {planningMode ? (
+                <span className="font-ui text-[10px] text-textdim tracking-wider">
+                  THE EDITOR IS WORKING<span className="animate-pulse"> ···</span>
+                </span>
+              ) : (
+                <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+              )}
             </div>
           </div>
         )}
@@ -295,8 +314,8 @@ export function ChatScene() {
         )}
       </div>
 
-      {/* Context size bar */}
-      {contextTokens !== null && maxContextTokens !== null && (
+      {/* Context size bar (hidden in Planning mode — no narration context) */}
+      {!planningMode && contextTokens !== null && maxContextTokens !== null && (
         <div className="px-4 py-1.5 border-t border-line bg-bg2 flex items-center justify-between">
           <span className="font-ui text-[8px] text-textdim tracking-wider">
             CONTEXT {contextTokens.toLocaleString()} / {maxContextTokens.toLocaleString()} TOKENS
@@ -318,10 +337,22 @@ export function ChatScene() {
             {toolsOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setToolsOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 w-44 bg-bg2 border border-line2 rounded-md z-20 py-1">
+                <div className="absolute bottom-full left-0 mb-2 w-48 bg-bg2 border border-line2 rounded-md z-20 py-1">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => { setToolsOpen(false); setPlanningMode(!planningMode) }}
+                    className="w-full text-left font-ui text-[10px] tracking-wider uppercase px-3 py-2 flex items-center justify-between hover:bg-bg3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <span className={planningMode ? 'text-gold' : 'text-textsec'}>Edit Mode</span>
+                    <span className={`font-ui text-[9px] ${planningMode ? 'text-gold' : 'text-textdim'}`}>
+                      {planningMode ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+                  <div className="border-t border-line my-1" />
                   <ToolMenuItem
                     label="Regenerate"
-                    disabled={!showInputRegenerate}
+                    disabled={!showInputRegenerate || planningMode}
                     onClick={() => { setToolsOpen(false); regenerate() }}
                   />
                   <ToolMenuItem
@@ -345,7 +376,7 @@ export function ChatScene() {
               title="Tools"
               aria-label="Tools"
               className={`border px-2.5 py-2 transition-colors ${
-                toolsOpen ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
+                toolsOpen || planningMode ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
               }`}
               onClick={() => setToolsOpen((o) => !o)}
             >
@@ -359,7 +390,7 @@ export function ChatScene() {
             ref={inputRef}
             className="flex-1 border border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none max-h-[160px] overflow-y-auto"
             rows={1}
-            placeholder={apiKeySet ? 'What do you do?' : 'Set API key in Settings...'}
+            placeholder={!apiKeySet ? 'Set API key in Settings...' : planningMode ? 'Describe what to build or change…' : 'What do you do?'}
             value={input}
             disabled={!apiKeySet || busy}
             onChange={(e) => setInput(e.target.value)}
@@ -400,6 +431,14 @@ export function ChatScene() {
           message={confirmAction.message}
           onConfirm={() => { confirmAction.action(); setConfirmAction(null) }}
           onCancel={() => setConfirmAction(null)}
+        />
+      )}
+      {pendingDeletes.length > 0 && (
+        <ConfirmDialog
+          confirmLabel="DELETE"
+          message={`The Editor wants to remove ${pendingDeletes.length} item(s): ${pendingDeletes.map((d) => d.label).join(', ')}. Delete them?`}
+          onConfirm={() => applyPendingDeletes()}
+          onCancel={() => dismissPendingDeletes()}
         />
       )}
     </div>
@@ -713,9 +752,15 @@ function MessageBubble({
     )
   }
 
-  // ── Narrator message (default for assistant) ──
+  // ── Narrator / Planner message (default for assistant) ──
+  const isPlanner = message.mode === 'planner'
   return (
     <div className="max-w-[85%] mr-auto group">
+      {isPlanner && (
+        <div className="flex items-center gap-1.5 px-4 pt-1">
+          <span className="font-ui text-[9px] tracking-wider text-gold">⚙ EDITOR</span>
+        </div>
+      )}
       <div
         className="px-4 py-3 cursor-pointer"
         onClick={() => {

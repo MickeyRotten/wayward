@@ -38,6 +38,9 @@ async def _run_migrations():
         # Chronicler (world-building agent) settings columns
         ("openrouter_settings", "worldbuilding_mode", "ALTER TABLE openrouter_settings ADD COLUMN worldbuilding_mode VARCHAR DEFAULT 'confirmation'"),
         ("openrouter_settings", "worldbuilding_model_id", "ALTER TABLE openrouter_settings ADD COLUMN worldbuilding_model_id VARCHAR DEFAULT ''"),
+        # Planning mode: thread tag on messages + Planner instructions
+        ("chat_messages", "mode", "ALTER TABLE chat_messages ADD COLUMN mode VARCHAR DEFAULT 'narrator'"),
+        ("narrator_configs", "planner_instructions", "ALTER TABLE narrator_configs ADD COLUMN planner_instructions TEXT DEFAULT ''"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

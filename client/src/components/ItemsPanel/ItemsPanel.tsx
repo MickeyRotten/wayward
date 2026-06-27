@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
@@ -92,13 +92,9 @@ export function ItemsPanel() {
 
         {/* Add item — hidden while removing */}
         {!removeMode && (
-          <>
-            <div className="flex items-center gap-2 px-3 pt-3 pb-1">
-              <span className="font-ui text-[9px] text-textdim tracking-wider">ADD ITEM</span>
-              <div className="flex-1 border-t border-line" />
-            </div>
+          <div className="pt-3">
             <AddItemSection />
-          </>
+          </div>
         )}
       </div>
 
@@ -172,38 +168,31 @@ function SelectableRow({
 }
 
 function AddItemSection() {
+  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selectedItem, setSelectedItem] = useState<ItemCatalogEntry | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [error, setError] = useState('')
-  const searchItems = useItemsStore((s) => s.searchItems)
-  const clearSearch = useItemsStore((s) => s.clearSearch)
-  const searchResults = useItemsStore((s) => s.searchResults)
+  const catalog = useItemsStore((s) => s.catalog)
   const addToInventory = useItemsStore((s) => s.addToInventory)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  const handleSearch = useCallback(
-    (value: string) => {
-      setQuery(value)
-      setSelectedItem(null)
-      setError('')
-      clearTimeout(debounceRef.current)
-      if (value.length < 3) {
-        clearSearch()
-        return
-      }
-      debounceRef.current = setTimeout(() => {
-        searchItems(value)
-      }, 250)
-    },
-    [searchItems, clearSearch],
-  )
+  // All Lorebook items, filtered live by the typed query (no minimum length).
+  const q = query.toLowerCase().trim()
+  const results = catalog
+    .filter((i) => !q || i.name.toLowerCase().includes(q) || i.type.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const reset = () => {
+    setOpen(false)
+    setQuery('')
+    setSelectedItem(null)
+    setQuantity(1)
+    setError('')
+  }
 
   const handleSelect = (item: ItemCatalogEntry) => {
     setSelectedItem(item)
-    setQuery(item.name)
     setQuantity(1)
-    clearSearch()
   }
 
   const handleAdd = async () => {
@@ -211,57 +200,78 @@ function AddItemSection() {
     setError('')
     try {
       await addToInventory(selectedItem.id, quantity)
-      setSelectedItem(null)
-      setQuery('')
-      setQuantity(1)
+      reset()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to add item'
       setError(msg)
     }
   }
 
-  return (
-    <div className="px-2 space-y-2">
-      {/* Search input */}
-      <input
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-        placeholder="Type to search..."
-        value={query}
-        onChange={(e) => handleSearch(e.target.value)}
-      />
+  // Collapsed: just the Add Item button.
+  if (!open) {
+    return (
+      <div className="px-2">
+        <button
+          type="button"
+          className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors"
+          onClick={() => setOpen(true)}
+        >
+          + ADD ITEM
+        </button>
+      </div>
+    )
+  }
 
-      {/* Hint for short queries */}
-      {query.length > 0 && query.length < 3 && !selectedItem && (
-        <p className="text-[11px] text-textdim font-body px-1">Keep typing...</p>
+  return (
+    <div className="px-2 space-y-2 border border-line bg-bg1 rounded-md p-2">
+      {/* Filter input over the full Lorebook item list */}
+      {!selectedItem && (
+        <input
+          autoFocus
+          className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+          placeholder="Filter items..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       )}
 
-      {/* Search results */}
-      {searchResults.length > 0 && !selectedItem && (
-        <div className="border border-line bg-bg1 max-h-[200px] overflow-y-auto">
-          {searchResults.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="w-full text-left px-3 py-2 hover:bg-bg2 transition-colors border-b border-line last:border-b-0"
-              onClick={() => handleSelect(item)}
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity as Rarity] || RARITY_COLORS.c}`}
-                />
-                <span className="font-body text-sm text-text truncate">{item.name}</span>
-                <span className="font-ui text-[8px] text-textdim tracking-wider uppercase ml-auto shrink-0">
-                  {item.type}
-                </span>
-              </div>
-            </button>
-          ))}
+      {/* Item list */}
+      {!selectedItem && (
+        <div className="border border-line bg-bg0 max-h-[220px] overflow-y-auto">
+          {results.length === 0 ? (
+            <p className="text-[11px] text-textdim font-body px-3 py-2">No items found</p>
+          ) : (
+            results.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="w-full text-left px-3 py-2 hover:bg-bg2 transition-colors border-b border-line last:border-b-0"
+                onClick={() => handleSelect(item)}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity as Rarity] || RARITY_COLORS.c}`}
+                  />
+                  <span className="font-body text-sm text-text truncate">{item.name}</span>
+                  <span className="font-ui text-[8px] text-textdim tracking-wider uppercase ml-auto shrink-0">
+                    {item.type}
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
         </div>
       )}
 
-      {/* No results */}
-      {query.length >= 3 && searchResults.length === 0 && !selectedItem && (
-        <p className="text-[11px] text-textdim font-body px-1">No items found</p>
+      {/* Close the picker without selecting */}
+      {!selectedItem && (
+        <button
+          type="button"
+          className="w-full font-ui text-[10px] text-textdim border border-line hover:border-line2 hover:text-text px-3 py-1.5 transition-colors tracking-wider"
+          onClick={reset}
+        >
+          CANCEL
+        </button>
       )}
 
       {/* Selected item — quantity + confirm */}
@@ -303,13 +313,9 @@ function AddItemSection() {
             <button
               type="button"
               className="font-ui text-[10px] text-textdim border border-line hover:border-line2 hover:text-text px-3 py-1.5 transition-colors tracking-wider"
-              onClick={() => {
-                setSelectedItem(null)
-                setQuery('')
-                clearSearch()
-              }}
+              onClick={() => setSelectedItem(null)}
             >
-              CANCEL
+              BACK
             </button>
           </div>
         </div>

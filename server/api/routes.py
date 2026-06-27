@@ -23,7 +23,7 @@ from server.ai.item_detection import (
     reverse_inventory_deltas,
 )
 from server.ai.narrator_agent import run_narrator_agent
-from server.ai.worldbuilder import apply_proposal, run_worldbuilder
+from server.ai.worldbuilder import apply_proposal, reverse_chronicler_creations, run_worldbuilder
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
@@ -1273,6 +1273,10 @@ async def delete_message_and_after(
     if latest_with_effects:
         await _reverse_message_effects(latest_with_effects, session)
 
+    # Chronicler facts are tied to their message: drop lore/quests the Chronicler
+    # created on this turn and every turn after it (the ones being deleted).
+    await reverse_chronicler_creations(session, msg.turn_number)
+
     await session.execute(
         delete(ChatMessage).where(ChatMessage.id >= msg.id)
     )
@@ -1938,6 +1942,9 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     if turn_variants:
         latest_variant = max(turn_variants, key=lambda m: m.variant)
         await _reverse_message_effects(latest_variant, session)
+    # The prior variant's Chronicler lore/quests belong to the discarded telling
+    # of this turn — drop them; the re-run's Chronicler pass will record fresh.
+    await reverse_chronicler_creations(session, turn, exact=True)
     await session.commit()
     agentic = await _should_use_tools(settings)
     # Re-detect against the now-restored inventory (legacy path only); agentic
@@ -2013,6 +2020,10 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
     if turn_variants:
         latest_variant = max(turn_variants, key=lambda m: m.variant)
         await _reverse_message_effects(latest_variant, session)
+
+    # Drop the discarded telling's Chronicler lore/quests for this turn; the
+    # re-run's Chronicler pass records fresh ones tied to the new message.
+    await reverse_chronicler_creations(session, last_turn, exact=True)
 
     # REGENERATE wipes all existing assistant variants for this turn
     await session.execute(

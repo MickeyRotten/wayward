@@ -236,6 +236,18 @@ async def _member_exists(session: AsyncSession, name: str) -> bool:
     return any(m.basic_info.get("name", "").lower() == name.lower() for m in members)
 
 
+async def _absorb_lore_character(session: AsyncSession, name: str) -> str | None:
+    """When a character is recruited into the party, remove their lorebook
+    'characters' entry (they now live as a party member) and return its content
+    so it can seed the member's description. Locked entries are left alone."""
+    entry = await _resolve_lore(session, name)
+    if entry is not None and entry.cat == "characters" and not entry.locked:
+        content = entry.content
+        await session.delete(entry)
+        return content
+    return None
+
+
 async def _build_world_state(session: AsyncSession) -> str:
     """A compact inventory of current world state for dedup + name reuse."""
     lore = (await session.execute(select(LorebookEntry))).scalars().all()
@@ -441,10 +453,13 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
     kind, op = proposal.kind, proposal.operation
 
     if kind == "lore" and op == "create":
-        session.add(LorebookEntry(
+        entry = LorebookEntry(
             title=p.get("title", ""), content=p.get("content", ""),
             keywords=p.get("keywords") or [], cat=p.get("cat", "world"),
-        ))
+        )
+        session.add(entry)
+        await session.flush()
+        proposal.target_id = entry.id  # tie the created entry to this proposal/turn
         return True, None
 
     if kind == "lore" and op == "update":
@@ -465,6 +480,7 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         await session.flush()
         for i, text in enumerate(p.get("objectives", []) or []):
             session.add(QuestObjective(quest_id=quest.id, text=text, sort_order=i))
+        proposal.target_id = quest.id  # tie the created quest to this proposal/turn
         return True, None
 
     if kind == "quest" and op == "update":
@@ -506,10 +522,15 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         )).scalar()
         if active >= max_size:
             return False, "Party is full."
+        # Promote a lorebook character into the party: if a matching lore
+        # 'characters' entry exists, remove it (the character now lives as a
+        # party member) and reuse its description if the proposal lacks one.
+        absorbed = await _absorb_lore_character(session, p.get("name", ""))
+        description = p.get("description", "") or (absorbed or "")
         session.add(PartyMember(
             basic_info={
                 "name": p.get("name", ""), "species": p.get("species", ""),
-                "description": p.get("description", ""), "personality": p.get("personality", ""),
+                "description": description, "personality": p.get("personality", ""),
                 "gender": "", "age": 0, "heightCm": 0, "weightKg": 0,
                 "portrait": "", "likes": "", "dislikes": "",
             },
@@ -519,6 +540,56 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         return True, None
 
     return False, f"Unknown proposal {kind}/{op}."
+
+
+async def reverse_chronicler_creations(
+    session: AsyncSession, from_turn: int, *, exact: bool = False
+) -> int:
+    """Undo lore/quest entries the Chronicler CREATED on the given turn(s).
+
+    Chronicler facts are tied to the message that triggered them: when that
+    message is deleted, regenerated, or swiped, the entries it spawned are
+    removed too. We use the proposal rows as the link (turn_number + the
+    target_id recorded at apply time). Only *accepted* *create* proposals for
+    lore/quests are reversed — members are NOT (recruiting is deliberate), and
+    locked entries (e.g. the Scenario) are never touched. Returns entries removed.
+
+    ``exact`` restricts to a single turn (swipe/regenerate of that turn);
+    otherwise it reverses that turn and everything after (delete-and-after).
+    """
+    turn_cond = (
+        WorldbuildingProposal.turn_number == from_turn if exact
+        else WorldbuildingProposal.turn_number >= from_turn
+    )
+    proposals = (await session.execute(
+        select(WorldbuildingProposal).where(
+            turn_cond,
+            WorldbuildingProposal.status == "accepted",
+            WorldbuildingProposal.operation == "create",
+            WorldbuildingProposal.kind.in_(("lore", "quest")),
+        )
+    )).scalars().all()
+
+    removed = 0
+    for p in proposals:
+        if p.target_id:
+            if p.kind == "lore":
+                entry = await session.get(LorebookEntry, p.target_id)
+                if entry is not None and not entry.locked:
+                    await session.delete(entry)
+                    removed += 1
+            elif p.kind == "quest":
+                quest = await session.get(Quest, p.target_id)
+                if quest is not None:
+                    objs = (await session.execute(
+                        select(QuestObjective).where(QuestObjective.quest_id == quest.id)
+                    )).scalars().all()
+                    for o in objs:
+                        await session.delete(o)
+                    await session.delete(quest)
+                    removed += 1
+        await session.delete(p)  # drop the now-orphaned proposal record
+    return removed
 
 
 async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:

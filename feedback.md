@@ -299,7 +299,7 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
 
     
   ---
-  
+
   [x] Often when I ask the Editor to create equipment for a party member, it'll try to directly equip the items (that don't exist), and then claims success. It should have better rules and instructions for creating different items and doing different things, e.g. if I ask "Create equipment for party member X", it should know that it first has to create the item in the Lorebook before it can equip them. Also, when I ask to edit a character in the lorebook (not a party member), it shouldn't try to give them equipment, and as a player I might not write "party member" or "character" but rather refer to them by name.
 
   Done (planner.py): both guidance and a deterministic guard, so it holds regardless of the model:
@@ -307,3 +307,20 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
     - Lorebook characters ≠ equippable: if the named target is a lorebook 'characters' NPC (not the PC/party), equip is refused with "describe their gear in their lore entry with update_lore instead." Guidance now distinguishes the three kinds — PC + party members (have equipment) vs lorebook NPCs (lore only).
     - Refer-by-name: guidance tells the Editor the player will just use a name, and to resolve it against world state (PC / party member / lorebook NPC) and pick the right action — and not to recruit an NPC into the party unless clearly asked. Verified live against the seed: missing-item, unknown-name, and lorebook-NPC equips all return the right corrective message with no mutation.
 
+---
+
+ [x] Chronicler iteration: If a Character is recruited as Party Member, that character is removed from Lorebook and moved into Party Members.
+
+  Done (worldbuilder.py apply_proposal): when a member-create proposal is applied, _absorb_lore_character removes a matching lorebook 'characters' entry (case-insensitive; locked entries left alone) and reuses its description to seed the new party member if the proposal didn't supply one — so a recruited NPC moves out of the Lorebook into Party Members instead of being duplicated. Verified live (rolled back).
+
+ ---
+
+ [x] Chronicler created lore entries could be tied to the message that triggered it, so that when I delete that message, or regenerate it, the related lore entries are also deleted. Determine the feasibility of this, and if possible, implement it.
+
+  Feasible and done. The WorldbuildingProposal row already carries the turn it came from; apply_proposal now also records the created entry's id on the proposal (target_id) for lore + quest creates. New reverse_chronicler_creations(from_turn, exact=) deletes the lore/quests a Chronicler created and their proposal rows, wired into all three reversal points: delete-message-and-after (this turn onward), swipe and regenerate (this turn exactly, so the discarded telling's facts go and the re-run records fresh). Scope/safety: only *accepted* *create* proposals for lore/quests are reversed — recruited party members are NOT auto-removed (deliberate), locked entries (the Scenario) are never touched, and manually/Editor-created lore stays sticky (no proposal link). Verified live (rolled back).
+
+ ---
+
+[ ] In the chat, PC's name and avatar should also be on the left side. I don't like the alternating chat layout.
+
+[ ] 

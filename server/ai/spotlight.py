@@ -33,6 +33,44 @@ GROUP_ADDRESS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Verbs that signal a line of dialogue is being attributed to a speaker.
+_SAID_VERBS = (
+    r"(?:say|says|said|ask|asks|asked|repl(?:y|ies|ied)|whispers?|whispered|"
+    r"mutters?|muttered|shouts?|shouted|adds?|added|calls?|called|answers?|"
+    r"answered|murmurs?|murmured|growls?|growled|grins?|grinned|laughs?|laughed|"
+    r"offers?|offered|warns?|warned|notes?|noted|continues?|continued|hisses?|"
+    r"hissed|breathes?|breathed|chuckles?|chuckled|sighs?|sighed|snaps?|snapped|"
+    r"declares?|declared|remarks?|remarked|interjects?|interjected|nods?|nodded)"
+)
+
+
+def _name_pattern(name: str) -> str:
+    """A word-boundary regex for a character's name OR its first token."""
+    first = name.split()[0] if name.split() else name
+    if first.lower() != name.lower():
+        return rf"\b(?:{re.escape(name)}|{re.escape(first)})\b"
+    return rf"\b{re.escape(name)}\b"
+
+
+def _name_mentioned(name: str, text: str) -> bool:
+    return bool(name) and re.search(_name_pattern(name), text, re.IGNORECASE) is not None
+
+
+def _member_spoke(name: str, text: str) -> bool:
+    """True only when ``name`` is attributed a line of dialogue — a name MENTION
+    alone ('Tifa was asleep') does not count. Looks for the name adjacent to a
+    quote or a said-verb, in either order."""
+    if not _name_mentioned(name, text):
+        return False
+    n = _name_pattern(name)
+    patterns = [
+        rf'{n}\s*[:,]?\s*["“]',                  # Name: "…   /   Name, "…
+        rf'{n}[^.!?\n"]{{0,40}}{_SAID_VERBS}\b',  # Name … said
+        rf'{_SAID_VERBS}\b[^.!?\n"]{{0,25}}{n}',  # said … Name
+        rf'["”][^"”\n]{{0,30}}{n}',               # …" Name   (trailing attribution)
+    ]
+    return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
 
 @dataclass
 class SpotlightSignal:
@@ -56,17 +94,20 @@ def compute_spotlight_signals(
     signals = []
     for pm in party_members:
         name = pm.basic_info.get("name", "")
-        name_lower = name.lower()
 
-        # Direct address: name in message OR group address
-        directly_addressed = (
-            group_addressed or (bool(name_lower) and name_lower in msg_lower)
-        )
+        # Direct address: name (or first name) as a WORD in the message, or a
+        # group address. Word-boundary avoids 'Al' matching 'also'.
+        directly_addressed = group_addressed or _name_mentioned(name, msg_lower)
 
-        # Field skill relevance: keyword overlap
+        # Field skill relevance: keyword overlap. Include the skill NAME's
+        # distinctive tokens (e.g. 'Luma', 'Wrecking') — they recur in scenes
+        # far more than the prose of the description.
+        skill_name = pm.field_skill.get("name", "")
         skill_desc = pm.field_skill.get("description", "")
-        skill_keywords = _extract_keywords(skill_desc)
-        field_skill_relevant = any(kw in context_lower for kw in skill_keywords)
+        skill_keywords = _extract_keywords(f"{skill_name} {skill_desc}")
+        field_skill_relevant = any(
+            re.search(rf"\b{re.escape(kw)}\b", context_lower) for kw in skill_keywords
+        )
 
         # Turns since last spoke
         last_spoke = pm.last_spoke_turn or 0
@@ -129,10 +170,12 @@ def detect_speakers(
     response_text: str,
     party_members: list[PartyMember],
 ) -> list[str]:
-    text_lower = response_text.lower()
+    """Which party members actually SPOKE in this narration (were attributed a
+    line of dialogue) — used to update last_spoke_turn. A bare mention of the
+    name no longer counts (that previously corrupted the spotlight signal)."""
     speaker_ids = []
     for pm in party_members:
         name = pm.basic_info.get("name", "")
-        if name and name.lower() in text_lower:
+        if name and _member_spoke(name, response_text):
             speaker_ids.append(pm.id)
     return speaker_ids

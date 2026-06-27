@@ -333,20 +333,32 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
 ---
 [x] Review the Narrator and create suggestions for improving its logic, performance, and player-facing UX.
 
-  Reviewed narrator_agent.py, prompt_builder.py, spotlight.py, narrator_actions.py. Suggestions (not yet implemented — pick what to act on):
-  LOGIC:
-    1. detect_speakers (spotlight.py) counts a name MENTION as the member SPEAKING (raw substring), corrupting last_spoke_turn + the spotlight's "overdue" signal; short names false-match. Make it word-boundary + dialogue-aware. [highest value]
-    2. directly_addressed uses the same substring match — and it's a hard "MUST respond" override, so false positives force unwanted beats. Use \bname\b.
-    3. field_skill_relevant keyword-overlap pulls words from the skill prose; almost never matches the player's phrasing → near-always false. Match the skill name + a curated set, or drop it.
-    4. The forced final round (max_tool_rounds reached) drops tools silently — the model can narrate an action it never executed (state desync). Add a "tools off, narrate only what happened" nudge.
-    5. Dead surface: summarisation is now deterministic, so SUMMARY_HINT never fires yet update_summary is still offered every turn. Remove both from the agent.
-  PERFORMANCE:
-    6. Full max_tokens_response on every tool-deciding round; cap tool rounds low (~256) and use the full budget only for final narration.
-    7. No retry/backoff on transient 429/5xx — one retry would save the turn.
-    8. Token budget is chars/4 and first_message is inserted after trimming and not counted in the budget → can exceed real context on long histories. Count it; consider a real tokenizer/margin.
-  UX:
-    9. Multi-round turns sit silent while tools run; surface the yielded tool events as ephemeral status ("checking inventory…", "equipping…").
-    10. Addressing a benched member silently no-ops; hint that they're not present.
-  Suggested first: #1, #4, #6 (+ trivial #5).
+  Reviewed narrator_agent.py, prompt_builder.py, spotlight.py, narrator_actions.py. The findings are broken into tasks below.
+
+---
+Narrator improvements (from the review above):
+
+[x] N1 (logic) detect_speakers counts a name MENTION as the member SPEAKING (raw substring), corrupting last_spoke_turn + the spotlight "overdue" signal; short names false-match. Make it word-boundary + dialogue-aware.
+  Done: _member_spoke requires the name (or first name, word-boundary) to be attributed dialogue — adjacent to a quote or a said-verb, either order. A bare mention ("Tifa was asleep") no longer counts. Unit-tested.
+
+[x] N2 (logic) directly_addressed uses the same substring match — and it's a hard "MUST respond" override, so false positives force unwanted beats. Use word boundaries.
+  Done: directly_addressed now uses _name_mentioned (word-boundary, matches full or first name), so 'Al' no longer matches 'also'. Unit-tested.
+
+[x] N3 (logic) field_skill_relevant keyword-overlap pulls words from the skill prose; almost never matches the player's phrasing → near-always false. Match the skill name + a curated set, or drop it.
+  Done: keywords now include the skill NAME's distinctive tokens (which recur in scenes far more than the description prose) and are matched with word boundaries.
+
+[ ] N4 (logic) The forced final round (max_tool_rounds reached) drops tools silently — the model can narrate an action it never executed (state desync). Add a "tools off, narrate only what already happened" nudge.
+
+[ ] N5 (cleanup) Summarisation is now deterministic, so SUMMARY_HINT never fires yet update_summary is still offered every turn. Remove both from the agent.
+
+[ ] N6 (perf) Full max_tokens_response on every tool-deciding round; cap tool rounds low (~256) and use the full budget only for final narration.
+
+[ ] N7 (perf) No retry/backoff on transient 429/5xx — one retry would save the turn.
+
+[ ] N8 (perf) Token budget is chars/4 and first_message is inserted after trimming and not counted in the budget → can exceed real context on long histories. Count it; consider a safety margin.
+
+[ ] N9 (ux) Multi-round turns sit silent while tools run; surface the yielded tool events as ephemeral status ("checking inventory…", "equipping…").
+
+[ ] N10 (ux) Addressing a benched member silently no-ops; hint that they're not present.
 
 ---

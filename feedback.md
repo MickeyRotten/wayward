@@ -362,9 +362,11 @@ Narrator improvements (from the review above):
 [x] N8 (perf) Token budget is chars/4 and first_message is inserted after trimming and not counted in the budget → can exceed real context on long histories. Count it; consider a safety margin.
   Done (prompt_builder.py): first_message tokens are now reserved before trimming (it's always kept), and a ~10% safety margin is applied to the history budget to absorb the chars/4 under-count.
 
-[ ] N9 (ux) Multi-round turns sit silent while tools run; surface the yielded tool events as ephemeral status ("checking inventory…", "equipping…").
+[x] N9 (ux) Multi-round turns sit silent while tools run; surface the yielded tool events as ephemeral status ("checking inventory…", "equipping…").
+  Done: chatStore now maps each narrator tool event to a friendly label (toolStatus) — "Checking inventory", "Equipping gear", "Setting the scene", etc. — shown in gold in the generating indicator; it clears when the final narration starts streaming and on done/abort.
 
-[ ] N10 (ux) Addressing a benched member silently no-ops; hint that they're not present.
+[x] N10 (ux) Addressing a benched member silently no-ops; hint that they're not present.
+  Done: when the player's message word-matches a benched (not-in-party) member's name, the turn injects an "ABSENT PARTY MEMBER" note onto the spotlight block so the narrator acknowledges they aren't travelling with the party instead of ignoring it.
 
 ---
 

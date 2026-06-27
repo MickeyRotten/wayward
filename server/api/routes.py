@@ -27,7 +27,7 @@ from server.ai.worldbuilder import apply_proposal, reverse_chronicler_creations,
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
-from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, compute_spotlight_signals, detect_speakers, format_spotlight_block
+from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, _name_mentioned, compute_spotlight_signals, detect_speakers, format_spotlight_block
 from server.ai.summarizer import (
     format_messages_for_summary,
     generate_summary,
@@ -1782,6 +1782,25 @@ async def _maybe_summarize_and_build(
         spotlight_block = format_spotlight_block(
             spotlight_signals, getattr(narrator, "spotlight_rule", "") or None
         )
+
+    # If the player addressed a benched (not-in-party) member by name, hint the
+    # narrator to acknowledge their absence rather than silently ignoring it.
+    benched = (await session.execute(
+        select(PartyMember).where(PartyMember.in_party == False)  # noqa: E712
+    )).scalars().all()
+    absent = [
+        pm.basic_info["name"] for pm in benched
+        if pm.basic_info.get("name") and _name_mentioned(pm.basic_info["name"], player_message)
+    ]
+    if absent:
+        note = (
+            "NOTE — ABSENT PARTY MEMBER: The player named "
+            + ", ".join(absent)
+            + (", who is" if len(absent) == 1 else ", who are")
+            + " not currently travelling with the party. Acknowledge that they "
+            "aren't here rather than voicing them as if present."
+        )
+        spotlight_block = f"{spotlight_block}\n\n{note}" if spotlight_block else note
 
     # Build a test prompt to check size
     test_prompt = build_prompt(

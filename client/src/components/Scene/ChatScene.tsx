@@ -21,6 +21,7 @@ export function ChatScene() {
   const isSummarizing = useChatStore((s) => s.isSummarizing)
   const streamingContent = useChatStore((s) => s.streamingContent)
   const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
+  const toolStatus = useChatStore((s) => s.toolStatus)
   const error = useChatStore((s) => s.error)
   const sendTurn = useChatStore((s) => s.sendTurn)
   const regenerate = useChatStore((s) => s.regenerate)
@@ -306,7 +307,11 @@ export function ChatScene() {
               <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
             </div>
             <div className="pt-2">
-              {planningMode ? (
+              {toolStatus ? (
+                <span className="font-ui text-[10px] text-gold/80 tracking-wider">
+                  {toolStatus.toUpperCase()}<span className="animate-pulse"> ···</span>
+                </span>
+              ) : planningMode ? (
                 <span className="font-ui text-[10px] text-textdim tracking-wider">
                   THE EDITOR IS WORKING<span className="animate-pulse"> ···</span>
                 </span>

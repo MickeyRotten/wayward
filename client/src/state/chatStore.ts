@@ -10,6 +10,20 @@ import { useNarratorStore } from './narratorStore'
 
 const PLANNING_KEY = 'wayward.planningMode'
 
+/** Friendly status labels for narrator tool calls, shown while a turn works. */
+const TOOL_STATUS: Record<string, string> = {
+  set_scene: 'Setting the scene',
+  grant_item: 'Granting an item',
+  remove_item: 'Removing an item',
+  consume_item: 'Using an item',
+  equip: 'Equipping gear',
+  unequip: 'Stowing gear',
+  lookup_item: 'Checking the world',
+  search_items: 'Searching items',
+  list_inventory: 'Checking inventory',
+  get_character: 'Checking gear',
+}
+
 /** Highest turn number within the active thread (narrator vs planner). */
 function threadMaxTurn(messages: ChatMessage[], planning: boolean): number {
   const mode = planning ? 'planner' : 'narrator'
@@ -28,6 +42,7 @@ interface ChatState {
   isSummarizing: boolean
   streamingContent: string
   thinkingStartedAt: number | null
+  toolStatus: string | null
   error: string | null
   contextTokens: number | null
   maxContextTokens: number | null
@@ -59,6 +74,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSummarizing: false,
   streamingContent: '',
   thinkingStartedAt: null,
+  toolStatus: null,
   error: null,
   contextTokens: null,
   maxContextTokens: null,
@@ -233,8 +249,9 @@ async function _handleStream(url: string, body: object) {
             if (event.contextTokens !== undefined) set({ contextTokens: event.contextTokens })
             if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
           } else if (event.type === 'chunk') {
-            if (get().thinkingStartedAt !== null) {
-              set({ thinkingStartedAt: null })
+            // Final narration has begun — drop the thinking + tool status.
+            if (get().thinkingStartedAt !== null || get().toolStatus !== null) {
+              set({ thinkingStartedAt: null, toolStatus: null })
             }
             set({ streamingContent: get().streamingContent + event.content })
           } else if (event.type === 'discard') {
@@ -242,8 +259,9 @@ async function _handleStream(url: string, body: object) {
             // preamble, not the final narration — clear it.
             set({ streamingContent: '' })
           } else if (event.type === 'tool') {
-            // A narrator tool was executed mid-turn; keep the thinking
-            // indicator visible while the loop continues.
+            // A narrator tool ran mid-turn — surface it as ephemeral status so
+            // multi-round turns don't sit silently.
+            set({ toolStatus: TOOL_STATUS[event.name as string] || 'Working' })
           } else if (event.type === 'done') {
             if (event.contextTokens !== undefined) set({ contextTokens: event.contextTokens })
             if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
@@ -306,6 +324,6 @@ async function _handleStream(url: string, body: object) {
   } finally {
     _activeReader = null
     _aborted = false
-    set({ isLoading: false, isSummarizing: false, streamingContent: '', thinkingStartedAt: null })
+    set({ isLoading: false, isSummarizing: false, streamingContent: '', thinkingStartedAt: null, toolStatus: null })
   }
 }

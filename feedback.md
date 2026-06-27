@@ -325,4 +325,12 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
 
   Done (ChatScene MessageBubble): the player-character message no longer alternates to the right — it's now left-aligned (mr-auto) with the portrait on the left and the name header above the text, matching the narrator/party-member layout. Kept the PC's distinguishing blue accent, "YOU" badge, and subtle bubble. All messages now share one left-aligned column.
 
-[ ] 
+---
+[x] I'd like the PC and Party Member cards to be taller and the profile pictures even bigger as a result.
+
+  Done (HomeView): the PC and party cards now have a min height of 7rem (~112px, up from ~70px) and the edge-to-edge portrait widened from w-14 (56px) to w-24 (96px), filling the taller card. Name bumped to 20px and the no-portrait fallback initial to 30px to match the larger frame.
+
+---
+[ ] Review the Narrator and create suggestions for improving its logic, performance, and player-facing UX.
+
+---

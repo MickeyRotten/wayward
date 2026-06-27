@@ -147,7 +147,7 @@ function CharacterCard({
   return (
     <button
       type="button"
-      className={`group relative w-full text-left border rounded-md overflow-hidden transition-colors flex items-stretch ${
+      className={`group relative w-full text-left border rounded-md overflow-hidden transition-colors flex items-stretch min-h-[7rem] ${
         selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
       }`}
       onClick={onSelect}
@@ -155,7 +155,7 @@ function CharacterCard({
       <SelectionBar show={selected} />
       <CardPortrait portrait={portrait} fallback={fallback} />
       <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
-        <span className="font-disp text-[19px] pt-[2px] block leading-tight truncate">{name}</span>
+        <span className="font-disp text-[20px] pt-[2px] block leading-tight truncate">{name}</span>
         <span className="text-[10px] text-textdim font-body">{subtitle}</span>
       </div>
     </button>
@@ -174,7 +174,7 @@ function MemberCard({
   const info = member.basicInfo
   return (
     <div
-      className={`group relative flex items-stretch border rounded-md overflow-hidden transition-colors ${
+      className={`group relative flex items-stretch border rounded-md overflow-hidden transition-colors min-h-[7rem] ${
         selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
       } ${dimmed ? 'opacity-60' : ''}`}
     >
@@ -182,7 +182,7 @@ function MemberCard({
       <button type="button" className="flex-1 text-left min-w-0 flex items-stretch" onClick={onSelect}>
         <CardPortrait portrait={info.portrait} fallback={(info.name || '?')[0].toUpperCase()} />
         <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
-          <span className="font-disp text-[19px] pt-[2px] block leading-tight truncate">{info.name || 'Unnamed'}</span>
+          <span className="font-disp text-[20px] pt-[2px] block leading-tight truncate">{info.name || 'Unnamed'}</span>
           <span className="text-[10px] text-textdim font-body">{info.species}</span>
         </div>
       </button>
@@ -204,14 +204,14 @@ function MemberCard({
 function CardPortrait({ portrait, fallback }: { portrait?: string; fallback: string }) {
   if (portrait) {
     return (
-      <div className="w-14 self-stretch shrink-0 border-r border-line overflow-hidden">
+      <div className="w-24 self-stretch shrink-0 border-r border-line overflow-hidden">
         <img src={`/portraits/${portrait}`} alt="" className="w-full h-full object-cover object-top" />
       </div>
     )
   }
   return (
-    <div className="w-14 self-stretch shrink-0 border-r border-line bg-bg3 flex items-center justify-center">
-      <span className="font-disp text-[20px] text-textdim pt-[2px]">{fallback}</span>
+    <div className="w-24 self-stretch shrink-0 border-r border-line bg-bg3 flex items-center justify-center">
+      <span className="font-disp text-[30px] text-textdim pt-[2px]">{fallback}</span>
     </div>
   )
 }

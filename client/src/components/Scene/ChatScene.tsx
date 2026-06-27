@@ -632,13 +632,20 @@ function MessageBubble({
 
   // Determine rendering style based on speaker type
   if (isUser) {
-    // ── Player Character message ──
+    // ── Player Character message (left-aligned, like the rest — no alternating) ──
     return (
-      <div className="max-w-[85%] ml-auto group">
-        <div className="flex items-start gap-3 justify-end">
+      <div className="max-w-[85%] mr-auto group">
+        <div className="flex items-start gap-3">
+          {/* Portrait */}
+          <Portrait
+            src={pcPortrait}
+            name={pcName}
+            borderColor="border-blue"
+          />
+
           <div className="flex-1 min-w-0">
             {/* Name header */}
-            <div className="text-right mb-1">
+            <div className="mb-1">
               <span className="font-disp text-[13px] text-blue pt-[2px]">
                 {pcName} <span className="font-ui text-[9px] text-blue/60 tracking-wider">YOU</span>
               </span>
@@ -667,18 +674,11 @@ function MessageBubble({
               )}
             </div>
           </div>
-
-          {/* Portrait */}
-          <Portrait
-            src={pcPortrait}
-            name={pcName}
-            borderColor="border-blue"
-          />
         </div>
 
         {/* Actions bar */}
         {!editing && (
-          <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+          <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {onDelete && (
               <button
                 type="button"

@@ -321,6 +321,8 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
 
  ---
 
-[ ] In the chat, PC's name and avatar should also be on the left side. I don't like the alternating chat layout.
+[x] In the chat, PC's name and avatar should also be on the left side. I don't like the alternating chat layout.
+
+  Done (ChatScene MessageBubble): the player-character message no longer alternates to the right — it's now left-aligned (mr-auto) with the portrait on the left and the name header above the text, matching the narrator/party-member layout. Kept the PC's distinguishing blue accent, "YOU" badge, and subtle bubble. All messages now share one left-aligned column.
 
 [ ] 

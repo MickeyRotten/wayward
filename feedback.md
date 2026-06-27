@@ -296,3 +296,14 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
     - No party members / PC in the lorebook — any lore create/update whose title matches a party member (including benched) or the player character's name is dropped.
     - Duplicate check — existing name-level dedup retained (case-insensitive title match → update instead of create; quests/members likewise); the world-state prompt still lists exact names to reuse.
     - Extras: existing entries that are `locked` (the Scenario) remain untouched; guidance now explicitly forbids unnamed/generic figures and transient mood/weather.
+
+    
+  ---
+  
+  [x] Often when I ask the Editor to create equipment for a party member, it'll try to directly equip the items (that don't exist), and then claims success. It should have better rules and instructions for creating different items and doing different things, e.g. if I ask "Create equipment for party member X", it should know that it first has to create the item in the Lorebook before it can equip them. Also, when I ask to edit a character in the lorebook (not a party member), it shouldn't try to give them equipment, and as a player I might not write "party member" or "character" but rather refer to them by name.
+
+  Done (planner.py): both guidance and a deterministic guard, so it holds regardless of the model:
+    - Create-before-equip: the Editor's equip handler now hard-fails with a directive message ("No item named 'X' exists yet — you must create_item first … THEN equip. Do NOT report it as equipped.") instead of silently delegating, so the model can't claim success on a phantom item. Guidance spells out the strict order (create_item → equip) and a HONESTY rule (never claim success when the tool returned an error).
+    - Lorebook characters ≠ equippable: if the named target is a lorebook 'characters' NPC (not the PC/party), equip is refused with "describe their gear in their lore entry with update_lore instead." Guidance now distinguishes the three kinds — PC + party members (have equipment) vs lorebook NPCs (lore only).
+    - Refer-by-name: guidance tells the Editor the player will just use a name, and to resolve it against world state (PC / party member / lorebook NPC) and pick the right action — and not to recruit an NPC into the party unless clearly asked. Verified live against the seed: missing-item, unknown-name, and lorebook-NPC equips all return the right corrective message with no mutation.
+

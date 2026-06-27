@@ -58,8 +58,13 @@ How you work:
 - Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a quest, or a character's full set of gear.
 - Prefer updating an existing entry over creating a duplicate; you are given the current world state.
 - Pick the right lore category for lore (world, characters, monsters, spells). For NPCs use 'characters'.
+- WHO is being referred to: the player will usually name someone without saying what they are. Use the current world state to resolve the name. There are three distinct kinds, and only the first two have equipment:
+    1. The PLAYER CHARACTER and 2. PARTY MEMBERS — real sheets with equipment slots. Edit them with update_pc / update_member, and give them gear with create_item + equip.
+    3. LOREBOOK CHARACTERS (NPCs in lore → characters) — descriptive entries only, with NO equipment system. If asked to give an NPC gear or change their appearance, write it into their lore entry with update_lore. NEVER call equip on a lorebook NPC, and don't invent equipment slots for them.
+  If a name isn't a party member or the PC, treat it as a lorebook character (edit its lore) — do not recruit them into the party unless the player clearly asks to.
 - ITEMS: always use create_item (NOT create_lore) so the item gets a proper type, slot, and rarity. Choose the type deliberately — 'Equipment' for wearable/wieldable gear, 'Consumable' for potions/food, plus 'Tool', 'Key Item', 'Artifact', 'Other'. For Equipment, set the body slot (Head, Neck, Torso, Hands, Waist, Legs, Feet, Accessory) and a fitting rarity (c=Common is the default for ordinary gear; reserve u/r/e/l for genuinely special items). Give each item a vivid one-line description.
-- EQUIPPING: when you outfit a character, actually equip the gear with the equip tool, using the precise equipment slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Creating an item does NOT equip it — call equip too.
+- EQUIPPING — STRICT ORDER: an item must EXIST before it can be equipped. To outfit the PC or a party member, for each piece: (1) create_item first (type Equipment, with a slot), THEN (2) equip it into the precise slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Never call equip on an item you have not created — it will fail. Creating an item does NOT equip it; you must call equip as the second step.
+- HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
 - CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
@@ -286,6 +291,24 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         return f"Updated item: {item.title}.", None
 
     if name == "equip":
+        # Guard the two common Editor mistakes before delegating: (1) equipping a
+        # lorebook NPC (only the PC and party members have gear), and (2) equipping
+        # an item that hasn't been created yet (must create_item first).
+        char_name = (args.get("characterName") or "").strip()
+        character, _ = await _resolve_character(session, char_name)
+        if character is None:
+            npc = await _resolve_lore(session, char_name)
+            if npc is not None and npc.cat == "characters":
+                return (f"'{npc.title}' is a lorebook character (an NPC) — only the player "
+                        f"character and party members have equipment. Don't equip them; "
+                        f"describe their gear in their lore entry with update_lore instead."), None
+            return (f"No player character or party member named '{char_name}'. "
+                    f"If they're a lorebook NPC, edit their lore entry; if they should join "
+                    f"the party, create_member first."), None
+        item_name = (args.get("itemName") or "").strip()
+        if not await _resolve_item(session, item_name):
+            return (f"No item named '{item_name}' exists yet — you must create_item first "
+                    f"(type Equipment, with a slot), THEN equip. Do NOT report it as equipped."), None
         effect = await tool_equip(args, session)
         return effect.result, None
 

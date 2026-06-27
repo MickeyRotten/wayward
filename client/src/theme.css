@@ -17,6 +17,10 @@
    ========================================================================== */
 
 :root {
+  /* Chat message prose size (device-local; overridden at runtime by the
+     Appearance setting). Default = 0.875rem, i.e. Tailwind text-sm. */
+  --chat-font-size: 0.875rem;
+
   /* Surfaces */
   --bg0: #100e0a;
   --bg1: #17140e;

@@ -226,7 +226,7 @@ export function ChatScene() {
           <div className="max-w-[85%] mr-auto">
             <div className="px-4 py-3">
               <NarrationHtml
-                className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap first-narrator-dropcap"
+                className="chat-prose font-body text-text2 whitespace-pre-wrap first-narrator-dropcap"
                 html={applyEntityChips(formatNarrationWithDropCap(firstMessage), chipEntities)}
               />
             </div>
@@ -293,7 +293,7 @@ export function ChatScene() {
         {isLoading && streamingContent && (
           <div className="max-w-[85%] mr-auto px-4 py-3">
             <NarrationHtml
-              className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
+              className="chat-prose font-body text-text2 whitespace-pre-wrap"
               html={applyEntityChips(formatNarration(streamingContent), chipEntities)}
             />
           </div>
@@ -661,7 +661,7 @@ function MessageBubble({
                 />
               ) : (
                 <NarrationHtml
-                  className="text-sm font-body text-text leading-relaxed whitespace-pre-wrap"
+                  className="chat-prose font-body text-text whitespace-pre-wrap"
                   html={applyEntityChips(formatNarration(message.content), chipEntities)}
                 />
               )}
@@ -743,7 +743,7 @@ function MessageBubble({
                 />
               ) : (
                 <NarrationHtml
-                  className="text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap"
+                  className="chat-prose font-body text-text2 whitespace-pre-wrap"
                   html={applyEntityChips(formatNarration(message.content), chipEntities)}
                 />
               )}
@@ -798,7 +798,7 @@ function MessageBubble({
           />
         ) : (
           <NarrationHtml
-            className={`text-sm font-body text-text2 leading-relaxed whitespace-pre-wrap ${
+            className={`chat-prose font-body text-text2 whitespace-pre-wrap ${
               isFirstNarrator ? 'first-narrator-dropcap' : ''
             }`}
             html={applyEntityChips(

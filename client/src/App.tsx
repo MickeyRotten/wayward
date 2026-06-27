@@ -22,6 +22,7 @@ import { useAdventuresStore } from './state/adventuresStore'
 import { useCampaignsStore } from './state/campaignsStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
+import { applyChatFontSize } from './state/appearanceStore'
 
 function App() {
   const activeTab = useUiStore((s) => s.activeTab)
@@ -35,6 +36,11 @@ function App() {
     document.body.classList.toggle('edit-mode', editMode)
     return () => document.body.classList.remove('edit-mode')
   }, [editMode])
+
+  // Apply the stored chat font-size preference (CSS var) before the chat renders.
+  useEffect(() => {
+    applyChatFontSize()
+  }, [])
 
   // Esc clears the inspector selection (back to the default inspector view),
   // unless the user is typing in a field (let that field handle Escape).

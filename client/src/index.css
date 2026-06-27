@@ -91,3 +91,10 @@ html, body, #root {
   font-family: var(--fdisp);
   padding-top: 3px;
 }
+
+/* Chat message prose — size driven by the Appearance setting (--chat-font-size).
+   Replaces a hardcoded `text-sm leading-relaxed` on message bodies. */
+.chat-prose {
+  font-size: var(--chat-font-size);
+  line-height: 1.625;
+}

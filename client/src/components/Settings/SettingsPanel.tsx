@@ -8,6 +8,7 @@ import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { useCampaignsStore } from '../../state/campaignsStore'
+import { useAppearanceStore, CHAT_FONT_SIZES } from '../../state/appearanceStore'
 import { api } from '../../lib/api'
 import type { LoreCategory, LorebookConfig, OpenRouterModel } from '@shared/types/models'
 
@@ -277,6 +278,11 @@ export function SettingsPanel() {
           </p>
         </Section>
 
+        {/* Appearance */}
+        <Section title="Appearance">
+          <AppearanceSection />
+        </Section>
+
         {/* Narration */}
         <Section title="Narration">
           <label className="block space-y-1">
@@ -478,6 +484,38 @@ export function SettingsPanel() {
         <AdventureManagement />
       </div>
     </div>
+  )
+}
+
+function AppearanceSection() {
+  const chatFontSize = useAppearanceStore((s) => s.chatFontSize)
+  const setChatFontSize = useAppearanceStore((s) => s.setChatFontSize)
+  return (
+    <label className="block">
+      <span className="text-[11px] text-textdim font-body">Chat Font Size</span>
+      <div className="mt-1 grid grid-cols-4 gap-1">
+        {CHAT_FONT_SIZES.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setChatFontSize(opt.value)}
+            className={`font-ui text-[10px] tracking-wider uppercase px-2 py-1.5 border rounded transition-colors ${
+              chatFontSize === opt.value
+                ? 'border-gold text-gold bg-gold/10'
+                : 'border-line2 text-textdim hover:text-text hover:border-line'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <span className="mt-1 block text-[10px] text-textdim font-body">
+        Size of the narration and dialogue text in the chat. Applies instantly and is remembered on this device.
+      </span>
+      <p className="chat-prose font-body text-text2 mt-2 border border-line rounded px-3 py-2 bg-bg0">
+        The lantern guttered as she stepped into the hall, her shadow long across the stone.
+      </p>
+    </label>
   )
 }
 

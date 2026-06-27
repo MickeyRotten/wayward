@@ -278,3 +278,9 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
   Done: the Editor sometimes calls tools but never writes a closing line, leaving the final round's content empty. run_planner_agent now falls back: if no prose was produced, it posts a "Done:" summary of the tool results (or, if nothing happened, a prompt asking what to build), so the reply is never empty. 
 
   ---
+  [x] Add a Config category for Appearance, and in there add Font Size option for Chat.
+
+  Done: Config now has an "Appearance" section with a Chat Font Size control (Small / Medium / Large / Extra Large segmented buttons + a live preview line). It drives a --chat-font-size CSS var that only scales the chat narration/dialogue prose (UI chrome, banner, badges unchanged), applies instantly, and persists per-device in localStorage (client-only — not in backend settings or campaign export).
+
+  ---
+    

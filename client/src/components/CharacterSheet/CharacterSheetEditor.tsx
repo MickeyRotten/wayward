@@ -244,39 +244,79 @@ function TextArea({ label, value, onChange, onBlur }: {
   )
 }
 
+/* Equipment slot — mirrors the Inventory "Add Item" pattern: an "+ Add Item"
+   button when empty, the item + a small remove (×) button when full, and a
+   filterable dropdown of all equipment (no minimum query length) when picking. */
 function EquipSlotField({ label, value, catalog, onChange }: {
   label: string
   value: string | null
   catalog: ItemCatalogEntry[]
   onChange: (id: string | null) => void
 }) {
-  const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const currentItem = value ? catalog.find((i) => i.id === value) : undefined
 
-  const equipItems = catalog.filter((i) => i.type === 'Equipment')
-  const results = search.length >= 2
-    ? equipItems.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()))
-    : []
+  const q = search.toLowerCase().trim()
+  const results = catalog
+    .filter((i) => i.type === 'Equipment')
+    .filter((i) => !q || i.name.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const openPicker = () => { setSearch(''); setOpen(true); setTimeout(() => inputRef.current?.focus(), 0) }
+  const closePicker = () => { setOpen(false); setSearch('') }
 
   const handleSelect = (item: ItemCatalogEntry) => {
     onChange(item.id)
-    setSearch('')
-    setOpen(false)
+    closePicker()
   }
 
   const handleClear = () => {
     onChange(null)
-    setSearch('')
-    setOpen(false)
+    closePicker()
   }
 
   return (
     <div className="relative">
       <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
-      {currentItem && !open ? (
+      {open ? (
+        <div>
+          <input
+            ref={inputRef}
+            className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+            placeholder="Filter equipment..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onBlur={() => setTimeout(closePicker, 200)}
+          />
+          <div className="absolute z-20 left-0 right-0 mt-0.5 border border-line bg-bg1 max-h-40 overflow-y-auto shadow-lg">
+            {results.length === 0 ? (
+              <div className="px-2.5 py-2 text-xs text-textdim font-body">No equipment found</div>
+            ) : (
+              results.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-bg2 text-left"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSelect(item)}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity] || RARITY_COLORS.c}`}
+                    title={RARITY_LABELS[item.rarity] || 'Common'}
+                  />
+                  <span className="text-sm font-body text-text truncate">{item.name}</span>
+                  {item.slot && (
+                    <span className="text-[10px] text-textdim font-ui ml-auto shrink-0">{item.slot}</span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : currentItem ? (
         <div className="flex items-center gap-2 w-full border border-line bg-bg0 px-2.5 py-1.5">
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[currentItem.rarity] || RARITY_COLORS.c}`}
@@ -285,60 +325,19 @@ function EquipSlotField({ label, value, catalog, onChange }: {
           <span className="text-sm font-body text-text flex-1 truncate">{currentItem.name}</span>
           <button
             type="button"
-            className="text-textdim hover:text-text text-xs font-ui shrink-0"
-            onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 0) }}
-            title="Change"
-          >CHANGE</button>
-          <button
-            type="button"
-            className="text-textdim hover:text-text text-xs font-ui shrink-0 ml-1"
+            className="text-textdim hover:text-danger text-base font-ui shrink-0 leading-none px-1"
             onClick={handleClear}
-            title="Unequip"
+            title="Remove"
           >&times;</button>
         </div>
       ) : (
-        <div>
-          <input
-            ref={inputRef}
-            className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-            placeholder={currentItem ? currentItem.name : 'Search equipment...'}
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
-            onFocus={() => setOpen(true)}
-            onBlur={() => setTimeout(() => setOpen(false), 200)}
-          />
-          {open && search.length >= 2 && (
-            <div className="absolute z-20 left-0 right-0 mt-0.5 border border-line bg-bg1 max-h-40 overflow-y-auto shadow-lg">
-              {results.length === 0 ? (
-                <div className="px-2.5 py-2 text-xs text-textdim font-body">No equipment found</div>
-              ) : (
-                results.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-bg2 text-left"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleSelect(item)}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity] || RARITY_COLORS.c}`}
-                      title={RARITY_LABELS[item.rarity] || 'Common'}
-                    />
-                    <span className="text-sm font-body text-text truncate">{item.name}</span>
-                    {item.slot && (
-                      <span className="text-[10px] text-textdim font-ui ml-auto shrink-0">{item.slot}</span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-          {open && search.length > 0 && search.length < 2 && (
-            <div className="absolute z-20 left-0 right-0 mt-0.5 border border-line bg-bg1 shadow-lg">
-              <div className="px-2.5 py-2 text-xs text-textdim font-body">Keep typing...</div>
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          className="w-full font-ui text-[11px] text-textsec border border-dashed border-line px-2.5 py-1.5 hover:border-line2 hover:text-text transition-colors text-left"
+          onClick={openPicker}
+        >
+          + Add Item
+        </button>
       )}
     </div>
   )

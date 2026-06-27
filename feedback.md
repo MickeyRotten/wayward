@@ -283,4 +283,16 @@ Done across 5 phased commits (08a4459 P1 storage foundation, 10da995 P2 Save/Loa
   Done: Config now has an "Appearance" section with a Chat Font Size control (Small / Medium / Large / Extra Large segmented buttons + a live preview line). It drives a --chat-font-size CSS var that only scales the chat narration/dialogue prose (UI chrome, banner, badges unchanged), applies instantly, and persists per-device in localStorage (client-only — not in backend settings or campaign export).
 
   ---
-    
+  [x] Chronicler needs more rigid rules:
+    - Only add Named Characters
+    - Only add bolded items
+    - Check for duplicate entries (at least at name level)
+    - Do not add Party Members into Lorebook
+    - Anything else you can think of
+
+  Done: tightened both the Chronicler's guidance AND added a deterministic backstop in worldbuilder.py (the prompt alone drifts), so the rules hold regardless of the model:
+    - Named characters only — a new `characters` entry is rejected unless the title looks like a proper name (capitalised, not led by an article: "a guard", "the innkeeper", "some soldiers" are blocked). Also applied to create_member.
+    - Bolded items only — a new `items` entry is only created if the item name appears inside a **bold** span of that turn's narration.
+    - No party members / PC in the lorebook — any lore create/update whose title matches a party member (including benched) or the player character's name is dropped.
+    - Duplicate check — existing name-level dedup retained (case-insensitive title match → update instead of create; quests/members likewise); the world-state prompt still lists exact names to reuse.
+    - Extras: existing entries that are `locked` (the Scenario) remain untouched; guidance now explicitly forbids unnamed/generic figures and transient mood/weather.

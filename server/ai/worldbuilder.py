@@ -16,6 +16,7 @@ See CLAUDE.md > The Chronicler.
 
 import json
 import logging
+import re
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,7 @@ from server.db.models import (
     LorebookEntry,
     OpenRouterSettings,
     PartyMember,
+    PlayerCharacter,
     Quest,
     QuestObjective,
     WorldbuildingProposal,
@@ -37,6 +39,31 @@ log = logging.getLogger("wayward.worldbuilder")
 LORE_CATS = {"world", "characters", "items", "monsters", "spells"}
 QUEST_STATUSES = {"active", "completed", "failed"}
 
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+# Leading articles / generic role words that mark an *unnamed* character.
+_ARTICLE_RE = re.compile(r"^(a|an|the|some|several|two|three|many)\b", re.IGNORECASE)
+
+
+def _is_named_character(title: str) -> bool:
+    """Heuristic backstop: a real character name is capitalised and not led by an
+    article ('a guard', 'the innkeeper', 'some soldiers' → unnamed)."""
+    t = title.strip()
+    if not t or _ARTICLE_RE.match(t):
+        return False
+    return t[0].isupper()
+
+
+def _bolded_phrases(narration: str) -> list[str]:
+    return [m.strip().lower() for m in _BOLD_RE.findall(narration or "")]
+
+
+def _is_bolded(title: str, narration: str) -> bool:
+    """True if the item name appears inside a **bolded** span of the narration."""
+    t = title.strip().lower()
+    if not t:
+        return False
+    return any(t in phrase or phrase in t for phrase in _bolded_phrases(narration))
+
 
 CHRONICLER_GUIDANCE = """You are the Chronicler: a quiet archivist who keeps the world's records as an adventure unfolds. You do NOT narrate. After each turn you review what just happened and record only what genuinely changed.
 
@@ -45,11 +72,14 @@ Use your tools to:
 - create_quest / add_objective / update_objective / update_quest_status — capture goals the party has taken on and their progress.
 - create_member — ONLY when a character has clearly and deliberately joined the party as a travelling companion.
 
-Rules:
-- Be conservative. Most turns establish nothing new — in that case, call no tools at all.
-- Prefer updating an existing entry over creating a near-duplicate. You are given the current world state; reuse those exact names.
-- Record only things the narration actually established as fact — do not invent.
-- Never record the player character or transient mood as lore.
+Rules (strict — follow them exactly):
+- Be conservative. Most turns establish nothing new — in that case, call NO tools at all.
+- NAMED characters only. Only record a character who has a proper name (e.g. "Seraphine", "Old Marrow"). Never record unnamed or generic figures — "a guard", "the innkeeper", "the crowd", "two bandits" — they are not lore.
+- BOLDED items only. Only record an item if the narration emphasised it in **bold**. If an item was not written in **bold**, do not record it.
+- No duplicates. You are given the current world state — reuse those EXACT names. If something already exists, update it; never create a near-duplicate (same name, different capitalisation, plural/singular, etc.).
+- Never record a PARTY MEMBER or the PLAYER CHARACTER as lore. The party roster is tracked separately; do not file companions or the player under characters (or any category).
+- create_member ONLY when a NAMED character has clearly and deliberately joined the party as a travelling companion.
+- Record only what the narration actually established as fact — do not invent. No transient mood or weather.
 - Keep entries concise and concrete: a short descriptive paragraph, not a story."""
 
 
@@ -228,6 +258,16 @@ async def _build_world_state(session: AsyncSession) -> str:
     return "\n".join(lines)
 
 
+async def _latest_narration(session: AsyncSession, turn_number: int) -> str:
+    """The active narration for this turn (highest variant), for the bolded-item check."""
+    msgs = (await session.execute(
+        select(ChatMessage).where(
+            ChatMessage.turn_number == turn_number, ChatMessage.role == "assistant"
+        )
+    )).scalars().all()
+    return max(msgs, key=lambda m: m.variant).content if msgs else ""
+
+
 async def _turn_context(session: AsyncSession, turn_number: int) -> str:
     """The just-played turn (player + latest narration) plus a little prior context."""
     msgs = (
@@ -270,13 +310,23 @@ def _summary(kind: str, operation: str, payload: dict, target_title: str | None 
 
 
 async def _proposal_from_call(
-    session: AsyncSession, turn_number: int, name: str, args: dict
+    session: AsyncSession, turn_number: int, name: str, args: dict,
+    *, member_names: set[str], pc_name: str, narration: str,
 ) -> WorldbuildingProposal | None:
-    """Convert one Chronicler tool call into a proposal, resolving names/dedup."""
+    """Convert one Chronicler tool call into a proposal, resolving names/dedup.
+
+    Enforces the strict rules deterministically (the guidance can drift):
+    named characters only, **bolded** items only, no duplicates, and never file
+    a party member or the player character as lore.
+    """
     if name == "create_lore":
         cat = args.get("cat")
         title = (args.get("title") or "").strip()
         if cat not in LORE_CATS or not title:
+            return None
+        low = title.lower()
+        # Never file a party member or the player character as lore.
+        if low in member_names or (pc_name and low == pc_name):
             return None
         existing = await _resolve_lore(session, title)
         if existing:
@@ -288,6 +338,11 @@ async def _proposal_from_call(
                 target_id=existing.id, payload=payload,
                 summary=_summary("lore", "update", payload, existing.title),
             )
+        # Creating a NEW entry — apply the named/bolded gates.
+        if cat == "characters" and not _is_named_character(title):
+            return None
+        if cat == "items" and not _is_bolded(title, narration):
+            return None
         payload = {"cat": cat, "title": title, "content": args.get("content", ""), "keywords": args.get("keywords", [])}
         return WorldbuildingProposal(
             turn_number=turn_number, kind="lore", operation="create",
@@ -296,6 +351,8 @@ async def _proposal_from_call(
 
     if name == "update_lore":
         title = (args.get("title") or "").strip()
+        if title.lower() in member_names or (pc_name and title.lower() == pc_name):
+            return None
         existing = await _resolve_lore(session, title)
         if not existing or existing.locked:
             return None
@@ -360,7 +417,7 @@ async def _proposal_from_call(
 
     if name == "create_member":
         mname = (args.get("name") or "").strip()
-        if not mname or await _member_exists(session, mname):
+        if not mname or not _is_named_character(mname) or await _member_exists(session, mname):
             return None
         payload = {
             "name": mname,
@@ -493,6 +550,15 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         turn_ctx = await _turn_context(session, turn_number)
         model_id = settings.worldbuilding_model_id or settings.model_id
 
+        # Guard data for the deterministic rule backstop: every party member
+        # (incl. benched) and the PC must never be filed as lore, and item
+        # entries are only allowed if the item was **bolded** in this narration.
+        all_members = (await session.execute(select(PartyMember))).scalars().all()
+        member_names = {m.basic_info.get("name", "").strip().lower() for m in all_members if m.basic_info.get("name")}
+        pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+        pc_name = (pc.basic_info.get("name", "").strip().lower() if pc else "")
+        narration = await _latest_narration(session, turn_number)
+
         messages = [
             {"role": "system", "content": CHRONICLER_GUIDANCE},
             {"role": "system", "content": world_state},
@@ -517,7 +583,10 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         proposals: list[WorldbuildingProposal] = []
         for tc in tool_calls:
             args = _parse_args(tc["arguments"])
-            proposal = await _proposal_from_call(session, turn_number, tc["name"], args)
+            proposal = await _proposal_from_call(
+                session, turn_number, tc["name"], args,
+                member_names=member_names, pc_name=pc_name, narration=narration,
+            )
             if proposal is None:
                 continue
 

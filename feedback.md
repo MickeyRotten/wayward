@@ -1,4 +1,4 @@
-# Wayward feedback list
+﻿# Wayward feedback list
 
 ## INSTRUCTIONS
 This is a list of changes / new features to add into the project. Whenever you finish a task, mark it done and write under the task what was done, commit, and push. Mention the ID of the commit also.
@@ -429,5 +429,13 @@ Done: the PC and party member cards' text column now aligns to the top (justify-
 [x] I should be able to delete Inventory items in Edit mode in the same way as Lore items
 
 Done: the Inventory panel now has a "Remove Items" flow in Edit Mode mirroring the Lorebook — a "Remove Items" footer button (disabled when empty) enters remove-mode, showing a checkbox next to each inventory card; the button becomes "Remove Selected Items (N)" with a Cancel button, the Add Item section is hidden, and confirming clears each selected stack from the inventory (via removeFromInventory with the full stack count). Remove-mode auto-cancels when leaving Edit Mode.
+
+---
+[x] In Inventory, Add Item could be a button. When I click it, it shows a dropdown of all the items in Lorebook, but could also have a typing field to narrow down the results.
+
+Done (commit 1c9cf97): Add Item is now a "+ ADD ITEM" button. Clicking it opens a dropdown panel listing every Lorebook item (the full item catalog, alpha-sorted), with a filter field on top that narrows the list live as you type (matches name or type, no 3-character minimum -- replacing the old search-endpoint box). Picking an item shows the quantity picker (for stackables) + ADD TO INVENTORY / BACK; CANCEL closes the picker. The list draws from the in-memory catalog, so no per-keystroke API calls.
+
+--- 
+[ ] PC / Party Member Equipment logic could follow the same Add Item logic. "Add Item" when the slot is empty. When slot is full, I can remove the item with a small button.
 
 ---

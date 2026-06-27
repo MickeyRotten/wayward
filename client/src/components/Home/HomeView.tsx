@@ -154,7 +154,7 @@ function CharacterCard({
     >
       <SelectionBar show={selected} />
       <CardPortrait portrait={portrait} fallback={fallback} />
-      <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
+      <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-start">
         <span className="font-disp text-[20px] pt-[2px] block leading-tight truncate">{name}</span>
         <span className="text-[10px] text-textdim font-body">{subtitle}</span>
       </div>
@@ -181,7 +181,7 @@ function MemberCard({
       <SelectionBar show={selected} />
       <button type="button" className="flex-1 text-left min-w-0 flex items-stretch" onClick={onSelect}>
         <CardPortrait portrait={info.portrait} fallback={(info.name || '?')[0].toUpperCase()} />
-        <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
+        <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-start">
           <span className="font-disp text-[20px] pt-[2px] block leading-tight truncate">{info.name || 'Unnamed'}</span>
           <span className="text-[10px] text-textdim font-body">{info.species}</span>
         </div>

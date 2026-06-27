@@ -1,5 +1,9 @@
 # Wayward feedback list
 
+## INSTRUCTIONS
+This is a list of changes / new features to add into the project. Whenever you finish a task, mark it done and write under the task what was done, commit, and push. Mention the ID of the commit also.
+
+## FEEDBACK ITEMS
 ---
 [x] In config, load models by default. When I open Config, I should already be able to pick from a dropdown list of models.
 
@@ -415,5 +419,15 @@ Narrator improvements (from the review above):
 
 [x] E5 (logic) The Editor's context lists only titles, not content, so it can overwrite/duplicate facts it can't see when editing an existing entry. Nudge it to get_entry before editing.
   Done (guidance): "READ BEFORE YOU EDIT" — the Editor is told its world list shows only names, so it must get_entry to read current content before changing an existing entry and extend rather than overwrite.
+
+---
+[x] PC / Party Member cards: Align the name and species label vertically to the top of the card. 
+
+Done: the PC and party member cards' text column now aligns to the top (justify-start instead of justify-center), so the name and species/gender label sit at the top of the taller card rather than being vertically centered.
+
+---
+[x] I should be able to delete Inventory items in Edit mode in the same way as Lore items
+
+Done: the Inventory panel now has a "Remove Items" flow in Edit Mode mirroring the Lorebook — a "Remove Items" footer button (disabled when empty) enters remove-mode, showing a checkbox next to each inventory card; the button becomes "Remove Selected Items (N)" with a Cancel button, the Add Item section is hidden, and confirming clears each selected stack from the inventory (via removeFromInventory with the full stack count). Remove-mode auto-cancels when leaving Edit Mode.
 
 ---

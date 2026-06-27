@@ -1,17 +1,55 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
+import { useChatStore } from '../../state/chatStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
+import { ConfirmDialog } from '../ConfirmDialog'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 export function ItemsPanel() {
   const inventory = useItemsStore((s) => s.inventory)
   const maxCarrySlots = useItemsStore((s) => s.maxCarrySlots)
+  const removeFromInventory = useItemsStore((s) => s.removeFromInventory)
+  const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
+  const [removeMode, setRemoveMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmRemove, setConfirmRemove] = useState(false)
+
   const isSelected = (itemId: string) =>
     selection?.kind === 'item' && selection.id === itemId
+
+  // Cancel remove-mode when leaving Edit Mode.
+  useEffect(() => {
+    setRemoveMode(false)
+    setSelectedIds(new Set())
+  }, [editMode])
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const cancelRemove = () => { setRemoveMode(false); setSelectedIds(new Set()) }
+
+  const handleRemoveSelected = async () => {
+    setConfirmRemove(false)
+    for (const id of [...selectedIds]) {
+      const stack = inventory.find((s) => s.itemId === id)
+      if (!stack) continue
+      try {
+        await removeFromInventory(id, stack.count) // clear the whole stack
+      } catch { /* skip */ }
+    }
+    cancelRemove()
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -36,25 +74,99 @@ export function ItemsPanel() {
           const item = stack.item
           if (!item) return null
           return (
-            <ItemCard
+            <SelectableRow
               key={stack.itemId}
-              item={item}
-              count={stack.count}
-              selected={isSelected(stack.itemId)}
-              onClick={() => select({ kind: 'item', id: stack.itemId })}
-            />
+              removeMode={removeMode}
+              checked={selectedIds.has(stack.itemId)}
+              onToggle={() => toggleSelected(stack.itemId)}
+            >
+              <ItemCard
+                item={item}
+                count={stack.count}
+                selected={removeMode ? selectedIds.has(stack.itemId) : isSelected(stack.itemId)}
+                onClick={() => (removeMode ? toggleSelected(stack.itemId) : select({ kind: 'item', id: stack.itemId }))}
+              />
+            </SelectableRow>
           )
         })}
 
-        {/* Divider */}
-        <div className="flex items-center gap-2 px-3 pt-3 pb-1">
-          <span className="font-ui text-[9px] text-textdim tracking-wider">ADD ITEM</span>
-          <div className="flex-1 border-t border-line" />
-        </div>
-
-        {/* Add item search */}
-        <AddItemSection />
+        {/* Add item — hidden while removing */}
+        {!removeMode && (
+          <>
+            <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+              <span className="font-ui text-[9px] text-textdim tracking-wider">ADD ITEM</span>
+              <div className="flex-1 border-t border-line" />
+            </div>
+            <AddItemSection />
+          </>
+        )}
       </div>
+
+      {/* Footer — removing inventory items is the domain of Edit Mode */}
+      {editMode && (
+        <div className="shrink-0 px-4 pb-4 space-y-1.5">
+          {removeMode ? (
+            <>
+              <button
+                type="button"
+                disabled={selectedIds.size === 0}
+                className="w-full font-ui text-[10px] tracking-wider text-danger border border-danger-border bg-danger-bg hover:text-danger-hover px-3 py-2 transition-colors text-center disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={() => setConfirmRemove(true)}
+              >
+                REMOVE SELECTED ITEMS{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              </button>
+              <button
+                type="button"
+                className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
+                onClick={cancelRemove}
+              >
+                CANCEL
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={inventory.length === 0}
+              className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center disabled:opacity-30 disabled:cursor-not-allowed"
+              onClick={() => setRemoveMode(true)}
+            >
+              REMOVE ITEMS
+            </button>
+          )}
+        </div>
+      )}
+
+      {confirmRemove && (
+        <ConfirmDialog
+          confirmLabel="REMOVE"
+          message={`Remove ${selectedIds.size} selected item(s) from inventory? This cannot be undone.`}
+          onConfirm={handleRemoveSelected}
+          onCancel={() => setConfirmRemove(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Wraps a card with a checkbox when in remove-mode. */
+function SelectableRow({
+  removeMode, checked, onToggle, children,
+}: {
+  removeMode: boolean
+  checked: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  if (!removeMode) return <>{children}</>
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="checkbox"
+        className="shrink-0 accent-gold"
+        checked={checked}
+        onChange={onToggle}
+      />
+      <div className="flex-1 min-w-0">{children}</div>
     </div>
   )
 }

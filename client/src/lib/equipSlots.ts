@@ -1,0 +1,30 @@
+import type { Equipment } from '@shared/types/models'
+
+// Items carry a coarse, free-text `slot` ("Head", "Torso", "Hands", …) while
+// the equipment grid has 12 fine slots. This maps each fine slot to the coarse
+// slot category tokens an item may use to fill it.
+const SLOT_CATEGORIES: Record<keyof Equipment, string[]> = {
+  head: ['head'],
+  neck: ['neck'],
+  torsoOver: ['torso', 'chest', 'body'],
+  torsoUnder: ['torso', 'chest', 'body'],
+  leftHand: ['hand', 'weapon', 'shield', 'offhand'],
+  rightHand: ['hand', 'weapon'],
+  waist: ['waist', 'belt'],
+  legsOver: ['leg', 'legs'],
+  legsUnder: ['leg', 'legs'],
+  feet: ['feet', 'foot', 'boot'],
+  accessory1: ['accessory', 'ring', 'trinket', 'charm'],
+  accessory2: ['accessory', 'ring', 'trinket', 'charm'],
+}
+
+/**
+ * Whether an item's free-text slot fits the given equipment slot. An item with
+ * no slot is allowed everywhere (we can't know where it goes), so user-created
+ * equipment that omits a slot still appears.
+ */
+export function itemFitsSlot(itemSlot: string | undefined | null, slotKey: keyof Equipment): boolean {
+  if (!itemSlot) return true
+  const s = itemSlot.toLowerCase()
+  return SLOT_CATEGORIES[slotKey].some((cat) => s.includes(cat))
+}

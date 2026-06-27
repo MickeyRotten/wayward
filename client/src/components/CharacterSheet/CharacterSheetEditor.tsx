@@ -5,6 +5,7 @@ import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitUpload } from '../PortraitUpload'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
+import { itemFitsSlot } from '../../lib/equipSlots'
 
 const RARITY_COLORS: Record<Rarity, string> = {
   c: 'bg-rarity-c',
@@ -116,6 +117,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
             {EQUIP_SLOTS.map(({ key, label }) => (
               <EquipSlotField
                 key={key}
+                slotKey={key}
                 label={label}
                 value={d.equipment[key]}
                 catalog={catalog}
@@ -159,6 +161,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
           {EQUIP_SLOTS.map(({ key, label }) => (
             <EquipSlotField
               key={key}
+              slotKey={key}
               label={label}
               value={d.equipment[key]}
               catalog={catalog}
@@ -244,15 +247,18 @@ function TextArea({ label, value, onChange, onBlur }: {
   )
 }
 
-/* Equipment slot — mirrors the Inventory "Add Item" pattern: an "+ Add Item"
-   button when empty, the item + a small remove (×) button when full, and a
-   filterable dropdown of all equipment (no minimum query length) when picking. */
-function EquipSlotField({ label, value, catalog, onChange }: {
+/* Equipment slot — mirrors the Inventory "Add Item" pattern, sourced from the
+   party's Inventory and filtered to items that fit this slot: an "Equip" button
+   when empty, the item + a small remove (×) button when full, and a filterable
+   dropdown (no minimum query length) when picking. */
+function EquipSlotField({ slotKey, label, value, catalog, onChange }: {
+  slotKey: keyof Equipment
   label: string
   value: string | null
   catalog: ItemCatalogEntry[]
   onChange: (id: string | null) => void
 }) {
+  const inventory = useItemsStore((s) => s.inventory)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -260,8 +266,10 @@ function EquipSlotField({ label, value, catalog, onChange }: {
   const currentItem = value ? catalog.find((i) => i.id === value) : undefined
 
   const q = search.toLowerCase().trim()
-  const results = catalog
-    .filter((i) => i.type === 'Equipment')
+  // Inventory items that fit this slot (Equipment type, matching slot), filtered.
+  const results = inventory
+    .map((s) => s.item)
+    .filter((i): i is ItemCatalogEntry => !!i && i.type === 'Equipment' && itemFitsSlot(i.slot, slotKey))
     .filter((i) => !q || i.name.toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -286,14 +294,14 @@ function EquipSlotField({ label, value, catalog, onChange }: {
           <input
             ref={inputRef}
             className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-            placeholder="Filter equipment..."
+            placeholder="Filter inventory..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onBlur={() => setTimeout(closePicker, 200)}
           />
           <div className="absolute z-20 left-0 right-0 mt-0.5 border border-line bg-bg1 max-h-40 overflow-y-auto shadow-lg">
             {results.length === 0 ? (
-              <div className="px-2.5 py-2 text-xs text-textdim font-body">No equipment found</div>
+              <div className="px-2.5 py-2 text-xs text-textdim font-body">No matching items in inventory</div>
             ) : (
               results.map((item) => (
                 <button
@@ -336,7 +344,7 @@ function EquipSlotField({ label, value, catalog, onChange }: {
           className="w-full font-ui text-[11px] text-textsec border border-dashed border-line px-2.5 py-1.5 hover:border-line2 hover:text-text transition-colors text-left"
           onClick={openPicker}
         >
-          + Add Item
+          + Equip
         </button>
       )}
     </div>

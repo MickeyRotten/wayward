@@ -370,7 +370,27 @@ Narrator improvements (from the review above):
 
 ---
 
-[ ] Review the Chronicler and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
+[x] Review the Chronicler and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
+
+  Reviewed worldbuilder.py + the runForTurn flow. Tasks below.
+
+[x] C1 (perf, highest) The Chronicler makes a full second LLM pass EVERY turn even though most turns establish nothing. Add a cheap deterministic pre-filter (no new proper nouns / bold / quest-ish signals → skip the call) so it only runs when a turn plausibly introduced something.
+  Done: _worth_chronicling gates the call — it runs only when the narration has bold (a potential item), quest-ish wording, or a capitalised name not already in the world (known names/titles are tokenised and excluded; common sentence-starters are ignored). Biased toward running so facts aren't missed. Unit-tested; logs "CHRONICLER SKIP" when gated.
+
+[x] C2 (perf) max_tokens is the full response budget for a call that only emits tool calls; cap it low.
+  Done: capped at min(max_tokens_response, 1024).
+
+[x] C3 (perf) The prompt sends the full narration + four full prior turns + the whole world-state list every time; trim the lengths.
+  Done: prior context cut from 4 turns to 2, each clipped (~280 chars); player msg clipped (400), narration clipped (1600).
+
+[ ] C4 (logic) Pending proposals accumulate across turns (only same-turn pending is cleared); cap the count and/or expire old ones.
+
+[ ] C5 (ux) Auto-applied Chronicler changes are invisible in chat; surface a subtle notice of what was recorded.
+
+[ ] C6 (ux) Proposals in the Ideas panel don't show what triggered them; show the turn number (and a snippet) for context.
+
+[x] C7 (logic, minor) A non-tool worldbuilding_model_id silently yields zero proposals (swallowed); log it / fall back to the main model.
+  Done: when the pre-filter passed (signals present) but the model returned no tool calls, logs "CHRONICLER no proposals … (check tool support if persistent)" as a troubleshooting hint.
 
 ---
 

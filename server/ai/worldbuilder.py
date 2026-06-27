@@ -39,9 +39,55 @@ log = logging.getLogger("wayward.worldbuilder")
 LORE_CATS = {"world", "characters", "items", "monsters", "spells"}
 QUEST_STATUSES = {"active", "completed", "failed"}
 
+# Tool-emitting call — doesn't need the full narration budget.
+_CHRONICLER_MAX_TOKENS = 1024
+
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 # Leading articles / generic role words that mark an *unnamed* character.
 _ARTICLE_RE = re.compile(r"^(a|an|the|some|several|two|three|many)\b", re.IGNORECASE)
+
+# Pre-filter signals: words that hint a goal/quest may have been established, and
+# a proper-noun matcher for spotting names/places not already in the world.
+_QUEST_HINTS_RE = re.compile(
+    r"\b(quest|task|mission|objective|bounty|reward|retrieve|deliver|escort|"
+    r"defeat|slay|rescue|recover|seek|swore|sworn|promised|agreed|vowed|"
+    r"recruit|joins?|joined|accept(?:s|ed)?|must|venture)\b",
+    re.IGNORECASE,
+)
+_PROPER_NOUN_RE = re.compile(r"\b([A-Z][a-zA-Z'’-]{2,})\b")
+# Capitalised words that are usually sentence-starters/pronouns, not new names.
+_CAP_STOPWORDS = frozenset(w.lower() for w in {
+    "The", "A", "An", "And", "But", "Or", "So", "Yet", "Then", "Now", "Here",
+    "There", "This", "That", "These", "Those", "When", "While", "With", "As",
+    "At", "In", "On", "For", "To", "Of", "By", "From", "Into", "She", "He",
+    "They", "You", "We", "It", "His", "Her", "Their", "Your", "My", "Our",
+    "Its", "What", "Why", "How", "Who", "Where", "Yes", "No", "Not", "If",
+    "Morning", "Day", "Afternoon", "Evening", "Night", "Today", "Tomorrow",
+    "Yesterday", "Dawn", "Dusk", "Noon", "Midnight", "Suddenly", "Finally",
+    "Perhaps", "Maybe", "Still", "Soon", "Once", "After", "Before", "Above",
+    "Below", "Beyond", "Together", "Slowly", "Behind", "Around", "Inside",
+})
+
+
+def _worth_chronicling(narration: str, known_tokens: set[str]) -> bool:
+    """Cheap deterministic gate: does the narration plausibly introduce anything
+    worth recording? Biased toward running (a missed fact is worse than a wasted
+    skip) — only skips when there's no bold, no quest-ish wording, and no
+    capitalised name that isn't already part of the known world."""
+    text = (narration or "").strip()
+    if not text:
+        return False
+    if "**" in text:                     # a bolded item
+        return True
+    if _QUEST_HINTS_RE.search(text):     # a goal may have formed
+        return True
+    for m in _PROPER_NOUN_RE.finditer(text):
+        word = m.group(1)
+        low = word.lower()
+        if low in _CAP_STOPWORDS or low in known_tokens:
+            continue
+        return True                       # a name/place not already in the world
+    return False
 
 
 def _is_named_character(title: str) -> bool:
@@ -280,8 +326,32 @@ async def _latest_narration(session: AsyncSession, turn_number: int) -> str:
     return max(msgs, key=lambda m: m.variant).content if msgs else ""
 
 
+def _clip(text: str, limit: int) -> str:
+    text = text or ""
+    return text if len(text) <= limit else text[:limit].rstrip() + " …"
+
+
+async def _known_name_tokens(session: AsyncSession) -> set[str]:
+    """Lowercased word tokens of every known proper name (lore/quest titles, party
+    members, PC) — so the pre-filter doesn't re-trigger on names already recorded."""
+    lore = (await session.execute(select(LorebookEntry))).scalars().all()
+    quests = (await session.execute(select(Quest))).scalars().all()
+    members = (await session.execute(select(PartyMember))).scalars().all()
+    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    names = [e.title for e in lore] + [q.title for q in quests]
+    names += [m.basic_info.get("name", "") for m in members]
+    if pc:
+        names.append(pc.basic_info.get("name", ""))
+    tokens: set[str] = set()
+    for n in names:
+        for tok in re.findall(r"[A-Za-z'’-]{2,}", n or ""):
+            tokens.add(tok.lower())
+    return tokens
+
+
 async def _turn_context(session: AsyncSession, turn_number: int) -> str:
-    """The just-played turn (player + latest narration) plus a little prior context."""
+    """The just-played turn (player + latest narration) plus a little prior
+    context. Content is clipped to keep this second LLM pass lean."""
     msgs = (
         await session.execute(select(ChatMessage).order_by(ChatMessage.id))
     ).scalars().all()
@@ -290,17 +360,17 @@ async def _turn_context(session: AsyncSession, turn_number: int) -> str:
     variants = [m for m in msgs if m.turn_number == turn_number and m.role == "assistant"]
     narration = max(variants, key=lambda m: m.variant).content if variants else ""
 
-    # A couple of prior turns for continuity.
-    prior = [m for m in msgs if m.turn_number < turn_number][-4:]
+    # Two prior turns for continuity, each clipped.
+    prior = [m for m in msgs if m.turn_number < turn_number][-2:]
     lines = ["RECENT CONTEXT:"]
     for m in prior:
         who = "Player" if m.role == "user" else "Narrator"
-        lines.append(f"  [{who}] {m.content}")
+        lines.append(f"  [{who}] {_clip(m.content, 280)}")
     lines.append("")
     lines.append("THE TURN TO RECORD:")
     if player:
-        lines.append(f"  [Player] {player.content}")
-    lines.append(f"  [Narrator] {narration}")
+        lines.append(f"  [Player] {_clip(player.content, 400)}")
+    lines.append(f"  [Narrator] {_clip(narration, 1600)}")
     return "\n".join(lines)
 
 
@@ -617,6 +687,15 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
             await session.delete(s)
         await session.flush()
 
+        # Cheap deterministic pre-filter: skip the whole second LLM pass when the
+        # turn plausibly introduced nothing new (the common case).
+        narration = await _latest_narration(session, turn_number)
+        known_tokens = await _known_name_tokens(session)
+        if not _worth_chronicling(narration, known_tokens):
+            await session.commit()  # persist the stale-pending cleanup
+            log.info("CHRONICLER SKIP turn=%s (no new signals)", turn_number)
+            return []
+
         world_state = await _build_world_state(session)
         turn_ctx = await _turn_context(session, turn_number)
         model_id = settings.worldbuilding_model_id or settings.model_id
@@ -628,7 +707,6 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         member_names = {m.basic_info.get("name", "").strip().lower() for m in all_members if m.basic_info.get("name")}
         pc = (await session.execute(select(PlayerCharacter))).scalars().first()
         pc_name = (pc.basic_info.get("name", "").strip().lower() if pc else "")
-        narration = await _latest_narration(session, turn_number)
 
         messages = [
             {"role": "system", "content": CHRONICLER_GUIDANCE},
@@ -642,7 +720,8 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         try:
             async for ev in chat_completion_agent_turn(
                 api_key=settings.api_key, model_id=model_id, messages=messages,
-                temperature=0.4, max_tokens=settings.max_tokens_response,
+                temperature=0.4,
+                max_tokens=min(settings.max_tokens_response, _CHRONICLER_MAX_TOKENS),
                 tools=TOOL_SCHEMAS,
             ):
                 if ev["type"] == "result":
@@ -650,6 +729,12 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         except Exception:
             log.exception("Chronicler call failed")
             return []
+
+        if not tool_calls:
+            # The pre-filter passed (there were signals) but the model proposed
+            # nothing — if this persists, the world-building model may not support
+            # tool calling. Surface it for troubleshooting.
+            log.info("CHRONICLER no proposals turn=%s | model=%s (check tool support if persistent)", turn_number, model_id)
 
         proposals: list[WorldbuildingProposal] = []
         for tc in tool_calls:

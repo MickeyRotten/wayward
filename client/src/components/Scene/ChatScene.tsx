@@ -32,6 +32,8 @@ export function ChatScene() {
   const contextTokens = useChatStore((s) => s.contextTokens)
   const maxContextTokens = useChatStore((s) => s.maxContextTokens)
   const worldbuildRunning = useWorldbuildStore((s) => s.running)
+  const lastApplied = useWorldbuildStore((s) => s.lastApplied)
+  const clearLastApplied = useWorldbuildStore((s) => s.clearLastApplied)
   // Block input until the narrator AND the post-turn Chronicler are both done.
   const busy = isLoading || worldbuildRunning
   const activeVariants = useChatStore((s) => s.activeVariants)
@@ -60,6 +62,13 @@ export function ChatScene() {
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
   }, [messages, streamingContent])
+
+  // Auto-dismiss the "Chronicler recorded…" notice a few seconds after it shows.
+  useEffect(() => {
+    if (lastApplied.length === 0) return
+    const t = setTimeout(clearLastApplied, 7000)
+    return () => clearTimeout(t)
+  }, [lastApplied, clearLastApplied])
 
   // Auto-grow the input: single row by default, expand with wrapped lines up
   // to a cap, then scroll.
@@ -337,6 +346,24 @@ export function ChatScene() {
               </span>
             </div>
           </div>
+        )}
+
+        {/* Chronicler auto-recorded notice (auto mode) — fades after a moment */}
+        {!isLoading && !worldbuildRunning && lastApplied.length > 0 && (
+          <button
+            type="button"
+            onClick={clearLastApplied}
+            className="mr-auto max-w-[85%] text-left flex items-start gap-2 border border-line rounded-md bg-bg2/60 px-3 py-2 hover:border-line2 transition-colors"
+            title="Dismiss"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gold mt-[1px] flex-shrink-0">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+            </svg>
+            <span className="font-ui text-[10px] text-textdim leading-relaxed">
+              <span className="text-gold/80 tracking-wider">CHRONICLER RECORDED · </span>
+              {lastApplied.map((p) => p.summary).join(' · ')}
+            </span>
+          </button>
         )}
 
         {error && (

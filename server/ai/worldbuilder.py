@@ -42,6 +42,11 @@ QUEST_STATUSES = {"active", "completed", "failed"}
 # Tool-emitting call — doesn't need the full narration budget.
 _CHRONICLER_MAX_TOKENS = 1024
 
+# Pending-proposal pruning: expire pending older than this many turns, and never
+# keep more than this many pending at once (the player has moved on).
+_PENDING_TURN_WINDOW = 15
+_MAX_PENDING = 50
+
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 # Leading articles / generic role words that mark an *unnamed* character.
 _ARTICLE_RE = re.compile(r"^(a|an|the|some|several|two|three|many)\b", re.IGNORECASE)
@@ -676,15 +681,18 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         if mode == "disabled":
             return []
 
-        # Clear stale pending proposals for this turn.
-        stale = (await session.execute(
-            select(WorldbuildingProposal).where(
-                WorldbuildingProposal.turn_number == turn_number,
-                WorldbuildingProposal.status == "pending",
-            )
+        # Prune pending proposals so they don't accumulate forever: drop this
+        # turn's stale pending (a re-run replaces them), anything older than the
+        # turn window (the player has moved on), and anything beyond a hard cap.
+        pending = (await session.execute(
+            select(WorldbuildingProposal)
+            .where(WorldbuildingProposal.status == "pending")
+            .order_by(WorldbuildingProposal.turn_number.desc(), WorldbuildingProposal.id.desc())
         )).scalars().all()
-        for s in stale:
-            await session.delete(s)
+        cutoff = turn_number - _PENDING_TURN_WINDOW
+        for idx, p in enumerate(pending):
+            if p.turn_number == turn_number or p.turn_number < cutoff or idx >= _MAX_PENDING:
+                await session.delete(p)
         await session.flush()
 
         # Cheap deterministic pre-filter: skip the whole second LLM pass when the

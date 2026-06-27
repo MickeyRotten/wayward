@@ -83,6 +83,9 @@ export function SuggestionsPanel() {
                 <span className="font-ui text-[8px] tracking-wider text-textdim">
                   {p.operation === 'create' ? 'NEW' : 'UPDATE'}
                 </span>
+                <span className="font-ui text-[8px] tracking-wider text-textdim ml-auto" title="The turn that prompted this">
+                  TURN {p.turnNumber}
+                </span>
               </div>
               <div className="font-disp text-[15px] text-text pt-[1px] leading-tight">{p.summary}</div>
               {detail && (

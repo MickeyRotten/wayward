@@ -11,8 +11,10 @@ interface WorldbuildState {
   proposals: WorldbuildProposal[]
   pendingCount: number
   running: boolean
+  lastApplied: WorldbuildProposal[]  // auto-mode: changes just recorded, for a transient chat notice
   fetchProposals: () => Promise<void>
   runForTurn: (turn: number) => Promise<void>
+  clearLastApplied: () => void
   accept: (id: string) => Promise<void>
   reject: (id: string) => Promise<void>
   acceptAll: () => Promise<void>
@@ -31,6 +33,7 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
   proposals: [],
   pendingCount: 0,
   running: false,
+  lastApplied: [],
 
   fetchProposals: async () => {
     const proposals = await api.get<WorldbuildProposal[]>('/worldbuild/proposals?status=pending')
@@ -42,16 +45,23 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
     if (mode === 'disabled') return
     set({ running: true })
     try {
-      await api.post<WorldbuildProposal[]>('/worldbuild/run', { turn })
+      const result = await api.post<WorldbuildProposal[]>('/worldbuild/run', { turn })
       await get().fetchProposals()
-      // Auto-mode may have applied lore/quests already — reflect them.
-      if (mode === 'auto') refreshWorld()
+      // Auto-mode may have applied lore/quests already — reflect them + surface
+      // a transient notice of what was just recorded.
+      if (mode === 'auto') {
+        refreshWorld()
+        const applied = (result || []).filter((p) => p.status === 'accepted')
+        if (applied.length > 0) set({ lastApplied: applied })
+      }
     } catch {
       // best effort — world-building shouldn't break the turn
     } finally {
       set({ running: false })
     }
   },
+
+  clearLastApplied: () => set({ lastApplied: [] }),
 
   accept: async (id) => {
     await api.post<WorldbuildProposal>(`/worldbuild/proposals/${id}/accept`, {})

@@ -383,11 +383,14 @@ Narrator improvements (from the review above):
 [x] C3 (perf) The prompt sends the full narration + four full prior turns + the whole world-state list every time; trim the lengths.
   Done: prior context cut from 4 turns to 2, each clipped (~280 chars); player msg clipped (400), narration clipped (1600).
 
-[ ] C4 (logic) Pending proposals accumulate across turns (only same-turn pending is cleared); cap the count and/or expire old ones.
+[x] C4 (logic) Pending proposals accumulate across turns (only same-turn pending is cleared); cap the count and/or expire old ones.
+  Done: the prune step now also drops pending older than 15 turns and anything beyond a 50-pending hard cap (oldest first), every run.
 
-[ ] C5 (ux) Auto-applied Chronicler changes are invisible in chat; surface a subtle notice of what was recorded.
+[x] C5 (ux) Auto-applied Chronicler changes are invisible in chat; surface a subtle notice of what was recorded.
+  Done: in auto mode, runForTurn captures the accepted proposals and ChatScene shows a dismissible "CHRONICLER RECORDED · …" notice (auto-fades after 7s) listing what was just recorded.
 
-[ ] C6 (ux) Proposals in the Ideas panel don't show what triggered them; show the turn number (and a snippet) for context.
+[x] C6 (ux) Proposals in the Ideas panel don't show what triggered them; show the turn number (and a snippet) for context.
+  Done: each proposal card now shows a "TURN N" badge (the turn that prompted it). (A text snippet was left out — it'd need storing the triggering narration on the proposal row; the turn number gives the context cheaply.)
 
 [x] C7 (logic, minor) A non-tool worldbuilding_model_id silently yields zero proposals (swallowed); log it / fall back to the main model.
   Done: when the pre-filter passed (signals present) but the model returned no tool calls, logs "CHRONICLER no proposals … (check tool support if persistent)" as a troubleshooting hint.

@@ -10,8 +10,9 @@ import { useNarratorStore } from './narratorStore'
 
 const PLANNING_KEY = 'wayward.planningMode'
 
-/** Friendly status labels for narrator tool calls, shown while a turn works. */
+/** Friendly status labels for narrator + Editor tool calls, shown while a turn works. */
 const TOOL_STATUS: Record<string, string> = {
+  // Narrator
   set_scene: 'Setting the scene',
   grant_item: 'Granting an item',
   remove_item: 'Removing an item',
@@ -22,6 +23,30 @@ const TOOL_STATUS: Record<string, string> = {
   search_items: 'Searching items',
   list_inventory: 'Checking inventory',
   get_character: 'Checking gear',
+  // Editor (Planning mode)
+  create_lore: 'Writing lore',
+  update_lore: 'Editing lore',
+  delete_lore: 'Removing lore',
+  create_item: 'Forging an item',
+  update_item: 'Editing an item',
+  create_quest: 'Adding a quest',
+  update_quest: 'Editing a quest',
+  delete_quest: 'Removing a quest',
+  add_objective: 'Adding an objective',
+  update_objective: 'Editing an objective',
+  delete_objective: 'Removing an objective',
+  create_member: 'Adding a party member',
+  update_member: 'Editing a party member',
+  delete_member: 'Removing a party member',
+  set_in_party: 'Updating the party',
+  update_pc: 'Editing the player character',
+  set_scenario: 'Rewriting the Scenario',
+  get_scenario: 'Reading the Scenario',
+  set_narrator_instructions: 'Updating Narrator instructions',
+  get_narrator_instructions: 'Reading Narrator instructions',
+  set_first_message: 'Setting the opening',
+  list_world: 'Reviewing the world',
+  get_entry: 'Reading an entry',
 }
 
 /** Highest turn number within the active thread (narrator vs planner). */

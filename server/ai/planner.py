@@ -28,6 +28,7 @@ from server.ai.narrator_actions import (
     tool_unequip,
 )
 from server.ai.openrouter import chat_completion_agent_turn
+from server.ai.prompt_builder import _estimate_tokens, _trim_to_budget
 from server.ai.worldbuilder import LORE_CATS, QUEST_STATUSES, _resolve_lore, _resolve_quest
 from server.db.database import new_session
 from server.db.models import (
@@ -66,11 +67,20 @@ How you work:
 - EQUIPPING — STRICT ORDER: an item must EXIST before it can be equipped. To outfit the PC or a party member, for each piece: (1) create_item first (type Equipment, with a slot), THEN (2) equip it into the precise slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Never call equip on an item you have not created — it will fail. Creating an item does NOT equip it; you must call equip as the second step.
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
 - CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
+- READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, quest, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
+- SENSITIVE OVERWRITES: set_scenario, set_narrator_instructions, and set_first_message REPLACE the whole existing text and take effect immediately. Only do them when the player clearly asks, and always tell the player explicitly in your reply that you changed the Scenario / Narrator instructions / opening narration.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
 - If the player is just chatting or asking questions, answer normally without calling tools.
 
 Keep entries concise and concrete. Write in the established tone of the world."""
+
+# Injected on the final (forced) round when tools are no longer offered.
+PLANNER_FINAL_NUDGE = (
+    "You can no longer call tools this turn. Wrap up: reply conversationally about "
+    "what you did (and what's left to do), without claiming any change you didn't "
+    "already make with a tool."
+)
 
 
 # ── Tool schemas ──────────────────────────────────────────────────
@@ -514,12 +524,18 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
             select(ChatMessage).where(ChatMessage.mode == "planner").order_by(ChatMessage.id)
         )).scalars().all()
 
-        messages: list[dict] = [
+        sys_msgs = [
             {"role": "system", "content": instructions},
             {"role": "system", "content": world},
         ]
-        for m in history:
-            messages.append({"role": m.role, "content": m.content})
+        # Trim oldest planner history to the context budget — a long Edit-Mode
+        # session would otherwise grow unbounded and eventually overflow context.
+        hist_msgs = [{"role": m.role, "content": m.content} for m in history]
+        max_ctx = settings.max_context_tokens if settings else 128000
+        max_resp = settings.max_tokens_response if settings else 1000
+        budget = int((max_ctx - max_resp) * 0.9) - _estimate_tokens(sys_msgs) - 200
+        hist_msgs = _trim_to_budget(hist_msgs, budget)
+        messages: list[dict] = sys_msgs + hist_msgs
 
         max_rounds = max(1, (settings.max_tool_rounds if settings else 6) or 6)
         pending_deletes: list[dict] = []
@@ -533,6 +549,8 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
 
         for round_idx in range(max_rounds):
             offer_tools = round_idx < max_rounds - 1
+            if not offer_tools and max_rounds > 1:
+                messages.append({"role": "system", "content": PLANNER_FINAL_NUDGE})
             result = None
             _round_started = False
             async for ev in chat_completion_agent_turn(

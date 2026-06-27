@@ -397,6 +397,23 @@ Narrator improvements (from the review above):
 
 ---
 
-[ ] Review the Editor and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
+[x] Review the Editor and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
+
+  Reviewed planner.py + the planner route/stream. Tasks below.
+
+[x] E1 (perf/logic, highest) run_planner_agent loads the ENTIRE planner thread every turn with no trimming → long Edit sessions overflow context and start failing. Trim oldest history to a budget (the narrator already does this).
+  Done: planner history is now trimmed to the context budget (reusing prompt_builder._trim_to_budget / _estimate_tokens): budget = 90% of (max_context − max_response) minus the system/world preamble, oldest planner messages dropped first. Verified the trim keeps the newest turns.
+
+[x] E2 (logic) The forced final round drops tools silently — add a "tools off, wrap up your reply" nudge (mirror the narrator's N4).
+  Done: PLANNER_FINAL_NUDGE is injected on the forced (tools-off) round, telling the Editor to wrap up and not claim a change it didn't make.
+
+[x] E3 (ux) The Editor's tool activity shows generic "Working" (the N9 status map only has narrator tool names); add friendly labels for the Editor's tools (create_item, create_lore, equip, …).
+  Done: extended the TOOL_STATUS map with the Editor's tools — "Writing lore", "Forging an item", "Adding a quest", "Rewriting the Scenario", etc.
+
+[x] E4 (ux/safety) The Editor rewrites the Scenario, Narrator instructions, and First Message immediately with no confirmation (deletes are confirmed, these aren't); an accidental overwrite is silent. Make it clearly announce these overwrites (confirm dialog is a heavier future option).
+  Done (guidance): the Editor is now told set_scenario / set_narrator_instructions / set_first_message REPLACE the whole text immediately, to only do them when clearly asked, and to always tell the player explicitly that it changed them. (A hard confirm dialog like deletes is left as a future option.)
+
+[x] E5 (logic) The Editor's context lists only titles, not content, so it can overwrite/duplicate facts it can't see when editing an existing entry. Nudge it to get_entry before editing.
+  Done (guidance): "READ BEFORE YOU EDIT" — the Editor is told its world list shows only names, so it must get_entry to read current content before changing an existing entry and extend rather than overwrite.
 
 ---

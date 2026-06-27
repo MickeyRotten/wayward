@@ -157,7 +157,16 @@ def build_prompt(
     for pos in ("before_input", "bottom"):
         if lore_groups[pos]:
             lore_extra_tokens += len(format_lore_block(lore_groups[pos])) // 4 + 4
-    budget = max_context_tokens - max_response_tokens - preamble_tokens - player_msg_tokens - lore_extra_tokens
+
+    # The editable opening narration is prepended to history below and is ALWAYS
+    # kept, so it must be reserved here or it can push the prompt over budget.
+    first_message = getattr(narrator_config, "first_message", "") or ""
+    first_msg_tokens = (len(first_message) // 4 + 4) if first_message.strip() else 0
+
+    budget = max_context_tokens - max_response_tokens - preamble_tokens - player_msg_tokens - lore_extra_tokens - first_msg_tokens
+    # Safety margin: the chars/4 estimate under-counts for many tokenizers, so
+    # leave ~10% headroom rather than trimming right up to the hard limit.
+    budget = int(budget * 0.9)
 
     history_messages = [
         {"role": m.role, "content": m.content}
@@ -165,9 +174,8 @@ def build_prompt(
     ]
     history_messages = _trim_to_budget(history_messages, budget)
 
-    # The editable opening narration is the first turn of the conversation —
+    # Prepend the opening narration as the first turn of the conversation —
     # always present in context, even on the player's first message.
-    first_message = getattr(narrator_config, "first_message", "") or ""
     if first_message.strip():
         history_messages.insert(0, {"role": "assistant", "content": first_message})
 

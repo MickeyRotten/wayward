@@ -356,9 +356,11 @@ Narrator improvements (from the review above):
 [x] N6 (perf) Full max_tokens_response on every tool-deciding round; cap tool rounds low (~256) and use the full budget only for final narration.
   Done: tool-deciding rounds are capped at 512 tokens; the full response budget is used for the final narration round. Safety: if a final narration lands on an early (capped) round and gets clipped (finish_reason=length), it's re-run at full length with tools off so nothing is truncated.
 
-[ ] N7 (perf) No retry/backoff on transient 429/5xx — one retry would save the turn.
+[x] N7 (perf) No retry/backoff on transient 429/5xx — one retry would save the turn.
+  Done (openrouter.py): both stream functions retry transient statuses (429/500/502/503/504) up to 3 attempts, honoring Retry-After when present else exponential backoff. Retry only happens before any content streams (status checked on the initial response), so no duplicate/partial output; non-transient errors still raise immediately with the real message.
 
-[ ] N8 (perf) Token budget is chars/4 and first_message is inserted after trimming and not counted in the budget → can exceed real context on long histories. Count it; consider a safety margin.
+[x] N8 (perf) Token budget is chars/4 and first_message is inserted after trimming and not counted in the budget → can exceed real context on long histories. Count it; consider a safety margin.
+  Done (prompt_builder.py): first_message tokens are now reserved before trimming (it's always kept), and a ~10% safety margin is applied to the history budget to absorb the chars/4 under-count.
 
 [ ] N9 (ux) Multi-round turns sit silent while tools run; surface the yielded tool events as ephemeral status ("checking inventory…", "equipping…").
 
@@ -367,5 +369,9 @@ Narrator improvements (from the review above):
 ---
 
 [ ] Review the Chronicler and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
+
+---
+
+[ ] Review the Editor and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
 
 ---

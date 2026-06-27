@@ -18,8 +18,6 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import select
-
 from server.ai.narrator_actions import (
     ToolEffect,
     tool_consume_item,
@@ -35,7 +33,6 @@ from server.ai.narrator_actions import (
 )
 from server.ai.openrouter import chat_completion_agent_turn
 from server.db.database import new_session
-from server.db.models import StorySummary
 
 log = logging.getLogger("wayward.narrator_agent")
 
@@ -48,11 +45,18 @@ TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them 
 - Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
 - Most turns need no tools at all — just narrate."""
 
-SUMMARY_HINT = (
-    "CONTEXT NOTICE: the conversation is getting long. Consider calling "
-    "update_summary with a dense past-tense recap of older events so the "
-    "earliest turns can be dropped from context."
+# Injected on the final (forced) round, when tools are no longer offered, so the
+# model doesn't narrate an action it never actually carried out with a tool.
+FINAL_ROUND_NUDGE = (
+    "You can no longer call tools this turn. Write the final narration now, "
+    "describing only what has actually happened — do not claim any item grant, "
+    "equip, or scene change that wasn't already carried out by a tool above."
 )
+
+# Tool-deciding rounds rarely need a long completion; the full response budget is
+# reserved for the final narration round. (A final narration that lands on an
+# earlier round and gets clipped by this cap is re-run at full length.)
+_TOOL_ROUND_MAX_TOKENS = 512
 
 
 # --- Tool schemas (OpenAI/OpenRouter function-calling format) ---------------
@@ -199,18 +203,6 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_summary",
-            "description": "Replace the running story summary with a dense past-tense recap, letting older turns drop from context.",
-            "parameters": {
-                "type": "object",
-                "properties": {"text": {"type": "string"}},
-                "required": ["text"],
-            },
-        },
-    },
 ]
 
 _HANDLERS = {
@@ -253,14 +245,12 @@ async def run_narrator_agent(
         {"type": "final", "content": str, "scene": dict,
          "inv_deltas": list, "equip_changes": list} -- terminal
     """
-    # Inject tool-use guidance (and optional summarize hint) right after the
-    # narrator-instructions system message.
+    # Inject tool-use guidance right after the narrator-instructions system
+    # message. (``summarize_hint`` is retained for call-site compatibility but is
+    # unused — history summarisation is handled deterministically server-side.)
     messages = list(base_messages)
     insert_at = 1 if messages and messages[0].get("role") == "system" else 0
-    guidance = [{"role": "system", "content": TOOL_GUIDANCE}]
-    if summarize_hint:
-        guidance.append({"role": "system", "content": SUMMARY_HINT})
-    messages[insert_at:insert_at] = guidance
+    messages[insert_at:insert_at] = [{"role": "system", "content": TOOL_GUIDANCE}]
 
     inv_deltas: list[dict] = []
     equip_changes: list[dict] = []
@@ -268,12 +258,20 @@ async def run_narrator_agent(
     final_content = ""
 
     max_rounds = max(1, settings.max_tool_rounds or 6)
+    full_max_tokens = settings.max_tokens_response
 
     async with new_session() as agent_session:
         for round_idx in range(max_rounds):
             # On the last allowed round, drop tools so the model is forced to
             # produce final narration instead of requesting more tool calls.
             offer_tools = round_idx < max_rounds - 1
+            if not offer_tools and max_rounds > 1:
+                # Forced narration round — make clear no more actions can happen.
+                messages.append({"role": "system", "content": FINAL_ROUND_NUDGE})
+            # Tool-deciding rounds need only a short completion; reserve the full
+            # response budget for the final narration round.
+            round_max_tokens = min(full_max_tokens, _TOOL_ROUND_MAX_TOKENS) if offer_tools else full_max_tokens
+
             result = None
             streamed = False
 
@@ -282,7 +280,7 @@ async def run_narrator_agent(
                 model_id=settings.model_id,
                 messages=messages,
                 temperature=settings.temperature,
-                max_tokens=settings.max_tokens_response,
+                max_tokens=round_max_tokens,
                 tools=TOOL_SCHEMAS if offer_tools else None,
                 top_p=settings.top_p,
                 min_p=settings.min_p,
@@ -301,6 +299,25 @@ async def run_narrator_agent(
             content = (result or {}).get("content") or ""
 
             if not tool_calls:
+                # Final narration. If the short tool-round cap clipped it, redo
+                # this round at full length (tools off) so nothing is truncated.
+                if (offer_tools and round_max_tokens < full_max_tokens
+                        and (result or {}).get("finish_reason") == "length"):
+                    if streamed:
+                        yield {"type": "discard"}
+                    content = ""
+                    async for ev in chat_completion_agent_turn(
+                        api_key=settings.api_key, model_id=settings.model_id, messages=messages,
+                        temperature=settings.temperature, max_tokens=full_max_tokens, tools=None,
+                        top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,
+                        frequency_penalty=settings.frequency_penalty,
+                        presence_penalty=settings.presence_penalty,
+                        repetition_penalty=settings.repetition_penalty,
+                    ):
+                        if ev["type"] == "content":
+                            yield {"type": "content", "text": ev["text"]}
+                        elif ev["type"] == "result":
+                            content = ev.get("content") or ""
                 final_content = content
                 break
 
@@ -322,7 +339,7 @@ async def run_narrator_agent(
             for tc in tool_calls:
                 name = tc["name"]
                 args = _parse_args(tc["arguments"])
-                effect = await _execute_tool(name, args, current_turn, agent_session)
+                effect = await _execute_tool(name, args, agent_session)
                 inv_deltas.extend(effect.inv_deltas)
                 equip_changes.extend(effect.equip_changes)
                 scene.update(effect.scene)
@@ -345,19 +362,7 @@ async def run_narrator_agent(
     }
 
 
-async def _execute_tool(name: str, args: dict, current_turn: int, session) -> ToolEffect:
-    if name == "update_summary":
-        text = (args.get("text", "") or "").strip()
-        if not text:
-            return ToolEffect(result="No summary text provided; nothing changed.")
-        summ = (await session.execute(select(StorySummary))).scalars().first()
-        if not summ:
-            summ = StorySummary()
-            session.add(summ)
-        summ.content = text
-        summ.summary_up_to_turn = max(summ.summary_up_to_turn or 0, current_turn - 1)
-        return ToolEffect(result="Story summary updated; older turns will drop from context.")
-
+async def _execute_tool(name: str, args: dict, session) -> ToolEffect:
     handler = _HANDLERS.get(name)
     if not handler:
         return ToolEffect(result=f"Unknown tool '{name}'.")

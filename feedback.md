@@ -347,11 +347,14 @@ Narrator improvements (from the review above):
 [x] N3 (logic) field_skill_relevant keyword-overlap pulls words from the skill prose; almost never matches the player's phrasing → near-always false. Match the skill name + a curated set, or drop it.
   Done: keywords now include the skill NAME's distinctive tokens (which recur in scenes far more than the description prose) and are matched with word boundaries.
 
-[ ] N4 (logic) The forced final round (max_tool_rounds reached) drops tools silently — the model can narrate an action it never executed (state desync). Add a "tools off, narrate only what already happened" nudge.
+[x] N4 (logic) The forced final round (max_tool_rounds reached) drops tools silently — the model can narrate an action it never executed (state desync). Add a "tools off, narrate only what already happened" nudge.
+  Done: FINAL_ROUND_NUDGE is injected when the loop enters the forced (tools-off) round, telling the model to narrate only what tools actually carried out.
 
-[ ] N5 (cleanup) Summarisation is now deterministic, so SUMMARY_HINT never fires yet update_summary is still offered every turn. Remove both from the agent.
+[x] N5 (cleanup) Summarisation is now deterministic, so SUMMARY_HINT never fires yet update_summary is still offered every turn. Remove both from the agent.
+  Done: removed the update_summary tool schema + handler and the SUMMARY_HINT constant/injection (plus now-unused StorySummary/select imports). The summarize_hint param is kept (ignored) for call-site compatibility.
 
-[ ] N6 (perf) Full max_tokens_response on every tool-deciding round; cap tool rounds low (~256) and use the full budget only for final narration.
+[x] N6 (perf) Full max_tokens_response on every tool-deciding round; cap tool rounds low (~256) and use the full budget only for final narration.
+  Done: tool-deciding rounds are capped at 512 tokens; the full response budget is used for the final narration round. Safety: if a final narration lands on an early (capped) round and gets clipped (finish_reason=length), it's re-run at full length with tools off so nothing is truncated.
 
 [ ] N7 (perf) No retry/backoff on transient 429/5xx — one retry would save the turn.
 
@@ -360,5 +363,9 @@ Narrator improvements (from the review above):
 [ ] N9 (ux) Multi-round turns sit silent while tools run; surface the yielded tool events as ephemeral status ("checking inventory…", "equipping…").
 
 [ ] N10 (ux) Addressing a benched member silently no-ops; hint that they're not present.
+
+---
+
+[ ] Review the Chronicler and create suggestions for improving its logic, performance, and player-facing UX. Turn the suggestions into tasks under this one.
 
 ---

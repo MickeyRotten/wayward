@@ -1,4 +1,4 @@
-﻿# Wayward feedback list
+# Wayward feedback list
 
 ## INSTRUCTIONS
 This is a list of changes / new features to add into the project. Whenever you finish a task, mark it done and write under the task what was done, commit, and push. Mention the ID of the commit also.
@@ -433,9 +433,11 @@ Done: the Inventory panel now has a "Remove Items" flow in Edit Mode mirroring t
 ---
 [x] In Inventory, Add Item could be a button. When I click it, it shows a dropdown of all the items in Lorebook, but could also have a typing field to narrow down the results.
 
-Done (commit 1c9cf97): Add Item is now a "+ ADD ITEM" button. Clicking it opens a dropdown panel listing every Lorebook item (the full item catalog, alpha-sorted), with a filter field on top that narrows the list live as you type (matches name or type, no 3-character minimum -- replacing the old search-endpoint box). Picking an item shows the quantity picker (for stackables) + ADD TO INVENTORY / BACK; CANCEL closes the picker. The list draws from the in-memory catalog, so no per-keystroke API calls.
+Done (commit 1c9cf97): Add Item is now a "+ ADD ITEM" button. Clicking it opens a dropdown panel listing every Lorebook item (the full item catalog, alpha-sorted), with a filter field on top that narrows the list live as you type (matches name or type, no 3-character minimum — replacing the old search-endpoint box). Picking an item shows the quantity picker (for stackables) + ADD TO INVENTORY / BACK; CANCEL closes the picker.
 
 --- 
-[ ] PC / Party Member Equipment logic could follow the same Add Item logic. "Add Item" when the slot is empty. When slot is full, I can remove the item with a small button.
+[x] PC / Party Member Equipment logic could follow the same Add Item logic, but just with items in the Inventory (and filtered by the slot type). Show "Equip" button when the slot is empty (same logic as Add Item button). When slot is full, I can remove the item with a small button.
+
+Done (commit f760d09): equipment slots now mirror the Inventory Add Item pattern but source from the party Inventory and only list items that fit that slot. Empty slot shows a "+ Equip" button; clicking it opens a filterable dropdown (no minimum query length) of inventory items whose type is Equipment and whose slot matches (a new lib/equipSlots.ts maps the coarse item slots — Head/Torso/Hands/Waist/Neck/Legs/Feet — onto the 12 fine equipment slots; items with no slot are allowed anywhere). A full slot shows the item with a small remove (×) button. Applies to both the PC sheet and party member sheets, in Play and Edit mode. Note: equipping references the item (it does not consume it from the inventory stack), matching the existing equipment model — say the word if you'd rather equipping move the item out of the bag.
 
 ---

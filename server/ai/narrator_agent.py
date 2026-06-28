@@ -45,6 +45,17 @@ TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them 
 - Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
 - Most turns need no tools at all — just narrate."""
 
+# Always injected, so the narration renders nicely in the JRPG-styled chat even
+# if the user cleared their editable narrator instructions. The conventions here
+# are recognised by the client renderer (party dialogue → portrait dialogue box;
+# *italics*/**bold**; "> " → inscription inset; "* * *" → scene-break divider).
+FORMATTING_GUIDE = """Format the narration for a stylised RPG chat:
+- When a PARTY MEMBER speaks, give them their own paragraph that begins with their name, a colon, then their line in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. One speaker per paragraph; only do this for actual party members.
+- Use *italics* for emphasis, whispers, or inner thoughts, and **bold** for the names of notable items the first time they appear.
+- Put letters, signs, inscriptions, or prophecies in a blockquote: start each such line with "> ".
+- Separate a hard scene or time jump with a line containing only "* * *".
+- Keep ordinary narration as normal prose paragraphs."""
+
 # Injected on the final (forced) round, when tools are no longer offered, so the
 # model doesn't narrate an action it never actually carried out with a tool.
 FINAL_ROUND_NUDGE = (
@@ -250,7 +261,10 @@ async def run_narrator_agent(
     # unused — history summarisation is handled deterministically server-side.)
     messages = list(base_messages)
     insert_at = 1 if messages and messages[0].get("role") == "system" else 0
-    messages[insert_at:insert_at] = [{"role": "system", "content": TOOL_GUIDANCE}]
+    messages[insert_at:insert_at] = [
+        {"role": "system", "content": TOOL_GUIDANCE},
+        {"role": "system", "content": FORMATTING_GUIDE},
+    ]
 
     inv_deltas: list[dict] = []
     equip_changes: list[dict] = []

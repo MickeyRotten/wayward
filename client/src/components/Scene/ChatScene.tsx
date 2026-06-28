@@ -8,6 +8,7 @@ import { useNarratorStore } from '../../state/narratorStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveSceneBanner } from '../../lib/location'
+import { parseSegments, buildMemberResolver, type Segment, type MemberLite } from '../../lib/narration'
 import type { ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
 
 interface PromptLogMessage {
@@ -137,6 +138,13 @@ export function ChatScene() {
   const partyMemberMap = new Map(
     partyMembers.map((pm) => [pm.id, pm])
   )
+
+  // Name → in-party member resolver, for parsing party dialogue out of narration.
+  const memberResolver = buildMemberResolver(partyMembers)
+
+  // Per-message cinematic scene header: shown above a narrator message when its
+  // declared location/time differs from the last one established (a scene change).
+  const sceneHeaders = computeSceneHeaders(visibleMessages)
 
   // PC info
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
@@ -282,9 +290,11 @@ export function ChatScene() {
             pcName={pcName}
             pcPortrait={pcPortrait}
             partyMemberMap={partyMemberMap}
+            memberResolver={memberResolver}
             chipEntities={chipEntities}
             catalogMap={catalogMap}
             resolveCharName={resolveCharName}
+            sceneHeader={sceneHeaders[idx]}
           />
         ))}
 
@@ -299,12 +309,13 @@ export function ChatScene() {
           </div>
         )}
 
-        {/* Streaming response */}
+        {/* Streaming response — routed through the segmenter so dialogue boxes,
+            dividers, etc. form live as text streams. */}
         {isLoading && streamingContent && (
           <div className="max-w-[85%] mr-auto px-4 py-3">
-            <NarrationHtml
-              className="chat-prose font-body text-text2 whitespace-pre-wrap"
-              html={applyEntityChips(formatNarration(streamingContent), chipEntities)}
+            <SegmentedNarration
+              segments={planningMode ? [{ type: 'narration', text: streamingContent }] : parseSegments(streamingContent, memberResolver)}
+              chipEntities={chipEntities}
             />
           </div>
         )}
@@ -560,14 +571,19 @@ function ToolMenuItem({ label, disabled, onClick }: { label: string; disabled?: 
 
 // ── Portrait Component ──────────────────────────────────────────────
 
+// Shared chat portrait size — PC bubble and party dialogue blocks match.
+const CHAT_PORTRAIT_SIZE = 'w-16 h-20'
+
 function Portrait({
   src,
   name,
   borderColor,
+  className = 'w-12 h-16',
 }: {
   src?: string
   name: string
   borderColor: string
+  className?: string
 }) {
   const initials = name
     .split(/\s+/)
@@ -578,13 +594,13 @@ function Portrait({
 
   return (
     <div
-      className={`w-10 h-10 rounded-sm border bg-bg2 flex items-center justify-center flex-shrink-0 overflow-hidden ${borderColor}`}
+      className={`rounded-sm border bg-bg2 flex items-center justify-center flex-shrink-0 overflow-hidden ${className} ${borderColor}`}
     >
       {src ? (
         <img
           src={src.startsWith('/') || src.startsWith('http') ? src : `/portraits/${src}`}
           alt={name}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover object-top"
         />
       ) : (
         <span className="font-disp text-[14px] text-textsec pt-[2px]">
@@ -609,9 +625,11 @@ function MessageBubble({
   pcName,
   pcPortrait,
   partyMemberMap,
+  memberResolver,
   chipEntities,
   catalogMap,
   resolveCharName,
+  sceneHeader,
 }: {
   message: ChatMessage
   variantCount: number
@@ -624,9 +642,11 @@ function MessageBubble({
   pcName: string
   pcPortrait: string
   partyMemberMap: Map<string, { id: string; basicInfo: { name: string; portrait?: string } }>
+  memberResolver: Map<string, MemberLite>
   chipEntities: ChipEntity[]
   catalogMap: Map<string, ItemCatalogEntry>
   resolveCharName: (id: string) => string
+  sceneHeader?: { location?: string | null; timeOfDay?: string | null }
 }) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
@@ -667,25 +687,27 @@ function MessageBubble({
     // ── Player Character message (left-aligned, like the rest — no alternating) ──
     return (
       <div className="max-w-[85%] mr-auto group">
-        <div className="flex items-start gap-3">
+        {/* Player line — styled like a party dialogue block, with a blue accent.
+            The px-4 py-3 matches the narrator message so the portrait lines up
+            with the party dialogue blocks rendered inside it. */}
+        <div className="flex items-stretch gap-3 px-4 py-3">
           {/* Portrait */}
           <Portrait
             src={pcPortrait}
             name={pcName}
             borderColor="border-blue"
+            className={CHAT_PORTRAIT_SIZE}
           />
 
-          <div className="flex-1 min-w-0">
-            {/* Name header */}
-            <div className="mb-1">
-              <span className="font-disp text-[13px] text-blue pt-[2px]">
-                {pcName} <span className="font-ui text-[9px] text-blue/60 tracking-wider">YOU</span>
-              </span>
-            </div>
+          <div className="flex-1 min-w-0 flex flex-col">
+            {/* Name plate */}
+            <span className="font-disp text-[14px] text-blue pt-[2px] mb-1">
+              {pcName} <span className="font-ui text-[9px] text-blue/60 tracking-wider">YOU</span>
+            </span>
 
             {/* Message content */}
             <div
-              className="bg-bg2 border border-line rounded-md px-4 py-3 cursor-pointer"
+              className="flex-1 border-l-2 border-blue/60 bg-blue/5 rounded-r-md px-4 py-3 cursor-pointer"
               onClick={() => {
                 if (!editing && message.id > 0) setEditing(true)
               }}
@@ -807,12 +829,19 @@ function MessageBubble({
 
   // ── Narrator / Planner message (default for assistant) ──
   const isPlanner = message.mode === 'planner'
+  // Editor/Planner prose is rendered plainly; only narration gets JRPG segments.
+  const segments: Segment[] = isPlanner
+    ? [{ type: 'narration', text: message.content }]
+    : parseSegments(message.content, memberResolver)
   return (
     <div className="max-w-[85%] mr-auto group">
       {isPlanner && (
         <div className="flex items-center gap-1.5 px-4 pt-1">
           <span className="font-ui text-[9px] tracking-wider text-gold">⚙ EDITOR</span>
         </div>
+      )}
+      {sceneHeader && (sceneHeader.location || sceneHeader.timeOfDay) && (
+        <SceneHeader location={sceneHeader.location} timeOfDay={sceneHeader.timeOfDay} />
       )}
       <div
         className="px-4 py-3 cursor-pointer"
@@ -829,16 +858,10 @@ function MessageBubble({
             onCancel={() => { setEditText(message.content); setEditing(false) }}
           />
         ) : (
-          <NarrationHtml
-            className={`chat-prose font-body text-text2 whitespace-pre-wrap ${
-              isFirstNarrator ? 'first-narrator-dropcap' : ''
-            }`}
-            html={applyEntityChips(
-              isFirstNarrator
-                ? formatNarrationWithDropCap(message.content)
-                : formatNarration(message.content),
-              chipEntities,
-            )}
+          <SegmentedNarration
+            segments={segments}
+            chipEntities={chipEntities}
+            dropCap={isFirstNarrator}
           />
         )}
       </div>
@@ -1123,6 +1146,28 @@ function getVariantCounts(messages: ChatMessage[]): Record<number, number> {
   return counts
 }
 
+// For each visible message, decide whether to show a cinematic scene header
+// above it — i.e. when a narrator message establishes a location/time that
+// differs from the one currently in effect (a scene change). Returns an array
+// parallel to `visibleMessages`.
+function computeSceneHeaders(
+  visibleMessages: ChatMessage[],
+): ({ location?: string | null; timeOfDay?: string | null } | undefined)[] {
+  let lastLoc: string | null = null
+  let lastTod: string | null = null
+  return visibleMessages.map((m) => {
+    const isNarrator = m.role === 'assistant' && (m.mode ?? 'narrator') !== 'planner'
+    if (!isNarrator) return undefined
+    const loc = m.location ?? null
+    const tod = m.timeOfDay ?? null
+    const changed = (loc && loc !== lastLoc) || (tod && tod !== lastTod)
+    if (loc) lastLoc = loc
+    if (tod) lastTod = tod
+    if (!changed) return undefined
+    return { location: lastLoc, timeOfDay: lastTod }
+  })
+}
+
 function ThinkingIndicator({ startedAt, isSummarizing }: { startedAt: number | null; isSummarizing: boolean }) {
   const [elapsed, setElapsed] = useState(0)
 
@@ -1184,7 +1229,9 @@ function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; o
 
 function formatNarration(text: string): string {
   return text
+    // Bold first so it consumes ** pairs; remaining single * pairs are italics.
     .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em class="italic">$1</em>')
     .replace(/\n/g, '<br/>')
 }
 
@@ -1230,5 +1277,108 @@ function formatNarrationWithDropCap(text: string): string {
     leadingTags +
     `<span class="font-disp text-gold text-[3rem] float-left leading-[0.8] mr-2 mt-[0.15rem]">${firstChar}</span>` +
     rest
+  )
+}
+
+// ── Segmented narration: JRPG dialogue blocks, inscriptions, dividers ──────
+
+const TIME_ICONS: Record<string, string> = {
+  morning: '🌅', day: '☀️', afternoon: '🌤️', evening: '🌇', night: '🌙',
+}
+
+// A small cinematic header shown above a narrator message when the scene changes.
+function SceneHeader({ location, timeOfDay }: { location?: string | null; timeOfDay?: string | null }) {
+  const icon = timeOfDay ? TIME_ICONS[timeOfDay.toLowerCase()] : ''
+  const parts = [location, timeOfDay].filter(Boolean) as string[]
+  return (
+    <div className="flex items-center gap-2 px-4 pt-2 pb-1">
+      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-line2" />
+      <span className="font-disp text-[11px] tracking-[0.18em] text-gold uppercase pt-[2px] whitespace-nowrap">
+        {icon && <span className="mr-1">{icon}</span>}
+        {parts.join(' · ')}
+      </span>
+      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-line2" />
+    </div>
+  )
+}
+
+// Renders an ordered list of parsed segments. The drop-cap (when requested) is
+// applied to the first narration segment only.
+function SegmentedNarration({
+  segments,
+  chipEntities,
+  dropCap = false,
+}: {
+  segments: Segment[]
+  chipEntities: ChipEntity[]
+  dropCap?: boolean
+}) {
+  const firstNarrationIdx = dropCap ? segments.findIndex((s) => s.type === 'narration') : -1
+
+  return (
+    <div className="space-y-3">
+      {segments.map((seg, i) => {
+        if (seg.type === 'divider') {
+          return (
+            <div key={i} className="flex items-center gap-3 py-1">
+              <div className="flex-1 border-t border-line" />
+              <span className="font-disp text-[12px] text-golddeep">❖</span>
+              <div className="flex-1 border-t border-line" />
+            </div>
+          )
+        }
+        if (seg.type === 'blockquote') {
+          return (
+            <NarrationHtml
+              key={i}
+              className="chat-prose font-body text-text2 italic border-l-2 border-gold/50 bg-bg2/60 rounded-r-md px-4 py-2 whitespace-pre-wrap"
+              html={applyEntityChips(formatNarration(seg.text), chipEntities)}
+            />
+          )
+        }
+        if (seg.type === 'dialogue') {
+          return <DialogueBlock key={i} member={seg.member} text={seg.text} chipEntities={chipEntities} />
+        }
+        // narration
+        const useDropCap = i === firstNarrationIdx
+        return (
+          <NarrationHtml
+            key={i}
+            className={`chat-prose font-body text-text2 whitespace-pre-wrap ${useDropCap ? 'first-narrator-dropcap' : ''}`}
+            html={applyEntityChips(
+              useDropCap ? formatNarrationWithDropCap(seg.text) : formatNarration(seg.text),
+              chipEntities,
+            )}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// JRPG dialogue block — rectangular portrait + gold name plate header over a
+// full-width tinted dialogue box. Only rendered for in-party members.
+function DialogueBlock({
+  member,
+  text,
+  chipEntities,
+}: {
+  member: MemberLite
+  text: string
+  chipEntities: ChipEntity[]
+}) {
+  return (
+    <div className="flex items-stretch gap-3">
+      <Portrait src={member.portrait} name={member.name} borderColor="border-line2" className={CHAT_PORTRAIT_SIZE} />
+      <div className="flex-1 min-w-0 flex flex-col">
+        <span className="font-disp text-[14px] text-gold pt-[2px] mb-1">{member.name.split(' ')[0]}</span>
+        <div className="flex-1 border-l-2 border-gold/60 bg-gold/5 rounded-r-md px-4 py-3">
+          <NarrationHtml
+            className="chat-prose font-body text-text whitespace-pre-wrap"
+            html={applyEntityChips(formatNarration(text), chipEntities)}
+          />
+        </div>
+      </div>
+    </div>
   )
 }

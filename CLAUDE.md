@@ -164,7 +164,7 @@ Update `lastSpokeTurn` after the call resolves, based on whether the response ac
 The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](server/ai/narrator_agent.py)), not a single text-completion. Within one player turn it may take several model round-trips: it can call tools, see the results, and continue before writing the final prose. This replaces the older "append a `<<<ACTIONS>>>` JSON block, parse it with a regex" approach, which couldn't validate against real game state.
 
 **The loop** (`run_narrator_agent`):
-1. Build the prompt (`build_prompt(..., include_action_protocol=False)`) — the spotlight block is still injected, deterministically, exactly as above. Tool-use guidance is prepended.
+1. Build the prompt (`build_prompt(..., include_action_protocol=False)`) — the spotlight block is still injected, deterministically, exactly as above. `TOOL_GUIDANCE` and a `FORMATTING_GUIDE` (the chat-formatting conventions — see "Chat Rendering & Narration Formatting") are prepended as system messages so they hold even if the user cleared their editable narrator instructions.
 2. Call the model with `tools` (streaming). If it returns tool calls, execute each against the DB, append the results as `role:"tool"` messages, and loop. If it returns prose with no tool calls, that's the narration → stream it and stop.
 3. `max_tool_rounds` (default 6, configurable) caps the loop; the final round drops `tools` to force narration.
 
@@ -175,6 +175,19 @@ The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](
 **Persistence/reversal is unchanged.** Tools mutate the DB during the loop; the accumulated inventory deltas, equipment changes, and scene state are recorded on the `ChatMessage` exactly as before, so swipe/regenerate/delete reversal (`_reverse_message_effects`) works identically.
 
 **Model support & fallback.** Tool calling needs a tool-capable model. The model picker (`supportsTools` from OpenRouter's `supported_parameters`) defaults to tool-capable models. When `use_tools` is off **or** the selected model lacks tool support, the narrator falls back to the legacy `<<<ACTIONS>>>` text-block path — `parse_action_block`/`execute_actions`/`ACTION_INSTRUCTION` are retained for exactly this reason. Both `use_tools` and `max_tool_rounds` live on `OpenRouterSettings`, editable in Config → API & Model.
+
+---
+
+## Chat Rendering & Narration Formatting
+
+The chat is styled like a **classical JRPG dialogue scene**. The narration stays a single freeform-prose `ChatMessage` (`speaker="narrator"`) — there is **no** backend message-splitting — and the client segments it for display, so streaming, swipe/regenerate/delete reversal, variants, and the Chronicler are all untouched.
+
+- **Client segmenter** ([`client/src/lib/narration.ts`](client/src/lib/narration.ts)): `parseSegments(content, resolver)` turns the prose into ordered blocks — `narration` / `dialogue` / `blockquote` / `divider` — line-by-line (robust to single- or double-newline paragraphs). `buildMemberResolver` keys **in-party** members by full and first name.
+  - **Party dialogue**: a line `Name: "…"` whose name resolves to an in-party member becomes a **JRPG dialogue block** (rectangular portrait + Cinzel name plate over a tinted, left-accented box). `splitSpokenLine` keeps only the quoted span in the box and pushes any trailing prose ("…", she said) to its own narration beat. Unresolved `Name:` lines (NPCs) stay plain prose — graceful fallback.
+  - The **PC** message uses the same block, blue-accented with a `YOU` badge, padded/sized to align with the narrator + party portraits ([`ChatScene.tsx`](client/src/components/Scene/ChatScene.tsx), shared `CHAT_PORTRAIT_SIZE`).
+- **Inline markup** (`formatNarration`): `**bold**` and `*italics*`. Entity names (items/members) get a non-interactive gold highlight (`applyEntityChips`). The configured First Message keeps the gold **drop-cap**.
+- **Block markup**: `> …` → an inset **inscription/letter** box; a line of only `* * *` / `---` → an ornamental **scene divider**. A cinematic **`LOCATION · TIME`** header is shown above a narrator message when its declared scene state changes (derived from `message.location`/`timeOfDay` — no new narrator output).
+- **Convention enforcement**: the always-injected `FORMATTING_GUIDE` (in [`narrator_agent.py`](server/ai/narrator_agent.py)) documents these conventions to the model; the client parser is the deterministic backstop when the model drifts. The `Name: "…"` dialogue convention is the same one `_member_spoke` (`spotlight.py`) already detects, so `last_spoke_turn`/spotlight tracking needs no extra wiring.
 
 ---
 
@@ -288,7 +301,7 @@ A placeholder/example shown in the empty Field Skill text field in the UI is wor
 wayward/
 ├── client/src/
 │   ├── components/
-│   │   ├── Scene/ChatScene.tsx     Chat + banner (Play/Edit toggle, scene state)
+│   │   ├── Scene/ChatScene.tsx     Chat + banner; JRPG dialogue blocks, formatting
 │   │   ├── Home/                   PC + party (HomeView)
 │   │   ├── CharacterSheet/, PartyMember/   PC / member editors (view+edit)
 │   │   ├── Inspector/PartyInspector.tsx    Right pane — selected entity
@@ -300,7 +313,8 @@ wayward/
 │   ├── state/   chatStore, partyStore, narratorStore, settingsStore, itemsStore,
 │   │            questsStore, loreStore, worldbuildStore, adventuresStore,
 │   │            campaignsStore, uiStore   (Zustand)
-│   ├── lib/     api.ts, location.ts (scene-banner derivation)
+│   ├── lib/     api.ts, location.ts (scene-banner derivation), narration.ts
+│   │            (JRPG chat segmenter), equipSlots.ts (item↔slot fit)
 │   ├── theme.css / edit-theme.css / index.css   design tokens + Tailwind mapping
 │
 ├── server/

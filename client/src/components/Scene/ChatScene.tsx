@@ -941,12 +941,7 @@ function MessageBubble({
             </span>
 
             {/* Message content */}
-            <div
-              className="flex-1 border-l-2 border-blue/60 bg-blue/5 rounded-r-md px-4 py-3 cursor-pointer"
-              onClick={() => {
-                if (!editing && message.id > 0) setEditing(true)
-              }}
-            >
+            <div className="flex-1 border-l-2 border-blue/60 bg-blue/5 rounded-r-md px-4 py-3">
               {editing ? (
                 <EditArea
                   ref={textareaRef}
@@ -968,6 +963,15 @@ function MessageBubble({
         {/* Actions bar */}
         {!editing && (
           <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {message.id > 0 && (
+              <button
+                type="button"
+                className="font-ui text-[9px] text-textdim hover:text-text"
+                onClick={() => setEditing(true)}
+              >
+                EDIT
+              </button>
+            )}
             <CopyButton text={message.content} />
             {onDelete && (
               <button
@@ -1017,12 +1021,7 @@ function MessageBubble({
             </div>
 
             {/* Message content */}
-            <div
-              className="px-4 py-3 cursor-pointer"
-              onClick={() => {
-                if (!editing && message.id > 0) setEditing(true)
-              }}
-            >
+            <div className="px-4 py-3">
               {editing ? (
                 <EditArea
                   ref={textareaRef}
@@ -1058,6 +1057,7 @@ function MessageBubble({
           onSwipeNew={onSwipeNew}
           isLastAssistant={isLastAssistant}
           onDelete={onDelete}
+          onEdit={message.id > 0 ? () => setEditing(true) : undefined}
           copyText={message.content}
         />
       </div>
@@ -1080,12 +1080,7 @@ function MessageBubble({
       {sceneHeader && (sceneHeader.location || sceneHeader.timeOfDay) && (
         <SceneHeader location={sceneHeader.location} timeOfDay={sceneHeader.timeOfDay} />
       )}
-      <div
-        className="px-4 py-3 cursor-pointer"
-        onClick={() => {
-          if (!editing && message.id > 0) setEditing(true)
-        }}
-      >
+      <div className="px-4 py-3">
         {editing ? (
           <EditArea
             ref={textareaRef}
@@ -1119,6 +1114,7 @@ function MessageBubble({
         onSwipe={onSwipe}
         isLastAssistant={isLastAssistant}
         onDelete={onDelete}
+        onEdit={message.id > 0 ? () => setEditing(true) : undefined}
         copyText={message.content}
       />
     </div>
@@ -1214,6 +1210,7 @@ function ActionsBar({
   onSwipeNew,
   isLastAssistant,
   onDelete,
+  onEdit,
   copyText,
 }: {
   editing: boolean
@@ -1224,6 +1221,7 @@ function ActionsBar({
   onSwipeNew?: () => void
   isLastAssistant?: boolean
   onDelete?: () => void
+  onEdit?: () => void
   copyText?: string
 }) {
   if (editing) return null
@@ -1267,6 +1265,15 @@ function ActionsBar({
         </>
       )}
       <div className="flex items-center gap-2 ml-auto">
+        {onEdit && (
+          <button
+            type="button"
+            className="font-ui text-[9px] text-textdim hover:text-text"
+            onClick={onEdit}
+          >
+            EDIT
+          </button>
+        )}
         {copyText && <CopyButton text={copyText} />}
         {onDelete && (
           <button

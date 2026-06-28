@@ -2016,7 +2016,11 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
 # ── Regenerate ────────────────────────────────────────────────────
 
 @router.post("/chat/regenerate")
-async def regenerate(session: AsyncSession = Depends(get_session)):
+async def regenerate(
+    data: dict = Body(default={}),
+    session: AsyncSession = Depends(get_session),
+):
+    guidance = (data.get("guidance") or "").strip() if isinstance(data, dict) else ""
     settings, narrator, pc, party, all_messages, summary, catalog, quests, quest_objectives, lore_entries, lore_config = await _load_game_context(session)
 
     if not all_messages:
@@ -2074,6 +2078,22 @@ async def regenerate(session: AsyncSession = Depends(get_session)):
         lore_entries=lore_entries,
         lore_config=lore_config,
     )
+
+    # Optional steering note for THIS regeneration only — injected right before
+    # the player's message and never persisted to history.
+    if guidance:
+        note = {
+            "role": "system",
+            "content": (
+                "RETELLING DIRECTION (applies only to this regeneration of the "
+                "last turn; not world canon): " + guidance
+            ),
+        }
+        insert_at = next(
+            (i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user"),
+            len(messages),
+        )
+        messages.insert(insert_at, note)
 
     if agentic:
         return _stream_agent_response(

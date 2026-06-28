@@ -26,6 +26,7 @@ export function ChatScene() {
   const error = useChatStore((s) => s.error)
   const sendTurn = useChatStore((s) => s.sendTurn)
   const regenerate = useChatStore((s) => s.regenerate)
+  const retryLastTurn = useChatStore((s) => s.retryLastTurn)
   const swipe = useChatStore((s) => s.swipe)
   const stopGeneration = useChatStore((s) => s.stopGeneration)
   const deleteMessageAndAfter = useChatStore((s) => s.deleteMessageAndAfter)
@@ -55,14 +56,40 @@ export function ChatScene() {
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
+  const [regenNoteOpen, setRegenNoteOpen] = useState(false)
+  const [regenNote, setRegenNote] = useState('')
+  const [editTargetId, setEditTargetId] = useState<number | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [matchIdx, setMatchIdx] = useState(0)
+  const [atBottom, setAtBottom] = useState(true)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  const submitRegenNote = () => {
+    const note = regenNote.trim()
+    setRegenNoteOpen(false)
+    setRegenNote('')
+    regenerate(note || undefined)
+  }
+
+  const scrollToBottom = () => {
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }
+
+  const handleListScroll = () => {
+    const el = listRef.current
+    if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
+  }
+
+  // Sticky auto-scroll: follow new content only when already near the bottom, so
+  // scrolling up to read isn't yanked back down mid-turn.
   useEffect(() => {
-    if (listRef.current) {
+    if (atBottom && listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
-  }, [messages, streamingContent])
+  }, [messages, streamingContent, atBottom])
 
   // Auto-dismiss the "Chronicler recorded…" notice a few seconds after it shows.
   useEffect(() => {
@@ -84,6 +111,7 @@ export function ChatScene() {
     const text = input.trim()
     if (!text || busy) return
     setInput('')
+    setAtBottom(true) // snap to newest on send
     sendTurn(text)
   }
 
@@ -94,6 +122,21 @@ export function ChatScene() {
     } catch {
       setPromptLog([{ role: 'error', content: 'No prompt log available yet.' }])
     }
+  }
+
+  const handleExportTranscript = () => {
+    const lines: string[] = ['# Wayward — Transcript', '']
+    for (const m of visibleMessages) {
+      if (m.role === 'user') lines.push(`**${pcName}:** ${m.content}`, '')
+      else lines.push(m.content, '')
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `wayward-transcript-${new Date().toISOString().slice(0, 10)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // Restrict to the active thread: narration vs the Planning conversation.
@@ -173,6 +216,54 @@ export function ChatScene() {
 
   const banner = deriveSceneBanner(visibleMessages)
 
+  // Message search — ids of visible messages whose content matches the query.
+  const q = searchQuery.trim().toLowerCase()
+  const searchMatches = q
+    ? visibleMessages.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.id)
+    : []
+  const currentMatchId = searchMatches[matchIdx] ?? null
+
+  const jumpToMatch = (idx: number) => {
+    if (searchMatches.length === 0) return
+    const wrapped = (idx + searchMatches.length) % searchMatches.length
+    setMatchIdx(wrapped)
+    document.getElementById(`msg-${searchMatches[wrapped]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  // When the query changes, jump to the first match.
+  useEffect(() => {
+    setMatchIdx(0)
+    if (q && searchMatches.length > 0) {
+      document.getElementById(`msg-${searchMatches[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q])
+
+  // Keyboard shortcuts (ignored while typing in a field): ←/→ switch the active
+  // variant of the last assistant turn; ↑ edits the last player message.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const lastAssistant = [...visibleMessages].reverse().find((m) => m.role === 'assistant')
+        if (!lastAssistant) return
+        const turn = lastAssistant.turnNumber
+        const count = variantCounts[turn] ?? 1
+        if (count <= 1) return
+        const cur = activeVariants[turn] ?? 0
+        const next = e.key === 'ArrowLeft' ? Math.max(0, cur - 1) : Math.min(count - 1, cur + 1)
+        if (next !== cur) { e.preventDefault(); setActiveVariant(turn, next) }
+      } else if (e.key === 'ArrowUp') {
+        const lastUser = [...visibleMessages].reverse().find((m) => m.role === 'user')
+        if (lastUser && lastUser.id > 0) { e.preventDefault(); setEditTargetId(lastUser.id) }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [visibleMessages, variantCounts, activeVariants, setActiveVariant])
+
   return (
     <div className="flex flex-col h-full">
       {/* Chat header — location banner, or a PLANNING banner in Planning mode */}
@@ -235,10 +326,23 @@ export function ChatScene() {
       </div>
 
       {/* Messages */}
-      <div
-        ref={listRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4"
-      >
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        {searchOpen && (
+          <SearchBar
+            query={searchQuery}
+            onQuery={setSearchQuery}
+            count={searchMatches.length}
+            index={matchIdx}
+            onPrev={() => jumpToMatch(matchIdx - 1)}
+            onNext={() => jumpToMatch(matchIdx + 1)}
+            onClose={() => { setSearchOpen(false); setSearchQuery('') }}
+          />
+        )}
+        <div
+          ref={listRef}
+          onScroll={handleListScroll}
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+        >
         {/* Configured opening narration (drop-capped, not editable in chat) */}
         {hasFirstMessage && (
           <div className="max-w-[85%] mr-auto">
@@ -270,8 +374,12 @@ export function ChatScene() {
         )}
 
         {visibleMessages.map((m, idx) => (
-          <MessageBubble
+          <div
             key={`${m.id}-${m.variant}`}
+            id={`msg-${m.id}`}
+            className={currentMatchId === m.id ? 'rounded-md ring-2 ring-gold/60 ring-offset-2 ring-offset-bg0' : undefined}
+          >
+          <MessageBubble
             message={m}
             variantCount={m.role === 'assistant' ? (variantCounts[m.turnNumber] ?? 1) : 1}
             activeVariant={m.role === 'assistant' ? (activeVariants[m.turnNumber] ?? 0) : 0}
@@ -295,7 +403,10 @@ export function ChatScene() {
             catalogMap={catalogMap}
             resolveCharName={resolveCharName}
             sceneHeader={sceneHeaders[idx]}
+            editTargetId={editTargetId}
+            onEditOpened={() => setEditTargetId(null)}
           />
+          </div>
         ))}
 
         {/* "What do you do?" divider */}
@@ -386,7 +497,27 @@ export function ChatScene() {
               <span className="font-ui text-[9px] tracking-wider uppercase text-danger">Generation Error</span>
             </div>
             <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{error}</p>
+            {!planningMode && !busy && messages.length > 0 && (
+              <button
+                type="button"
+                className="mt-2 font-ui text-[10px] tracking-wider text-gold border border-gold/40 px-3 py-1 rounded-sm hover:bg-gold/10 transition-colors"
+                onClick={() => retryLastTurn()}
+              >
+                RETRY
+              </button>
+            )}
           </div>
+        )}
+        </div>
+        {!atBottom && visibleMessages.length > 0 && (
+          <button
+            type="button"
+            aria-label="Scroll to latest"
+            className="absolute bottom-3 right-4 z-10 w-8 h-8 rounded-full border border-line2 bg-bg2 text-gold flex items-center justify-center shadow-lg hover:bg-bg3 transition-colors"
+            onClick={scrollToBottom}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
+          </button>
         )}
       </div>
 
@@ -405,6 +536,38 @@ export function ChatScene() {
         </div>
       )}
 
+      {/* Regenerate-with-note panel — steers a single re-roll, not persisted. */}
+      {regenNoteOpen && (
+        <div className="border-t border-line2 px-3 pt-2.5 pb-1 bg-bg1 flex items-center gap-2">
+          <span className="font-ui text-[9px] tracking-wider text-gold uppercase shrink-0">Steer re-roll</span>
+          <input
+            autoFocus
+            className="flex-1 border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 transition-colors"
+            placeholder="e.g. shorter and tenser; keep Tifa quiet"
+            value={regenNote}
+            onChange={(e) => setRegenNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); submitRegenNote() }
+              else if (e.key === 'Escape') { setRegenNoteOpen(false); setRegenNote('') }
+            }}
+          />
+          <button
+            type="button"
+            className="shrink-0 font-ui text-[10px] tracking-wider bg-golddeep text-bg0 px-3 py-1.5 hover:bg-gold transition-colors"
+            onClick={submitRegenNote}
+          >
+            REGENERATE
+          </button>
+          <button
+            type="button"
+            className="shrink-0 font-ui text-[10px] tracking-wider text-textdim border border-line px-3 py-1.5 hover:text-text hover:border-line2 transition-colors"
+            onClick={() => { setRegenNoteOpen(false); setRegenNote('') }}
+          >
+            CANCEL
+          </button>
+        </div>
+      )}
+
       {/* Input */}
       <div className="border-t border-line2 p-3 bg-bg1">
         <div className="flex items-end gap-2">
@@ -420,12 +583,27 @@ export function ChatScene() {
                     onClick={() => { setToolsOpen(false); regenerate() }}
                   />
                   <ToolMenuItem
+                    label="Regenerate with Note…"
+                    disabled={!showInputRegenerate || planningMode}
+                    onClick={() => { setToolsOpen(false); setRegenNote(''); setRegenNoteOpen(true) }}
+                  />
+                  <ToolMenuItem
                     label="Clear Chat"
                     disabled={messages.length === 0}
                     onClick={() => {
                       setToolsOpen(false)
                       setConfirmAction({ message: 'Clear the entire chat history? This cannot be undone.', action: clearHistory })
                     }}
+                  />
+                  <ToolMenuItem
+                    label="Search Messages…"
+                    disabled={visibleMessages.length === 0}
+                    onClick={() => { setToolsOpen(false); setSearchOpen(true) }}
+                  />
+                  <ToolMenuItem
+                    label="Export Transcript"
+                    disabled={visibleMessages.length === 0}
+                    onClick={() => { setToolsOpen(false); handleExportTranscript() }}
                   />
                   <ToolMenuItem
                     label="View Prompt Log"
@@ -569,6 +747,51 @@ function ToolMenuItem({ label, disabled, onClick }: { label: string; disabled?: 
   )
 }
 
+// ── Message search bar ──────────────────────────────────────────────
+
+function SearchBar({
+  query, onQuery, count, index, onPrev, onNext, onClose,
+}: {
+  query: string
+  onQuery: (v: string) => void
+  count: number
+  index: number
+  onPrev: () => void
+  onNext: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="shrink-0 border-b border-line2 bg-bg2 px-3 py-2 flex items-center gap-2">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-textdim shrink-0">
+        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+      </svg>
+      <input
+        autoFocus
+        className="flex-1 bg-transparent text-sm font-body text-text outline-none placeholder:text-textdim"
+        placeholder="Search messages…"
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? onPrev() : onNext() }
+          else if (e.key === 'Escape') onClose()
+        }}
+      />
+      <span className="font-ui text-[9px] text-textdim tracking-wider shrink-0 tabular-nums">
+        {query.trim() ? `${count > 0 ? index + 1 : 0}/${count}` : ''}
+      </span>
+      <button type="button" className="text-textdim hover:text-text disabled:opacity-30" disabled={count === 0} onClick={onPrev} aria-label="Previous match">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+      </button>
+      <button type="button" className="text-textdim hover:text-text disabled:opacity-30" disabled={count === 0} onClick={onNext} aria-label="Next match">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      <button type="button" className="font-ui text-[10px] text-textdim hover:text-text tracking-wider shrink-0" onClick={onClose} aria-label="Close search">
+        ✕
+      </button>
+    </div>
+  )
+}
+
 // ── Portrait Component ──────────────────────────────────────────────
 
 // Shared chat portrait size — PC bubble and party dialogue blocks match.
@@ -630,6 +853,8 @@ function MessageBubble({
   catalogMap,
   resolveCharName,
   sceneHeader,
+  editTargetId,
+  onEditOpened,
 }: {
   message: ChatMessage
   variantCount: number
@@ -647,6 +872,8 @@ function MessageBubble({
   catalogMap: Map<string, ItemCatalogEntry>
   resolveCharName: (id: string) => string
   sceneHeader?: { location?: string | null; timeOfDay?: string | null }
+  editTargetId?: number | null
+  onEditOpened?: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
@@ -656,6 +883,14 @@ function MessageBubble({
   useEffect(() => {
     setEditText(message.content)
   }, [message.content])
+
+  // Open the editor when a keyboard shortcut targets this message.
+  useEffect(() => {
+    if (editTargetId === message.id && message.id > 0 && !editing) {
+      setEditing(true)
+      onEditOpened?.()
+    }
+  }, [editTargetId, message.id, editing, onEditOpened])
 
   useEffect(() => {
     if (editing && textareaRef.current) {
@@ -733,6 +968,7 @@ function MessageBubble({
         {/* Actions bar */}
         {!editing && (
           <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <CopyButton text={message.content} />
             {onDelete && (
               <button
                 type="button"
@@ -822,6 +1058,7 @@ function MessageBubble({
           onSwipeNew={onSwipeNew}
           isLastAssistant={isLastAssistant}
           onDelete={onDelete}
+          copyText={message.content}
         />
       </div>
     )
@@ -882,6 +1119,7 @@ function MessageBubble({
         onSwipe={onSwipe}
         isLastAssistant={isLastAssistant}
         onDelete={onDelete}
+        copyText={message.content}
       />
     </div>
   )
@@ -976,6 +1214,7 @@ function ActionsBar({
   onSwipeNew,
   isLastAssistant,
   onDelete,
+  copyText,
 }: {
   editing: boolean
   isUser: boolean
@@ -985,6 +1224,7 @@ function ActionsBar({
   onSwipeNew?: () => void
   isLastAssistant?: boolean
   onDelete?: () => void
+  copyText?: string
 }) {
   if (editing) return null
 
@@ -1026,7 +1266,8 @@ function ActionsBar({
           )}
         </>
       )}
-      <div className="flex items-center gap-1 ml-auto">
+      <div className="flex items-center gap-2 ml-auto">
+        {copyText && <CopyButton text={copyText} />}
         {onDelete && (
           <button
             type="button"
@@ -1038,6 +1279,26 @@ function ActionsBar({
         )}
       </div>
     </div>
+  )
+}
+
+// Copy a message's text to the clipboard, with a brief "COPIED" confirmation.
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      className="font-ui text-[9px] text-textdim hover:text-text"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        } catch { /* clipboard unavailable */ }
+      }}
+    >
+      {copied ? 'COPIED' : 'COPY'}
+    </button>
   )
 }
 

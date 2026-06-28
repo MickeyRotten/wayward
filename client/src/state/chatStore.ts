@@ -74,7 +74,8 @@ interface ChatState {
   activeVariants: Record<number, number>
   fetchHistory: () => Promise<void>
   sendTurn: (message: string) => Promise<void>
-  regenerate: () => Promise<void>
+  regenerate: (guidance?: string) => Promise<void>
+  retryLastTurn: () => Promise<void>
   swipe: (turn: number) => Promise<void>
   stopGeneration: () => void
   editMessage: (id: number, content: string) => Promise<void>
@@ -148,7 +149,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await _handleStream('/api/chat/turn', { message, mode })
   },
 
-  regenerate: async () => {
+  regenerate: async (guidance) => {
     const turn = get().currentTurn
     const newVariants = { ...get().activeVariants }
     delete newVariants[turn]
@@ -160,7 +161,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingContent: '',
       thinkingStartedAt: Date.now(),
     }))
-    await _handleStream('/api/chat/regenerate', {})
+    const body = guidance && guidance.trim() ? { guidance: guidance.trim() } : {}
+    await _handleStream('/api/chat/regenerate', body)
+  },
+
+  // Re-run the last turn after a generation error. Same path as regenerate (it
+  // re-generates the latest turn's assistant reply), which also recovers a
+  // failed sendTurn where the user message persisted but no reply arrived.
+  retryLastTurn: async () => {
+    if (get().isLoading) return
+    await get().regenerate()
   },
 
   swipe: async (turn) => {

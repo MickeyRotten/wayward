@@ -1,23 +1,60 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
+import { usePartyStore } from '../../state/partyStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
-import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
+import { EQUIP_SLOT_KEYS } from '../../lib/equipSlots'
+import type { ItemCatalogEntry, Rarity, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
+
+/** Build itemId → list of character display-names currently wearing it. */
+function buildEquippedBy(pc: PlayerCharacter | null, members: PartyMember[]): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  const add = (equipment: Equipment, name: string) => {
+    for (const key of EQUIP_SLOT_KEYS) {
+      const id = equipment[key]
+      if (!id) continue
+      const list = map.get(id) ?? []
+      if (!list.includes(name)) list.push(name)
+      map.set(id, list)
+    }
+  }
+  if (pc) add(pc.equipment, pc.basicInfo?.name || 'You')
+  for (const m of members) add(m.equipment, m.basicInfo?.name || 'Unnamed')
+  return map
+}
 
 export function ItemsPanel() {
   const inventory = useItemsStore((s) => s.inventory)
   const maxCarrySlots = useItemsStore((s) => s.maxCarrySlots)
   const removeFromInventory = useItemsStore((s) => s.removeFromInventory)
   const editMode = useChatStore((s) => s.planningMode)
+  const playerCharacter = usePartyStore((s) => s.playerCharacter)
+  const partyMembers = usePartyStore((s) => s.partyMembers)
+  const catalog = useItemsStore((s) => s.catalog)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
   const [removeMode, setRemoveMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmRemove, setConfirmRemove] = useState(false)
+
+  const equippedBy = useMemo(
+    () => buildEquippedBy(playerCharacter, partyMembers),
+    [playerCharacter, partyMembers],
+  )
+
+  // Equipped items are always shown in the inventory, even when worn rather than
+  // carried as a stack — surface those as extra (non-removable) rows.
+  const equippedOnly = useMemo(() => {
+    const carried = new Set(inventory.map((s) => s.itemId))
+    return [...equippedBy.keys()]
+      .filter((id) => !carried.has(id))
+      .map((id) => catalog.find((i) => i.id === id))
+      .filter((i): i is ItemCatalogEntry => !!i)
+  }, [equippedBy, inventory, catalog])
 
   const isSelected = (itemId: string) =>
     selection?.kind === 'item' && selection.id === itemId
@@ -65,7 +102,7 @@ export function ItemsPanel() {
 
       {/* Inventory list */}
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
-        {inventory.length === 0 && (
+        {inventory.length === 0 && equippedOnly.length === 0 && (
           <p className="text-[12px] text-textdim font-body px-2 py-4 text-center">
             No items in inventory
           </p>
@@ -85,10 +122,22 @@ export function ItemsPanel() {
                 count={stack.count}
                 selected={removeMode ? selectedIds.has(stack.itemId) : isSelected(stack.itemId)}
                 onClick={() => (removeMode ? toggleSelected(stack.itemId) : select({ kind: 'item', id: stack.itemId }))}
+                equippedBy={equippedBy.get(stack.itemId)}
               />
             </SelectableRow>
           )
         })}
+
+        {/* Equipped but not carried — shown so all gear is visible (not removable). */}
+        {!removeMode && equippedOnly.map((item) => (
+          <ItemCard
+            key={item.id}
+            item={item}
+            selected={isSelected(item.id)}
+            onClick={() => select({ kind: 'item', id: item.id })}
+            equippedBy={equippedBy.get(item.id)}
+          />
+        ))}
 
         {/* Add item — hidden while removing */}
         {!removeMode && (

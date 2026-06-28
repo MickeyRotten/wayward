@@ -441,3 +441,13 @@ Done (commit 1c9cf97): Add Item is now a "+ ADD ITEM" button. Clicking it opens 
 Done (commit f760d09): equipment slots now mirror the Inventory Add Item pattern but source from the party Inventory and only list items that fit that slot. Empty slot shows a "+ Equip" button; clicking it opens a filterable dropdown (no minimum query length) of inventory items whose type is Equipment and whose slot matches (a new lib/equipSlots.ts maps the coarse item slots — Head/Torso/Hands/Waist/Neck/Legs/Feet — onto the 12 fine equipment slots; items with no slot are allowed anywhere). A full slot shows the item with a small remove (×) button. Applies to both the PC sheet and party member sheets, in Play and Edit mode. Note: equipping references the item (it does not consume it from the inventory stack), matching the existing equipment model — say the word if you'd rather equipping move the item out of the bag.
 
 ---
+[x] Equipped items in inventory should have an indicator that they're equipped, and information on who has it equipped currently.
+
+Done: inventory item cards now show an "Equipped · <names>" indicator (gold, with a check glyph) listing every character (PC or party member) currently wearing the item. Also — all equipped items are now shown in the Inventory even when worn rather than carried: items equipped by someone but not in a carried stack appear as extra (non-removable) rows, so the inventory reflects all gear. (Equipping references an item rather than consuming the stack, so an item can be both carried and worn.)
+
+---
+[x] I should be able to equip an item from Inventory. Button: Equip -> List of PC / Party Members (even those not active) -> Select Character -> Item is equipped. If an item was already equipped in that slot, that other item becomes unequipped.
+
+Done (Equip lives in the Inspector view, per your follow-up): selecting an item opens the Inspector, which for Equipment shows an "Equip" section — current wearers (name · slot) each with an UNEQUIP button, plus an "+ EQUIP TO…" button that lists the PC and ALL party members (including benched) to pick from. Equipping places the item in the best-fitting slot (an empty fitting slot if available, else the first fitting slot — whose previous item is automatically unequipped via lib/equipSlots.pickEquipSlot). Equipment references the item (it isn't consumed from the inventory stack). Works in Play (view) mode where gear management lives.
+
+---

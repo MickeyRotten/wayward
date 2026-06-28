@@ -8,7 +8,8 @@ import { useChatStore } from '../../state/chatStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
-import type { ItemCatalogEntry, ItemType, Rarity, Quest, LorebookEntry, LoreCategory } from '@shared/types/models'
+import { EQUIP_SLOT_KEYS, EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
+import type { ItemCatalogEntry, ItemType, Rarity, Quest, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
 
 export function PartyInspector() {
   const pc = usePartyStore((s) => s.playerCharacter)
@@ -209,6 +210,10 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
   const deleteItem = useItemsStore((s) => s.deleteItem)
   const removeFromInventory = useItemsStore((s) => s.removeFromInventory)
   const inventory = useItemsStore((s) => s.inventory)
+  const pc = usePartyStore((s) => s.playerCharacter)
+  const members = usePartyStore((s) => s.partyMembers)
+  const savePlayerCharacter = usePartyStore((s) => s.savePlayerCharacter)
+  const savePartyMember = usePartyStore((s) => s.savePartyMember)
   const select = useUiStore((s) => s.select)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
 
@@ -216,6 +221,46 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [removeError, setRemoveError] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Who currently wears this item, and where.
+  const wornBy: { charId: string; name: string; slot: string }[] = []
+  const scan = (charId: string, equipment: Equipment, name: string) => {
+    for (const key of EQUIP_SLOT_KEYS) {
+      if (equipment[key] === item.id) wornBy.push({ charId, name, slot: EQUIP_SLOT_LABELS[key] })
+    }
+  }
+  if (pc) scan(pc.id, pc.equipment, pc.basicInfo?.name || 'You')
+  for (const m of members) scan(m.id, m.equipment, m.basicInfo?.name || 'Unnamed')
+
+  const equipOnto = async (charId: string) => {
+    setPickerOpen(false)
+    if (pc && charId === pc.id) {
+      const slot = pickEquipSlot(item.slot, pc.equipment)
+      await savePlayerCharacter({ ...pc, equipment: { ...pc.equipment, [slot]: item.id } })
+      return
+    }
+    const member = members.find((m) => m.id === charId)
+    if (member) {
+      const slot = pickEquipSlot(item.slot, member.equipment)
+      await savePartyMember({ ...member, equipment: { ...member.equipment, [slot]: item.id } })
+    }
+  }
+
+  const unequipFrom = async (charId: string) => {
+    if (pc && charId === pc.id) {
+      const equipment = { ...pc.equipment }
+      for (const key of EQUIP_SLOT_KEYS) if (equipment[key] === item.id) equipment[key] = null
+      await savePlayerCharacter({ ...pc, equipment })
+      return
+    }
+    const member = members.find((m) => m.id === charId)
+    if (member) {
+      const equipment = { ...member.equipment }
+      for (const key of EQUIP_SLOT_KEYS) if (equipment[key] === item.id) equipment[key] = null
+      await savePartyMember({ ...member, equipment })
+    }
+  }
 
   useEffect(() => {
     draft.current = structuredClone(item)
@@ -302,6 +347,50 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
             {removeError && (
               <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>
             )}
+          </ItemSection>
+        )}
+
+        {/* Equip — only for equipment; lists current wearers + equips onto a character. */}
+        {item.type === 'Equipment' && (
+          <ItemSection title="Equip">
+            <div className="space-y-2">
+              {wornBy.length > 0 ? (
+                wornBy.map((w, i) => (
+                  <div key={`${w.charId}-${i}`} className="flex items-center justify-between gap-2">
+                    <span className="font-body text-sm text-text">
+                      <span className="text-gold2">{w.name}</span>
+                      <span className="text-textdim"> · {w.slot}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                      onClick={() => unequipFrom(w.charId)}
+                    >
+                      UNEQUIP
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="font-body text-[12px] text-textdim">Not equipped by anyone.</p>
+              )}
+
+              {pickerOpen ? (
+                <EquipPicker
+                  pc={pc}
+                  members={members}
+                  onPick={equipOnto}
+                  onCancel={() => setPickerOpen(false)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  + EQUIP TO…
+                </button>
+              )}
+            </div>
           </ItemSection>
         )}
       </div>
@@ -435,6 +524,40 @@ function ItemSection({ title, children }: { title: string; children: React.React
       <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
       {children}
     </section>
+  )
+}
+
+/** Picker: choose a character (PC or any member, incl. benched) to equip onto. */
+function EquipPicker({ pc, members, onPick, onCancel }: {
+  pc: PlayerCharacter | null
+  members: PartyMember[]
+  onPick: (charId: string) => void
+  onCancel: () => void
+}) {
+  const chars = [
+    ...(pc ? [{ id: pc.id, name: pc.basicInfo?.name || 'You', benched: false }] : []),
+    ...members.map((m) => ({ id: m.id, name: m.basicInfo?.name || 'Unnamed', benched: !m.inParty })),
+  ]
+  return (
+    <div className="border border-line2 rounded-md bg-bg1 p-1.5 space-y-0.5">
+      <div className="flex items-center justify-between px-1 pb-0.5">
+        <span className="font-ui text-[8px] tracking-wider text-textdim uppercase">Equip to…</span>
+        <button type="button" className="font-ui text-[10px] text-textdim hover:text-text" onClick={onCancel} aria-label="Cancel">✕</button>
+      </div>
+      {chars.length === 0 ? (
+        <p className="font-body text-[11px] text-textdim px-1 py-1">No characters.</p>
+      ) : chars.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          className="w-full text-left font-body text-[13px] text-text px-2 py-1.5 rounded-sm hover:bg-bg3 transition-colors flex items-center gap-2"
+          onClick={() => onPick(c.id)}
+        >
+          <span className="truncate flex-1">{c.name}</span>
+          {c.benched && <span className="font-ui text-[8px] tracking-wider text-textdim uppercase shrink-0">benched</span>}
+        </button>
+      ))}
+    </div>
   )
 }
 

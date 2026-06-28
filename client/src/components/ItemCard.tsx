@@ -12,12 +12,14 @@ const RARITY_LABELS: Record<Rarity, string> = {
    edge, and (when selected) a gold accent bar offset to the right of the rarity
    bar so the two never overlap. Used by the Inventory panel and Lore → Items. */
 export function ItemCard({
-  item, selected, count, onClick,
+  item, selected, count, onClick, equippedBy,
 }: {
   item: ItemCatalogEntry
   selected: boolean
   count?: number
   onClick: () => void
+  /** Names of characters currently wearing this item (inventory view). */
+  equippedBy?: string[]
 }) {
   const rarity = item.rarity as Rarity
   return (
@@ -45,6 +47,16 @@ export function ItemCard({
             )}
           </div>
           <span className="font-ui text-[8px] text-textdim tracking-wider uppercase">{item.type}</span>
+          {equippedBy && equippedBy.length > 0 && (
+            <div className="flex items-center gap-1 mt-0.5 text-gold2">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+              <span className="font-ui text-[8px] tracking-wider uppercase truncate">
+                Equipped · {equippedBy.join(', ')}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </button>

@@ -44,6 +44,25 @@ const QUOTE_RE = /^\s*>\s?/
 // is captured loosely and validated against the resolver afterward.
 const DIALOGUE_RE = /^\s*([A-Za-z][A-Za-z0-9 '’\-]{0,30}?)\s*[:—]\s+(.+)$/
 
+// Opening → closing quote pairs, for splitting the spoken span off a dialogue
+// line so trailing narration ("…" she said, almost warmly) doesn't end up in
+// the dialogue box.
+const QUOTE_PAIRS: Record<string, string> = { '"': '"', '“': '”', '«': '»', "'": "'", '‘': '’' }
+
+/**
+ * If a dialogue line's text starts with a quote, return just the quoted span as
+ * the spoken line and everything after the closing quote as trailing narration.
+ * Lines without a leading quote are returned whole (no reliable split point).
+ */
+function splitSpokenLine(text: string): { spoken: string; trailing: string } {
+  const open = text[0]
+  const close = QUOTE_PAIRS[open]
+  if (!close) return { spoken: text, trailing: '' }
+  const end = text.indexOf(close, 1)
+  if (end === -1) return { spoken: text, trailing: '' } // unterminated → keep whole
+  return { spoken: text.slice(0, end + 1), trailing: text.slice(end + 1).trim() }
+}
+
 /**
  * Split a narration string into ordered block segments. Works line-by-line so it
  * is robust to single- vs double-newline paragraph separation. `resolver` decides
@@ -91,7 +110,10 @@ export function parseSegments(content: string, resolver: Map<string, MemberLite>
       if (member) {
         flushQuote()
         flushNarration()
-        segments.push({ type: 'dialogue', member, text: m[2].trim() })
+        const { spoken, trailing } = splitSpokenLine(m[2].trim())
+        segments.push({ type: 'dialogue', member, text: spoken })
+        // Narration that trailed the quote on the same line becomes its own beat.
+        if (trailing) narration.push(trailing)
         continue
       }
     }

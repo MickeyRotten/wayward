@@ -50,7 +50,7 @@ TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them 
 # are recognised by the client renderer (party dialogue → portrait dialogue box;
 # *italics*/**bold**; "> " → inscription inset; "* * *" → scene-break divider).
 FORMATTING_GUIDE = """Format the narration for a stylised RPG chat:
-- When a PARTY MEMBER speaks, give them their own paragraph that begins with their name, a colon, then their line in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. One speaker per paragraph; only do this for actual party members.
+- When a PARTY MEMBER speaks, give them their own paragraph that begins with their name, a colon, then ONLY their spoken words in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. Put nothing else on that line: any description of how they said it, their expression, or what happens next goes in a SEPARATE narration paragraph (a blank line after the quote), NOT on the dialogue line. One speaker per paragraph; only do this for actual party members.
 - Use *italics* for emphasis, whispers, or inner thoughts, and **bold** for the names of notable items the first time they appear.
 - Put letters, signs, inscriptions, or prophecies in a blockquote: start each such line with "> ".
 - Separate a hard scene or time jump with a line containing only "* * *".

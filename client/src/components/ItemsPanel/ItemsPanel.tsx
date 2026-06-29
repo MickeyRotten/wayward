@@ -56,8 +56,8 @@ export function ItemsPanel() {
       .filter((i): i is ItemCatalogEntry => !!i)
   }, [equippedBy, inventory, catalog])
 
-  const isSelected = (itemId: string) =>
-    selection?.kind === 'item' && selection.id === itemId
+  const isSelected = (instanceId: string) =>
+    selection?.kind === 'item' && selection.instanceId === instanceId
 
   // Cancel remove-mode when leaving Edit Mode.
   useEffect(() => {
@@ -120,9 +120,19 @@ export function ItemsPanel() {
               <ItemCard
                 item={item}
                 count={stack.count}
+<<<<<<< Updated upstream
                 selected={removeMode ? selectedIds.has(stack.itemId) : isSelected(stack.itemId)}
                 onClick={() => (removeMode ? toggleSelected(stack.itemId) : select({ kind: 'item', id: stack.itemId }))}
                 equippedBy={equippedBy.get(stack.itemId)}
+=======
+                selected={removeMode ? selectedIds.has(stack.instanceId) : isSelected(stack.instanceId)}
+                onClick={() => (
+                  removeMode
+                    ? (removable && toggleSelected(stack.instanceId))
+                    : select({ kind: 'item', id: stack.itemId, instanceId: stack.instanceId })
+                )}
+                equippedBy={stack.equippedByName ? [stack.equippedByName] : undefined}
+>>>>>>> Stashed changes
               />
             </SelectableRow>
           )

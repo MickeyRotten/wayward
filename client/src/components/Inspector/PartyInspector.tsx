@@ -8,7 +8,7 @@ import { useChatStore } from '../../state/chatStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
-import { EQUIP_SLOT_KEYS, EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
+import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
 import type { ItemCatalogEntry, ItemType, Rarity, Quest, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
 
 export function PartyInspector() {
@@ -141,7 +141,12 @@ export function PartyInspector() {
         ) : selIsMember ? (
           <PartyMemberEditor key={selMember!.id} member={selMember!} mode={mode} />
         ) : selIsItem ? (
-          <ItemInspector key={selItem!.id} item={selItem!} mode={mode} />
+          <ItemInspector
+            key={(selection?.kind === 'item' ? selection.instanceId : '') || selItem!.id}
+            item={selItem!}
+            instanceId={selection?.kind === 'item' ? selection.instanceId : undefined}
+            mode={mode}
+          />
         ) : selIsQuest ? (
           <QuestInspector key={selQuest!.id} quest={selQuest!} mode={mode} />
         ) : selIsLore ? (
@@ -205,10 +210,10 @@ const RARITY_OPTIONS: { value: Rarity; label: string }[] = [
   { value: 'l', label: 'Legendary' },
 ]
 
-function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 'edit' }) {
+function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; instanceId?: string; mode: 'view' | 'edit' }) {
   const updateItem = useItemsStore((s) => s.updateItem)
   const deleteItem = useItemsStore((s) => s.deleteItem)
-  const removeFromInventory = useItemsStore((s) => s.removeFromInventory)
+  const removeInstance = useItemsStore((s) => s.removeInstance)
   const inventory = useItemsStore((s) => s.inventory)
   const pc = usePartyStore((s) => s.playerCharacter)
   const members = usePartyStore((s) => s.partyMembers)
@@ -223,6 +228,7 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
   const [removeError, setRemoveError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
 
+<<<<<<< Updated upstream
   // Who currently wears this item, and where.
   const wornBy: { charId: string; name: string; slot: string }[] = []
   const scan = (charId: string, equipment: Equipment, name: string) => {
@@ -232,9 +238,19 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
   }
   if (pc) scan(pc.id, pc.equipment, pc.basicInfo?.name || 'You')
   for (const m of members) scan(m.id, m.equipment, m.basicInfo?.name || 'Unnamed')
+=======
+  // The specific copy being inspected (when selected from the inventory).
+  const thisInstance = instanceId ? inventory.find((s) => s.instanceId === instanceId) : undefined
+  const stowedCount = inventory.filter((s) => s.itemId === item.id && !s.equippedBy).length
 
+  const charEquipment = (charId: string): Equipment | undefined =>
+    pc && charId === pc.id ? pc.equipment : members.find((m) => m.id === charId)?.equipment
+>>>>>>> Stashed changes
+
+  // Equip THIS instance (if one is selected) onto a character.
   const equipOnto = async (charId: string) => {
     setPickerOpen(false)
+<<<<<<< Updated upstream
     if (pc && charId === pc.id) {
       const slot = pickEquipSlot(item.slot, pc.equipment)
       await savePlayerCharacter({ ...pc, equipment: { ...pc.equipment, [slot]: item.id } })
@@ -245,6 +261,12 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
       const slot = pickEquipSlot(item.slot, member.equipment)
       await savePartyMember({ ...member, equipment: { ...member.equipment, [slot]: item.id } })
     }
+=======
+    const equipment = charEquipment(charId)
+    if (!equipment) return
+    const slot = pickEquipSlot(item.slot, equipment)
+    await equipItem(charId, item.id, slot, instanceId)
+>>>>>>> Stashed changes
   }
 
   const unequipFrom = async (charId: string) => {
@@ -283,8 +305,11 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
     immediate ? flush() : scheduleFlush()
   }
 
+<<<<<<< Updated upstream
   const inInventory = inventory.find((s) => s.itemId === item.id)
 
+=======
+>>>>>>> Stashed changes
   if (mode === 'view') {
     return (
       <div className="space-y-6 p-6">
@@ -322,38 +347,57 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
           </ItemSection>
         )}
 
-        {/* Inventory info */}
-        {inInventory && (
-          <ItemSection title="Inventory">
-            <div className="flex items-center justify-between">
+        {/* This copy — status + remove (when a specific instance is selected) */}
+        {thisInstance && (
+          <ItemSection title="This Copy">
+            <div className="flex items-center justify-between gap-2">
               <span className="font-body text-sm text-text">
+<<<<<<< Updated upstream
                 In inventory: <span className="text-gold">{inInventory.count}</span>
+=======
+                {thisInstance.equippedBy ? (
+                  <>
+                    <span className="text-gold2">{thisInstance.equippedByName || 'Equipped'}</span>
+                    <span className="text-textdim"> · {EQUIP_SLOT_LABELS[thisInstance.slot as keyof Equipment] ?? thisInstance.slot}</span>
+                  </>
+                ) : (
+                  <span className="text-textdim">Stowed in the pack</span>
+                )}
+>>>>>>> Stashed changes
               </span>
-              <button
-                type="button"
-                className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors"
-                onClick={async () => {
-                  setRemoveError('')
-                  try {
-                    await removeFromInventory(item.id, 1)
-                  } catch (e: unknown) {
-                    setRemoveError(e instanceof Error ? e.message : 'Failed')
-                  }
-                }}
-              >
-                REMOVE 1
-              </button>
+              {!thisInstance.equippedBy && (
+                <button
+                  type="button"
+                  className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                  onClick={async () => {
+                    setRemoveError('')
+                    try { await removeInstance(thisInstance.instanceId) } catch (e: unknown) {
+                      setRemoveError(e instanceof Error ? e.message : 'Failed')
+                    }
+                  }}
+                >
+                  REMOVE
+                </button>
+              )}
             </div>
-            {removeError && (
-              <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>
-            )}
+            {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
           </ItemSection>
         )}
 
-        {/* Equip — only for equipment; lists current wearers + equips onto a character. */}
-        {item.type === 'Equipment' && (
+        {/* Aggregate inventory count when not inspecting a specific copy. */}
+        {!thisInstance && stowedCount > 0 && (
+          <ItemSection title="Inventory">
+            <span className="font-body text-sm text-text">
+              Stowed: <span className="text-gold">{stowedCount}</span>
+            </span>
+          </ItemSection>
+        )}
+
+        {/* Equip — for equipment. Instance-specific when a copy is selected. */}
+        {item.type === 'Equipment' && thisInstance && (
           <ItemSection title="Equip">
             <div className="space-y-2">
+<<<<<<< Updated upstream
               {wornBy.length > 0 ? (
                 wornBy.map((w, i) => (
                   <div key={`${w.charId}-${i}`} className="flex items-center justify-between gap-2">
@@ -375,6 +419,22 @@ function ItemInspector({ item, mode }: { item: ItemCatalogEntry; mode: 'view' | 
               )}
 
               {pickerOpen ? (
+=======
+              {thisInstance.equippedBy ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-body text-sm text-text">
+                    Worn by <span className="text-gold2">{thisInstance.equippedByName}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                    onClick={() => unequipFrom(thisInstance.equippedBy as string, thisInstance.slot as string)}
+                  >
+                    UNEQUIP
+                  </button>
+                </div>
+              ) : pickerOpen ? (
+>>>>>>> Stashed changes
                 <EquipPicker
                   pc={pc}
                   members={members}

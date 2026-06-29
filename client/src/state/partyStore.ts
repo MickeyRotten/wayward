@@ -12,6 +12,11 @@ interface PartyState {
   savePartyMember: (pm: PartyMember) => Promise<void>
   removePartyMember: (id: string) => Promise<void>
   setMembership: (id: string, inParty: boolean) => Promise<void>
+<<<<<<< Updated upstream
+=======
+  equipItem: (characterId: string, itemId: string, slot: string, instanceId?: string) => Promise<void>
+  unequipSlot: (characterId: string, slot: string) => Promise<void>
+>>>>>>> Stashed changes
 }
 
 export const usePartyStore = create<PartyState>((set, get) => ({
@@ -66,4 +71,21 @@ export const usePartyStore = create<PartyState>((set, get) => ({
       partyMembers: get().partyMembers.map((m) => (m.id === saved.id ? saved : m)),
     })
   },
+<<<<<<< Updated upstream
+=======
+
+  // Equip/unequip go through the server (instance-aware: reuse a stowed copy or
+  // mint one; the prior occupant returns to the pack). Refresh party + inventory.
+  equipItem: async (characterId, itemId, slot, instanceId) => {
+    await api.post('/characters/equip', { characterId, itemId, slot, instanceId })
+    await get().fetchAll()
+    await useItemsStore.getState().fetchInventory()
+  },
+
+  unequipSlot: async (characterId, slot) => {
+    await api.post('/characters/unequip', { characterId, slot })
+    await get().fetchAll()
+    await useItemsStore.getState().fetchInventory()
+  },
+>>>>>>> Stashed changes
 }))

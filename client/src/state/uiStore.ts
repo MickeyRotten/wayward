@@ -5,7 +5,7 @@ export type TabId = 'home' | 'items' | 'quests' | 'lore' | 'suggestions' | 'save
 export type SelectionKind =
   | { kind: 'player' }
   | { kind: 'member'; id: string }
-  | { kind: 'item'; id: string }
+  | { kind: 'item'; id: string; instanceId?: string }  // instanceId: a specific owned copy
   | { kind: 'quest'; id: string }
   | { kind: 'lore'; id: string }
   | null
@@ -31,6 +31,7 @@ interface UiState {
 function selectionKey(sel: SelectionKind): string | null {
   if (!sel) return null
   if (sel.kind === 'player') return 'player'
+  if (sel.kind === 'item') return `item:${sel.id}:${sel.instanceId ?? ''}`
   return `${sel.kind}:${sel.id}`
 }
 

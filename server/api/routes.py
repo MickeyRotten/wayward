@@ -895,7 +895,53 @@ async def get_inventory_capacity(session: AsyncSession = Depends(get_session)):
     )).scalar()
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     max_slots = settings.max_carry_slots if settings else MAX_CARRY_SLOTS_DEFAULT
+<<<<<<< Updated upstream
     return {"used": total_stacks, "max": max_slots}
+=======
+    return {"used": used, "max": max_slots}
+
+
+async def _resolve_character_by_id(session: AsyncSession, char_id: str):
+    ch = await session.get(PlayerCharacter, char_id)
+    if ch is None:
+        ch = await session.get(PartyMember, char_id)
+    return ch
+
+
+@router.post("/characters/equip")
+async def equip_item(data: dict = Body(default={}), session: AsyncSession = Depends(get_session)):
+    """Equip a catalog item onto a character slot (reusing a stowed instance or
+    minting one). Any instance previously in that slot becomes stowed."""
+    char = await _resolve_character_by_id(session, data.get("characterId"))
+    if char is None:
+        raise HTTPException(404, "Character not found")
+    item = await _get_item(session, data.get("itemId"))
+    if not item:
+        raise HTTPException(404, "Item not in catalog")
+    slot = data.get("slot")
+    if slot not in EQUIP_SLOT_KEYS:
+        raise HTTPException(400, "Invalid equipment slot")
+    await inv_ops.equip_instance(session, char, char.id, slot, item, instance_id=data.get("instanceId"))
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/characters/unequip")
+async def unequip_item(data: dict = Body(default={}), session: AsyncSession = Depends(get_session)):
+    """Clear a character's equipment slot — the instance becomes stowed."""
+    char = await _resolve_character_by_id(session, data.get("characterId"))
+    if char is None:
+        raise HTTPException(404, "Character not found")
+    slot = data.get("slot")
+    if slot not in EQUIP_SLOT_KEYS:
+        raise HTTPException(400, "Invalid equipment slot")
+    equipment = dict(char.equipment or {})
+    if equipment.get(slot):
+        equipment[slot] = None
+        char.equipment = equipment
+        await session.commit()
+    return {"ok": True}
+>>>>>>> Stashed changes
 
 
 # ── Quests ────────────────────────────────────────────────────────

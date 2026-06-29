@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
 import { api } from '../lib/api'
+import { useItemsStore } from './itemsStore'
 
 interface PartyState {
   playerCharacter: PlayerCharacter | null
@@ -12,11 +13,8 @@ interface PartyState {
   savePartyMember: (pm: PartyMember) => Promise<void>
   removePartyMember: (id: string) => Promise<void>
   setMembership: (id: string, inParty: boolean) => Promise<void>
-<<<<<<< Updated upstream
-=======
   equipItem: (characterId: string, itemId: string, slot: string, instanceId?: string) => Promise<void>
   unequipSlot: (characterId: string, slot: string) => Promise<void>
->>>>>>> Stashed changes
 }
 
 export const usePartyStore = create<PartyState>((set, get) => ({
@@ -71,8 +69,6 @@ export const usePartyStore = create<PartyState>((set, get) => ({
       partyMembers: get().partyMembers.map((m) => (m.id === saved.id ? saved : m)),
     })
   },
-<<<<<<< Updated upstream
-=======
 
   // Equip/unequip go through the server (instance-aware: reuse a stowed copy or
   // mint one; the prior occupant returns to the pack). Refresh party + inventory.
@@ -87,5 +83,4 @@ export const usePartyStore = create<PartyState>((set, get) => ({
     await get().fetchAll()
     await useItemsStore.getState().fetchInventory()
   },
->>>>>>> Stashed changes
 }))

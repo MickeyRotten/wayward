@@ -35,6 +35,7 @@ from server.ai.summarizer import (
     should_summarize,
 )
 from server.db.database import new_session, switch_active
+from server.db import inventory as inv_ops
 from server.db import storage
 from server.api.schemas import (
     ChatMessageResponse,
@@ -72,6 +73,7 @@ from server.db.database import get_session
 from server.db.models import (
     ChatMessage,
     InventoryStack,
+    ItemInstance,
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
@@ -821,15 +823,26 @@ async def _list_inventory_dicts(session: AsyncSession) -> list[dict]:
     Shape: ``{"itemId", "count", "item": {...} | None}`` — the same shape the
     /inventory route returns and that detect_item_use expects.
     """
-    stacks = (await session.execute(select(InventoryStack))).scalars().all()
+    equipped = await inv_ops.equipped_map(session)
+    instances = (await session.execute(select(ItemInstance))).scalars().all()
     result = []
-    for s in stacks:
-        item = await _get_item(session, s.item_id)
-        result.append({
-            "itemId": s.item_id,
-            "count": s.count,
+    for inst in instances:
+        item = await _get_item(session, inst.item_id)
+        const_data = {
+            "itemId": inst.item_id,
+            "count": inst.count,
+            "instanceId": inst.id,
             "item": _item_to_dict(item) if item else None,
-        })
+        }
+        const_data = {
+            **const_data,
+            **({
+                "equippedBy": equip["characterId"],
+                "equippedByName": equip["characterName"],
+                "slot": equip["slot"],
+            } if (equip := equipped.get(inst.id)) else {}),
+        }
+        result.append(const_data)
     return result
 
 
@@ -847,26 +860,9 @@ async def add_to_inventory(
     if not item:
         raise HTTPException(404, "Item not in catalog")
 
-    existing = (await session.execute(
-        select(InventoryStack).where(InventoryStack.item_id == data.itemId)
-    )).scalars().first()
-
-    if existing:
-        new_count = existing.count + data.count
-        if item.max_stack > 1 and new_count > item.max_stack:
-            raise HTTPException(400, f"Exceeds max stack of {item.max_stack}")
-        existing.count = new_count
-    else:
-        # Check carry capacity
-        total_stacks = (await session.execute(
-            select(func.count()).select_from(InventoryStack)
-        )).scalar()
-        settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-        max_slots = settings.max_carry_slots if settings else MAX_CARRY_SLOTS_DEFAULT
-        if total_stacks >= max_slots:
-            raise HTTPException(400, "Inventory full — no carry slots remaining")
-        session.add(InventoryStack(item_id=data.itemId, count=data.count))
-
+    message, deltas = await inv_ops.grant_items(session, item, data.count, "manual_add")
+    if not deltas:
+        raise HTTPException(400, message)
     await session.commit()
     return {"ok": True}
 
@@ -876,28 +872,21 @@ async def remove_from_inventory(
     data: InventoryRemoveRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    existing = (await session.execute(
-        select(InventoryStack).where(InventoryStack.item_id == data.itemId)
-    )).scalars().first()
-    if not existing:
+    item = await _get_item(session, data.itemId)
+    if not item:
         raise HTTPException(404, "Item not in inventory")
-    existing.count -= data.count
-    if existing.count <= 0:
-        await session.delete(existing)
+    message, deltas = await inv_ops.remove_items(session, item, data.count, "manual_remove")
+    if not deltas:
+        raise HTTPException(404, message)
     await session.commit()
     return {"ok": True}
 
 
 @router.get("/inventory/capacity")
 async def get_inventory_capacity(session: AsyncSession = Depends(get_session)):
-    total_stacks = (await session.execute(
-        select(func.count()).select_from(InventoryStack)
-    )).scalar()
+    used = await inv_ops.capacity_used(session)
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     max_slots = settings.max_carry_slots if settings else MAX_CARRY_SLOTS_DEFAULT
-<<<<<<< Updated upstream
-    return {"used": total_stacks, "max": max_slots}
-=======
     return {"used": used, "max": max_slots}
 
 
@@ -941,10 +930,7 @@ async def unequip_item(data: dict = Body(default={}), session: AsyncSession = De
         char.equipment = equipment
         await session.commit()
     return {"ok": True}
->>>>>>> Stashed changes
 
-
-# ── Quests ────────────────────────────────────────────────────────
 
 async def _quest_to_schema(quest: Quest, session: AsyncSession) -> QuestSchema:
     objectives = (

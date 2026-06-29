@@ -202,6 +202,15 @@ class InventoryStack(Base):
     count: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class ItemInstance(Base):
+    __tablename__ = "item_instances"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    item_id: Mapped[str] = mapped_column(String, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class Quest(Base):
     __tablename__ = "quests"
     __table_args__ = ADVENTURE

@@ -79,10 +79,10 @@ export function ItemsPanel() {
   const handleRemoveSelected = async () => {
     setConfirmRemove(false)
     for (const id of [...selectedIds]) {
-      const stack = inventory.find((s) => s.itemId === id)
+      const stack = inventory.find((s) => s.instanceId === id)
       if (!stack) continue
       try {
-        await removeFromInventory(id, stack.count) // clear the whole stack
+        await removeFromInventory(stack.itemId, stack.count)
       } catch { /* skip */ }
     }
     cancelRemove()
@@ -112,27 +112,21 @@ export function ItemsPanel() {
           if (!item) return null
           return (
             <SelectableRow
-              key={stack.itemId}
+              key={stack.instanceId}
               removeMode={removeMode}
-              checked={selectedIds.has(stack.itemId)}
-              onToggle={() => toggleSelected(stack.itemId)}
+              checked={selectedIds.has(stack.instanceId)}
+              onToggle={() => toggleSelected(stack.instanceId)}
             >
               <ItemCard
                 item={item}
                 count={stack.count}
-<<<<<<< Updated upstream
-                selected={removeMode ? selectedIds.has(stack.itemId) : isSelected(stack.itemId)}
-                onClick={() => (removeMode ? toggleSelected(stack.itemId) : select({ kind: 'item', id: stack.itemId }))}
-                equippedBy={equippedBy.get(stack.itemId)}
-=======
                 selected={removeMode ? selectedIds.has(stack.instanceId) : isSelected(stack.instanceId)}
                 onClick={() => (
                   removeMode
-                    ? (removable && toggleSelected(stack.instanceId))
+                    ? toggleSelected(stack.instanceId)
                     : select({ kind: 'item', id: stack.itemId, instanceId: stack.instanceId })
                 )}
                 equippedBy={stack.equippedByName ? [stack.equippedByName] : undefined}
->>>>>>> Stashed changes
               />
             </SelectableRow>
           )

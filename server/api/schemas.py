@@ -241,6 +241,10 @@ class ItemCatalogUpdate(BaseModel):
 class InventoryStackSchema(BaseModel):
     itemId: str
     count: int
+    instanceId: str | None = None
+    equippedBy: str | None = None
+    equippedByName: str | None = None
+    slot: str | None = None
 
 
 class InventoryAddRequest(BaseModel):

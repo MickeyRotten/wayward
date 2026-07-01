@@ -24,6 +24,7 @@ from server.ai.item_detection import (
 )
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai.worldbuilder import apply_proposal, reverse_chronicler_creations, run_worldbuilder
+from server.ai.action_suggester import run_action_suggester
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
@@ -38,6 +39,8 @@ from server.db.database import new_session, switch_active
 from server.db import inventory as inv_ops
 from server.db import storage
 from server.api.schemas import (
+    ActionSuggestionsResponse,
+    ActionSuggestionsRunRequest,
     ChatMessageResponse,
     ChatMessageUpdate,
     ChatTurnRequest,
@@ -577,6 +580,7 @@ def _narrator_response(n: NarratorConfig) -> NarratorResponse:
         firstMessage=n.first_message or "",
         postHistoryInstructions=n.post_history_instructions or "",
         plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
+        actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
     )
 
 
@@ -611,6 +615,8 @@ async def update_narrator(
         n.post_history_instructions = data.postHistoryInstructions
     if data.plannerInstructions is not None:
         n.planner_instructions = data.plannerInstructions
+    if data.actionSuggestionsEnabled is not None:
+        n.action_suggestions_enabled = data.actionSuggestionsEnabled
     await session.commit()
     return _narrator_response(n)
 
@@ -656,6 +662,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         useTools=bool(s.use_tools),
         worldbuildingMode=s.worldbuilding_mode,
         worldbuildingModelId=s.worldbuilding_model_id,
+        actionSuggestionsModelId=getattr(s, "action_suggestions_model_id", "") or "",
         summaryThreshold=getattr(s, "summary_threshold", 0.7) or 0.7,
         summaryModelId=getattr(s, "summary_model_id", "") or "",
         apiKeySet=bool(s.api_key),
@@ -699,6 +706,7 @@ async def update_openrouter_settings(
     s.use_tools = data.useTools
     s.worldbuilding_mode = data.worldbuildingMode
     s.worldbuilding_model_id = data.worldbuildingModelId
+    s.action_suggestions_model_id = data.actionSuggestionsModelId
     s.summary_threshold = data.summaryThreshold
     s.summary_model_id = data.summaryModelId
     await session.commit()
@@ -1426,6 +1434,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "useTools": bool(settings.use_tools) if settings else True,
             "worldbuildingMode": settings.worldbuilding_mode if settings else "confirmation",
             "worldbuildingModelId": settings.worldbuilding_model_id if settings else "",
+            "actionSuggestionsModelId": getattr(settings, "action_suggestions_model_id", "") if settings else "",
             "summaryThreshold": getattr(settings, "summary_threshold", 0.7) if settings else 0.7,
             "summaryModelId": getattr(settings, "summary_model_id", "") if settings else "",
         },
@@ -1552,6 +1561,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         use_tools=s.get("useTools", True),
         worldbuilding_mode=s.get("worldbuildingMode", "confirmation"),
         worldbuilding_model_id=s.get("worldbuildingModelId", ""),
+        action_suggestions_model_id=s.get("actionSuggestionsModelId", ""),
         summary_threshold=s.get("summaryThreshold", 0.7),
         summary_model_id=s.get("summaryModelId", ""),
     ))
@@ -2265,6 +2275,29 @@ async def worldbuild_reject_all(session: AsyncSession = Depends(get_session)):
     for p in rows:
         p.status = "rejected"
     await session.commit()
+
+
+# ── Action Suggestions ─────────────────────────────────────────────
+
+@router.post("/action-suggestions/run", response_model=ActionSuggestionsResponse)
+async def action_suggestions_run(
+    data: ActionSuggestionsRunRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    turn = data.turn
+    if turn is None:
+        turn = (
+            await session.execute(select(func.max(ChatMessage.turn_number)))
+        ).scalar() or 0
+    if turn <= 0:
+        return ActionSuggestionsResponse(suggestions=[])
+
+    narrator = (await session.execute(select(NarratorConfig))).scalars().first()
+    if not narrator or not narrator.action_suggestions_enabled:
+        return ActionSuggestionsResponse(suggestions=[])
+
+    suggestions = await run_action_suggester(turn)
+    return ActionSuggestionsResponse(suggestions=suggestions)
 
 
 # ── Planner (Planning mode) ───────────────────────────────────────

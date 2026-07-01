@@ -5,6 +5,8 @@ import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useNarratorStore } from '../../state/narratorStore'
+import { useActionSuggestionsStore } from '../../state/actionSuggestionsStore'
+import { ItemCard } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveSceneBanner } from '../../lib/location'
@@ -51,8 +53,12 @@ export function ChatScene() {
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
   const catalog = useItemsStore((s) => s.catalog)
+  const inventory = useItemsStore((s) => s.inventory)
+  const actionSuggestionsEnabled = useNarratorStore((s) => s.actionSuggestionsEnabled)
+  const actionSuggestions = useActionSuggestionsStore((s) => s.suggestions)
 
   const [input, setInput] = useState('')
+  const [itemPickerOpen, setItemPickerOpen] = useState(false)
   const [promptLog, setPromptLog] = useState<PromptLogMessage[] | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -568,6 +574,65 @@ export function ChatScene() {
         </div>
       )}
 
+      {/* Quick actions */}
+      {!planningMode && (
+        <div className="border-t border-line2 px-3 pt-2 pb-1 bg-bg1 flex flex-wrap items-center gap-1.5">
+          <QuickActionButton
+            label="Look Around"
+            disabled={busy || !apiKeySet}
+            onClick={() => sendTurn('I look around carefully.')}
+          />
+          <QuickActionButton
+            label="Talk to Party"
+            disabled={busy || !apiKeySet}
+            onClick={() => sendTurn('I turn to talk to my party.')}
+          />
+          <QuickActionButton
+            label="Rest"
+            disabled={busy || !apiKeySet}
+            onClick={() => sendTurn('I take a moment to rest.')}
+          />
+          <div className="relative">
+            <QuickActionButton
+              label="Use an Item"
+              disabled={busy || !apiKeySet || inventory.length === 0}
+              onClick={() => setItemPickerOpen((o) => !o)}
+            />
+            {itemPickerOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setItemPickerOpen(false)} />
+                <div className="absolute bottom-full left-0 mb-2 w-64 max-h-72 overflow-y-auto bg-bg2 border border-line2 rounded-md z-20 p-1.5 space-y-1">
+                  {inventory.length === 0 ? (
+                    <p className="text-[11px] text-textdim font-body px-2 py-1.5">No items.</p>
+                  ) : (
+                    inventory.map((stack) => stack.item ? (
+                      <ItemCard
+                        key={stack.itemId}
+                        item={stack.item}
+                        selected={false}
+                        count={stack.count}
+                        onClick={() => {
+                          setItemPickerOpen(false)
+                          sendTurn(`I use the ${stack.item!.name}.`)
+                        }}
+                      />
+                    ) : null)
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          {actionSuggestionsEnabled && actionSuggestions.map((s) => (
+            <QuickActionButton
+              key={s}
+              label={s}
+              disabled={busy || !apiKeySet}
+              onClick={() => sendTurn(s)}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Input */}
       <div className="border-t border-line2 p-3 bg-bg1">
         <div className="flex items-end gap-2">
@@ -729,6 +794,21 @@ function TimeOfDayIcon({ timeOfDay }: { timeOfDay: string }) {
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
     </svg>
+  )
+}
+
+// ── Quick action button ──────────────────────────────────────────────
+
+function QuickActionButton({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="font-ui text-[9px] uppercase tracking-wider border border-line2 text-textsec px-2.5 py-1 hover:text-text hover:border-gold transition-colors disabled:opacity-40 disabled:hover:text-textsec disabled:hover:border-line2"
+    >
+      {label}
+    </button>
   )
 }
 

@@ -90,6 +90,7 @@ export interface OpenRouterSettings {
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
+  actionSuggestionsModelId: string
   summaryThreshold: number
   summaryModelId: string
 }
@@ -106,6 +107,10 @@ export interface WorldbuildProposal {
   summary: string
   status: 'pending' | 'accepted' | 'rejected' | 'failed'
   note: string | null
+}
+
+export interface ActionSuggestionsResponse {
+  suggestions: string[]
 }
 
 export interface OpenRouterSettingsUpdate extends OpenRouterSettings {

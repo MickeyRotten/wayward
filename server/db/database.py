@@ -173,6 +173,7 @@ async def _run_app_migrations() -> None:
     migrations = [
         ("openrouter_settings", "summary_threshold", "ALTER TABLE openrouter_settings ADD COLUMN summary_threshold FLOAT DEFAULT 0.7"),
         ("openrouter_settings", "summary_model_id", "ALTER TABLE openrouter_settings ADD COLUMN summary_model_id VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "action_suggestions_model_id", "ALTER TABLE openrouter_settings ADD COLUMN action_suggestions_model_id VARCHAR DEFAULT ''"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:
@@ -188,6 +189,7 @@ async def _run_scope_migrations() -> None:
     a no-op for them; kept for forward compatibility.)"""
     migrations: list[tuple[str, str, str]] = [
         ("adventure.chat_messages", "day", "ALTER TABLE adventure.chat_messages ADD COLUMN day INTEGER"),
+        ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
     ]
     if not migrations:
         return

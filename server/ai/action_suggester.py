@@ -1,0 +1,194 @@
+"""Action Suggestions — a lightweight one-shot agent.
+
+Runs after a narrator turn (opt-in, per campaign) to propose a handful of
+short, scene-specific action phrases the player might want to try next.
+Unlike the Chronicler (``worldbuilder.py``) this makes no database writes and
+keeps no state: it's a single tool call that returns a plain list of strings,
+displayed as buttons for the current turn only. A page refresh or a new turn
+simply regenerates them.
+
+See CLAUDE.md > The Chronicler (this feature follows the same one-shot
+``chat_completion_agent_turn`` pattern, scaled down).
+"""
+
+import json
+import logging
+
+from sqlalchemy import select
+
+from server.ai.openrouter import chat_completion_agent_turn
+from server.db.database import new_session
+from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, PartyMember, Quest
+
+log = logging.getLogger("wayward.action_suggester")
+
+# Tool-emitting call for a handful of short phrases — small budget by design.
+_MAX_TOKENS = 300
+_MAX_SUGGESTIONS = 4
+
+GUIDANCE = """You suggest short, concrete actions the player could try next, based on the current scene.
+
+Call suggest_actions with 0-4 phrases. Each phrase should:
+- Be written as something the player does ("Push open the heavy door", "Ask Tifa about the ruins").
+- Be short — under 8 words.
+- Be grounded in something specific just mentioned in the narration (an object, a person, a place, a choice) — not generic.
+- Never duplicate these already-available buttons: looking around, resting, talking to the party, or using an item. Don't suggest attacking or fighting — there is no combat system.
+
+If the scene doesn't support any good specific suggestions, call suggest_actions with an empty list. Always call the tool — never reply with prose."""
+
+TOOL_SCHEMA: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_actions",
+            "description": "Propose short, scene-specific action phrases for the player to choose from.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": _MAX_SUGGESTIONS,
+                        "description": "0-4 short action phrases, e.g. 'Ask Tifa about the ruins'.",
+                    },
+                },
+                "required": ["actions"],
+            },
+        },
+    },
+]
+
+
+def _parse_args(raw: str) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _clip(text: str, limit: int) -> str:
+    text = text or ""
+    return text if len(text) <= limit else text[:limit].rstrip() + " …"
+
+
+async def _latest_narration(session, turn_number: int) -> str:
+    """The active narration for this turn (highest variant)."""
+    msgs = (await session.execute(
+        select(ChatMessage).where(
+            ChatMessage.turn_number == turn_number,
+            ChatMessage.role == "assistant",
+            ChatMessage.mode == "narrator",
+        )
+    )).scalars().all()
+    return max(msgs, key=lambda m: m.variant).content if msgs else ""
+
+
+async def _latest_scene_fields(session, turn_number: int) -> dict:
+    """Latest non-null location/time/weather declared up to this turn — same
+    'most recent wins' rule the client uses in lib/location.ts."""
+    msgs = (
+        await session.execute(
+            select(ChatMessage)
+            .where(ChatMessage.turn_number <= turn_number, ChatMessage.mode == "narrator")
+            .order_by(ChatMessage.id)
+        )
+    ).scalars().all()
+    location = time_of_day = weather = None
+    for m in msgs:
+        if m.location:
+            location = m.location
+        if m.time_of_day:
+            time_of_day = m.time_of_day
+        if m.weather:
+            weather = m.weather
+    return {"location": location, "timeOfDay": time_of_day, "weather": weather}
+
+
+async def _build_context(session, turn_number: int) -> str:
+    """A minimal scene snapshot — deliberately not a full world-state dump."""
+    scene = await _latest_scene_fields(session, turn_number)
+    narration = await _latest_narration(session, turn_number)
+
+    members = (
+        await session.execute(select(PartyMember).where(PartyMember.in_party == True))  # noqa: E712
+    ).scalars().all()
+    member_names = [m.basic_info.get("name", "") for m in members if m.basic_info.get("name")]
+
+    quests = (
+        await session.execute(select(Quest).where(Quest.status == "active"))
+    ).scalars().all()
+    quest_titles = [q.title for q in quests if q.title]
+
+    lines = ["CURRENT SCENE:"]
+    if scene["location"]:
+        lines.append(f"  Location: {scene['location']}")
+    if scene["timeOfDay"]:
+        lines.append(f"  Time: {scene['timeOfDay']}")
+    if scene["weather"]:
+        lines.append(f"  Weather: {scene['weather']}")
+    if member_names:
+        lines.append(f"  Party: {', '.join(member_names)}")
+    if quest_titles:
+        lines.append(f"  Active quests: {', '.join(quest_titles)}")
+    lines.append("")
+    lines.append("MOST RECENT NARRATION:")
+    lines.append(_clip(narration, 900))
+    return "\n".join(lines)
+
+
+async def run_action_suggester(turn_number: int) -> list[str]:
+    """Run the action-suggestion agent for a turn. Returns a plain list of
+    short action strings (possibly empty). Never raises — any failure
+    (disabled, missing key, bad/missing tool call, HTTP error) yields []."""
+    if turn_number <= 0:
+        return []
+
+    async with new_session() as session:
+        narrator = (await session.execute(select(NarratorConfig))).scalars().first()
+        if not narrator or not narrator.action_suggestions_enabled:
+            return []
+
+        settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+        if not settings or not settings.api_key or not settings.model_id:
+            return []
+
+        model_id = settings.action_suggestions_model_id or settings.model_id
+        context = await _build_context(session, turn_number)
+
+        messages = [
+            {"role": "system", "content": GUIDANCE},
+            {"role": "user", "content": context},
+        ]
+
+        log.info("ACTION-SUGGEST REQUEST turn=%s | model=%s", turn_number, model_id)
+
+        tool_calls: list[dict] = []
+        try:
+            async for ev in chat_completion_agent_turn(
+                api_key=settings.api_key,
+                model_id=model_id,
+                messages=messages,
+                temperature=0.9,
+                max_tokens=_MAX_TOKENS,
+                tools=TOOL_SCHEMA,
+            ):
+                if ev["type"] == "result":
+                    tool_calls = ev["tool_calls"]
+        except Exception:
+            log.exception("Action-suggester call failed")
+            return []
+
+        for tc in tool_calls:
+            if tc["name"] != "suggest_actions":
+                continue
+            args = _parse_args(tc["arguments"])
+            actions = args.get("actions")
+            if isinstance(actions, list):
+                cleaned = [str(a).strip() for a in actions if str(a).strip()]
+                return cleaned[:_MAX_SUGGESTIONS]
+
+        log.info("ACTION-SUGGEST no tool call turn=%s | model=%s", turn_number, model_id)
+        return []

@@ -25,6 +25,7 @@ from server.ai.item_detection import (
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai.worldbuilder import apply_proposal, reverse_chronicler_creations, run_worldbuilder
 from server.ai.action_suggester import run_action_suggester
+from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
@@ -69,6 +70,8 @@ from server.api.schemas import (
     QuestObjectiveUpdate,
     QuestSchema,
     QuestUpdate,
+    ScenarioResponse,
+    ScenarioUpdate,
     WorldbuildProposalSchema,
     WorldbuildRunRequest,
 )
@@ -566,6 +569,77 @@ async def remove_party_member(
         raise HTTPException(404, "Party member not found")
     await session.delete(pm)
     await session.commit()
+
+
+# ── Scenario ───────────────────────────────────────────────────────
+
+async def _get_or_create_scenario_entry(session: AsyncSession) -> LorebookEntry:
+    """Fetch the Scenario LorebookEntry — matched by title, case-insensitively,
+    the same lookup server/ai/planner.py's set_scenario/get_scenario tools
+    already use. Creates it if a from-scratch campaign somehow lacks it."""
+    scn = (await session.execute(
+        select(LorebookEntry).where(func.lower(LorebookEntry.title) == "scenario")
+    )).scalars().first()
+    if not scn:
+        scn = LorebookEntry(title="Scenario", cat="world", permanent=True, locked=True)
+        session.add(scn)
+        await session.commit()
+        await session.refresh(scn)
+    return scn
+
+
+def _scenario_to_schema(scn: LorebookEntry) -> ScenarioResponse:
+    fields = scn.scenario_fields or {}
+    return ScenarioResponse(
+        setting=fields.get("setting", ""),
+        historyBrief=fields.get("historyBrief", ""),
+        species=fields.get("species", ""),
+        geography=fields.get("geography", ""),
+        techAndMagic=fields.get("techAndMagic", ""),
+        other=fields.get("other", ""),
+    )
+
+
+@router.get("/scenario", response_model=ScenarioResponse)
+async def get_scenario(session: AsyncSession = Depends(get_session)):
+    scn = await _get_or_create_scenario_entry(session)
+    migrated = migrate_legacy_fields(scn.scenario_fields, scn.content)
+    if migrated != (scn.scenario_fields or {}):
+        scn.scenario_fields = migrated
+        await session.commit()
+        await session.refresh(scn)
+    return _scenario_to_schema(scn)
+
+
+@router.put("/scenario", response_model=ScenarioResponse)
+async def update_scenario(
+    data: ScenarioUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    scn = await _get_or_create_scenario_entry(session)
+    fields = dict(scn.scenario_fields or {})
+    if data.setting is not None:
+        fields["setting"] = data.setting
+    if data.historyBrief is not None:
+        fields["historyBrief"] = data.historyBrief
+    if data.species is not None:
+        fields["species"] = data.species
+    if data.geography is not None:
+        fields["geography"] = data.geography
+    if data.techAndMagic is not None:
+        fields["techAndMagic"] = data.techAndMagic
+    if data.other is not None:
+        fields["other"] = data.other
+    scn.scenario_fields = fields
+    scn.content = compose_scenario_content(fields)
+    # Defensive: keep the invariants the prompt-injection pipeline depends on,
+    # in case a row predates these being set correctly.
+    scn.cat = "world"
+    scn.permanent = True
+    scn.locked = True
+    await session.commit()
+    await session.refresh(scn)
+    return _scenario_to_schema(scn)
 
 
 # ── Narrator Config ───────────────────────────────────────────────

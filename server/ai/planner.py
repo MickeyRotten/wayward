@@ -29,6 +29,7 @@ from server.ai.narrator_actions import (
 )
 from server.ai.openrouter import chat_completion_agent_turn
 from server.ai.prompt_builder import _estimate_tokens, _trim_to_budget
+from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
 from server.ai.worldbuilder import LORE_CATS, QUEST_STATUSES, _resolve_lore, _resolve_quest
 from server.db.database import new_session
 from server.db.models import (
@@ -68,7 +69,7 @@ How you work:
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
 - CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
 - READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, quest, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
-- SENSITIVE OVERWRITES: set_scenario, set_narrator_instructions, and set_first_message REPLACE the whole existing text and take effect immediately. Only do them when the player clearly asks, and always tell the player explicitly in your reply that you changed the Scenario / Narrator instructions / opening narration.
+- SENSITIVE OVERWRITES: set_narrator_instructions and set_first_message REPLACE the whole existing text and take effect immediately — only do them when the player clearly asks. set_scenario is a PARTIAL update instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario first if you need to see the current fields before editing one. Always tell the player explicitly in your reply what you changed.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
 - If the player is just chatting or asking questions, answer normally without calling tools.
@@ -159,9 +160,21 @@ TOOL_SCHEMAS: list[dict] = [
     _fn("update_pc", "Edit the player character's details.",
         {"name": {"type": "string"}, "species": {"type": "string"}, "description": {"type": "string"},
          "personality": {"type": "string"}, "gender": {"type": "string"}}, []),
-    _fn("set_scenario", "Rewrite the Scenario — the framing context for the whole adventure.",
-        {"content": {"type": "string"}}, ["content"]),
-    _fn("get_scenario", "Read the current Scenario text.", {}, []),
+    _fn(
+        "set_scenario",
+        "Edit the Scenario's structured fields — the framing context for the whole adventure. "
+        "PARTIAL update: only the fields you provide are changed; fields you omit are left untouched.",
+        {
+            "setting": {"type": "string", "description": "The core setting/premise."},
+            "historyBrief": {"type": "string", "description": "Brief history of the world."},
+            "species": {"type": "string", "description": "Notable species/peoples."},
+            "geography": {"type": "string", "description": "Geography/regions."},
+            "techAndMagic": {"type": "string", "description": "Technology and/or magic systems."},
+            "other": {"type": "string", "description": "Anything else that frames the world."},
+        },
+        [],
+    ),
+    _fn("get_scenario", "Read the Scenario's current structured fields (setting, historyBrief, species, geography, techAndMagic, other).", {}, []),
     _fn("set_narrator_instructions", "Replace the Narrator's core system instructions (tone/rules of narration).",
         {"content": {"type": "string"}}, ["content"]),
     _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
@@ -444,13 +457,28 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         if not scn:
             scn = LorebookEntry(title="Scenario", cat="world", permanent=True, locked=True)
             session.add(scn)
-        scn.content = args.get("content", "")
-        return "Rewrote the Scenario.", None
+        fields = dict(scn.scenario_fields or {})
+        changed = []
+        for key, _label in SCENARIO_FIELDS:
+            if args.get(key) is not None:
+                fields[key] = args[key]
+                changed.append(key)
+        if not changed:
+            return "No Scenario fields were provided to update.", None
+        scn.scenario_fields = fields
+        scn.content = compose_scenario_content(fields)
+        return f"Updated the Scenario ({', '.join(changed)}).", None
 
     if name == "get_scenario":
         scn = (await session.execute(
             select(LorebookEntry).where(func.lower(LorebookEntry.title) == "scenario"))).scalars().first()
-        return (scn.content or "(empty)") if scn else "(no Scenario set)", None
+        if not scn:
+            return "(no Scenario set)", None
+        fields = migrate_legacy_fields(scn.scenario_fields, scn.content)
+        if fields != (scn.scenario_fields or {}):
+            scn.scenario_fields = fields  # one-time migration; persisted by the outer per-round commit
+        lines = [f"{label}: {fields.get(key) or '(empty)'}" for key, label in SCENARIO_FIELDS]
+        return "\n".join(lines), None
 
     if name == "set_narrator_instructions":
         cfg = (await session.execute(select(NarratorConfig))).scalars().first()

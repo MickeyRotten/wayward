@@ -8,6 +8,7 @@ import { useSettingsStore } from './settingsStore'
 import { useItemsStore } from './itemsStore'
 import { useQuestsStore } from './questsStore'
 import { useLoreStore } from './loreStore'
+import { useScenarioStore } from './scenarioStore'
 import { useWorldbuildStore } from './worldbuildStore'
 import { useUiStore } from './uiStore'
 
@@ -35,6 +36,7 @@ export async function reloadAll() {
     useQuestsStore.getState().fetchQuests(),
     useLoreStore.getState().fetchEntries(),
     useLoreStore.getState().fetchConfig(),
+    useScenarioStore.getState().fetchScenario(),
     useWorldbuildStore.getState().fetchProposals(),
   ])
 }

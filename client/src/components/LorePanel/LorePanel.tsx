@@ -8,6 +8,7 @@ import { SelectionBar } from '../SelectionBar'
 import { ItemCard } from '../ItemCard'
 import { CategoryIcon } from '../CategoryIcon'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { ScenarioEditor } from './ScenarioEditor'
 import type { LoreCategory, LorebookEntry, Rarity } from '@shared/types/models'
 
 const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
@@ -61,6 +62,7 @@ export function LorePanel() {
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
+  const [selectedTab, setSelectedTab] = useState<'scenario' | LoreCategory>('scenario')
   const [createError, setCreateError] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('newest')
   const [sortAsc, setSortAsc] = useState(false)
@@ -91,6 +93,7 @@ export function LorePanel() {
     () => sortList(
       entries
         .filter((e) => e.cat === activeCategory)
+        .filter((e) => !(e.locked && e.title === 'Scenario'))
         .filter((e) => !query || e.title.toLowerCase().includes(query) || e.keywords.some((k) => k.toLowerCase().includes(query))),
       sortKey, sortAsc,
       { name: (e) => e.title, type: (e) => e.cat, rarity: () => 0 },
@@ -148,157 +151,174 @@ export function LorePanel() {
         <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">LOREBOOK</h2>
       </div>
 
-      {/* Category sub-tabs */}
+      {/* Category sub-tabs — Scenario first, then the 5 generic categories */}
       <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
+            selectedTab === 'scenario'
+              ? 'text-gold border-gold/40 bg-gold/5'
+              : 'text-textsec border-line hover:text-text hover:border-line2'
+          }`}
+          onClick={() => setSelectedTab('scenario')}
+        >
+          SCENARIO
+        </button>
         {CATEGORY_TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
-              activeCategory === tab.id
+              selectedTab === tab.id
                 ? 'text-gold border-gold/40 bg-gold/5'
                 : 'text-textsec border-line hover:text-text hover:border-line2'
             }`}
-            onClick={() => setCategory(tab.id)}
+            onClick={() => { setSelectedTab(tab.id); setCategory(tab.id) }}
           >
             {tab.label.toUpperCase()}
           </button>
         ))}
       </div>
 
-      {/* Search input */}
-      <div className="px-4 pb-2">
-        <input
-          className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-          placeholder="Search by title or keyword..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
+      {selectedTab !== 'scenario' && (
+        <>
+          {/* Search input */}
+          <div className="px-4 pb-2">
+            <input
+              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              placeholder="Search by title or keyword..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
 
-      {/* Sorting (available in both modes) */}
-      <div className="px-4 pb-3 flex items-center gap-2">
-        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase shrink-0">Sorting:</span>
-        <select
-          className="flex-1 min-w-0 border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text outline-none focus:border-line2"
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value as SortKey)}
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.id} value={o.id}>{o.label}</option>
-          ))}
-        </select>
-        <button
-          type="button"
-          title={sortAsc ? 'Ascending' : 'Descending'}
-          className="shrink-0 border border-line text-textsec hover:text-text hover:border-line2 px-1.5 py-1 transition-colors"
-          onClick={() => setSortAsc((a) => !a)}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            {sortAsc ? <path d="M12 19V5M5 12l7-7 7 7" /> : <path d="M12 5v14M5 12l7 7 7-7" />}
-          </svg>
-        </button>
-      </div>
-
-      {/* Entry list */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
-        {empty && (
-          <p className="text-[12px] text-textdim font-body px-4 py-3 text-center">
-            {query ? 'No matching entries' : 'No entries in this category'}
-          </p>
-        )}
-
-        <div className="space-y-1.5">
-          {isItems
-            ? itemList.map((item) => (
-                <SelectableRow
-                  key={item.id}
-                  removeMode={removeMode}
-                  checked={selectedIds.has(item.id)}
-                  removable
-                  onToggle={() => toggleSelected(item.id)}
-                >
-                  <ItemCard
-                    item={item}
-                    selected={removeMode ? selectedIds.has(item.id) : isItemSelected(item.id)}
-                    onClick={() => (removeMode ? toggleSelected(item.id) : select({ kind: 'item', id: item.id }))}
-                  />
-                </SelectableRow>
-              ))
-            : filteredEntries.map((entry) => (
-                <SelectableRow
-                  key={entry.id}
-                  removeMode={removeMode}
-                  checked={selectedIds.has(entry.id)}
-                  removable={!entry.locked}
-                  onToggle={() => toggleSelected(entry.id)}
-                >
-                  <LoreCard
-                    entry={entry}
-                    selected={removeMode ? selectedIds.has(entry.id) : isLoreSelected(entry.id)}
-                    onClick={() => {
-                      if (!removeMode) select({ kind: 'lore', id: entry.id })
-                      else if (!entry.locked) toggleSelected(entry.id)
-                    }}
-                  />
-                </SelectableRow>
+          {/* Sorting (available in both modes) */}
+          <div className="px-4 pb-3 flex items-center gap-2">
+            <span className="font-ui text-[9px] tracking-wider text-textdim uppercase shrink-0">Sorting:</span>
+            <select
+              className="flex-1 min-w-0 border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text outline-none focus:border-line2"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
               ))}
-        </div>
-      </div>
+            </select>
+            <button
+              type="button"
+              title={sortAsc ? 'Ascending' : 'Descending'}
+              className="shrink-0 border border-line text-textsec hover:text-text hover:border-line2 px-1.5 py-1 transition-colors"
+              onClick={() => setSortAsc((a) => !a)}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {sortAsc ? <path d="M12 19V5M5 12l7-7 7 7" /> : <path d="M12 5v14M5 12l7 7 7-7" />}
+              </svg>
+            </button>
+          </div>
 
-      {/* Footer — managing entries is the domain of Edit Mode */}
-      {editMode && (
-        <div className="shrink-0 px-4 pb-4 space-y-1.5">
-          {removeMode ? (
-            <>
-              <button
-                type="button"
-                disabled={selectedIds.size === 0}
-                className="w-full font-ui text-[10px] tracking-wider text-danger border border-danger-border bg-danger-bg hover:text-danger-hover px-3 py-2 transition-colors text-center disabled:opacity-30 disabled:cursor-not-allowed"
-                onClick={() => setConfirmRemove(true)}
-              >
-                REMOVE SELECTED ENTRIES{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-              </button>
-              <button
-                type="button"
-                className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
-                onClick={cancelRemove}
-              >
-                CANCEL
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
-                onClick={() => setRemoveMode(true)}
-              >
-                REMOVE ENTRIES
-              </button>
-              <button
-                type="button"
-                className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
-                onClick={handleCreate}
-              >
-                + NEW ENTRY
-              </button>
-              {createError && (
-                <p className="text-[11px] text-danger font-body mt-1 px-1">{createError}</p>
+          {/* Entry list */}
+          <div className="flex-1 overflow-y-auto px-3 pb-3">
+            {empty && (
+              <p className="text-[12px] text-textdim font-body px-4 py-3 text-center">
+                {query ? 'No matching entries' : 'No entries in this category'}
+              </p>
+            )}
+
+            <div className="space-y-1.5">
+              {isItems
+                ? itemList.map((item) => (
+                    <SelectableRow
+                      key={item.id}
+                      removeMode={removeMode}
+                      checked={selectedIds.has(item.id)}
+                      removable
+                      onToggle={() => toggleSelected(item.id)}
+                    >
+                      <ItemCard
+                        item={item}
+                        selected={removeMode ? selectedIds.has(item.id) : isItemSelected(item.id)}
+                        onClick={() => (removeMode ? toggleSelected(item.id) : select({ kind: 'item', id: item.id }))}
+                      />
+                    </SelectableRow>
+                  ))
+                : filteredEntries.map((entry) => (
+                    <SelectableRow
+                      key={entry.id}
+                      removeMode={removeMode}
+                      checked={selectedIds.has(entry.id)}
+                      removable={!entry.locked}
+                      onToggle={() => toggleSelected(entry.id)}
+                    >
+                      <LoreCard
+                        entry={entry}
+                        selected={removeMode ? selectedIds.has(entry.id) : isLoreSelected(entry.id)}
+                        onClick={() => {
+                          if (!removeMode) select({ kind: 'lore', id: entry.id })
+                          else if (!entry.locked) toggleSelected(entry.id)
+                        }}
+                      />
+                    </SelectableRow>
+                  ))}
+            </div>
+          </div>
+
+          {/* Footer — managing entries is the domain of Edit Mode */}
+          {editMode && (
+            <div className="shrink-0 px-4 pb-4 space-y-1.5">
+              {removeMode ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={selectedIds.size === 0}
+                    className="w-full font-ui text-[10px] tracking-wider text-danger border border-danger-border bg-danger-bg hover:text-danger-hover px-3 py-2 transition-colors text-center disabled:opacity-30 disabled:cursor-not-allowed"
+                    onClick={() => setConfirmRemove(true)}
+                  >
+                    REMOVE SELECTED ENTRIES{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
+                    onClick={cancelRemove}
+                  >
+                    CANCEL
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
+                    onClick={() => setRemoveMode(true)}
+                  >
+                    REMOVE ENTRIES
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line hover:border-line2 hover:text-text px-3 py-2 transition-colors text-center"
+                    onClick={handleCreate}
+                  >
+                    + NEW ENTRY
+                  </button>
+                  {createError && (
+                    <p className="text-[11px] text-danger font-body mt-1 px-1">{createError}</p>
+                  )}
+                </>
               )}
-            </>
+            </div>
           )}
-        </div>
+
+          {confirmRemove && (
+            <ConfirmDialog
+              confirmLabel="REMOVE"
+              message={`Remove ${selectedIds.size} selected ${isItems ? 'item' : 'entry'}(s)? This cannot be undone.`}
+              onConfirm={handleRemoveSelected}
+              onCancel={() => setConfirmRemove(false)}
+            />
+          )}
+        </>
       )}
 
-      {confirmRemove && (
-        <ConfirmDialog
-          confirmLabel="REMOVE"
-          message={`Remove ${selectedIds.size} selected ${isItems ? 'item' : 'entry'}(s)? This cannot be undone.`}
-          onConfirm={handleRemoveSelected}
-          onCancel={() => setConfirmRemove(false)}
-        />
-      )}
+      {selectedTab === 'scenario' && <ScenarioEditor />}
     </div>
   )
 }

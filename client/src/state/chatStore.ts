@@ -41,7 +41,7 @@ const TOOL_STATUS: Record<string, string> = {
   delete_member: 'Removing a party member',
   set_in_party: 'Updating the party',
   update_pc: 'Editing the player character',
-  set_scenario: 'Rewriting the Scenario',
+  set_scenario: 'Editing the Scenario',
   get_scenario: 'Reading the Scenario',
   set_narrator_instructions: 'Updating Narrator instructions',
   get_narrator_instructions: 'Reading Narrator instructions',

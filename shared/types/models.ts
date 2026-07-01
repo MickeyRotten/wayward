@@ -213,6 +213,15 @@ export interface LorebookConfig {
   injectionPosition: Record<LoreCategory, 'top' | 'bottom' | 'before_input'>
 }
 
+export interface ScenarioFields {
+  setting: string
+  historyBrief: string
+  species: string
+  geography: string
+  techAndMagic: string
+  other: string
+}
+
 export interface OpenRouterModel {
   id: string
   name: string

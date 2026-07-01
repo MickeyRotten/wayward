@@ -19,6 +19,7 @@ interface SettingsState {
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
+  actionSuggestionsModelId: string
   summaryThreshold: number
   summaryModelId: string
   apiKeySet: boolean
@@ -48,6 +49,7 @@ function applyResponse(s: SettingsResponse) {
     useTools: s.useTools,
     worldbuildingMode: s.worldbuildingMode,
     worldbuildingModelId: s.worldbuildingModelId,
+    actionSuggestionsModelId: s.actionSuggestionsModelId,
     summaryThreshold: s.summaryThreshold,
     summaryModelId: s.summaryModelId,
     apiKeySet: s.apiKeySet,
@@ -71,6 +73,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   useTools: true,
   worldbuildingMode: 'confirmation',
   worldbuildingModelId: '',
+  actionSuggestionsModelId: '',
   summaryThreshold: 0.7,
   summaryModelId: '',
   apiKeySet: false,
@@ -100,6 +103,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       useTools: update.useTools ?? state.useTools,
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,
+      actionSuggestionsModelId: update.actionSuggestionsModelId ?? state.actionSuggestionsModelId,
       summaryThreshold: update.summaryThreshold ?? state.summaryThreshold,
       summaryModelId: update.summaryModelId ?? state.summaryModelId,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),

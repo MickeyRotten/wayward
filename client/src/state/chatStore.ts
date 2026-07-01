@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { useItemsStore } from './itemsStore'
 import { usePartyStore } from './partyStore'
 import { useWorldbuildStore } from './worldbuildStore'
+import { useActionSuggestionsStore } from './actionSuggestionsStore'
 import { useLoreStore } from './loreStore'
 import { useQuestsStore } from './questsStore'
 import { useNarratorStore } from './narratorStore'
@@ -243,6 +244,7 @@ function refreshWorldPanels() {
 async function _handleStream(url: string, body: object) {
   const { set, get } = { set: useChatStore.setState, get: useChatStore.getState }
   _aborted = false
+  useActionSuggestionsStore.getState().clear()
 
   try {
     const res = await fetch(url, {
@@ -347,6 +349,7 @@ async function _handleStream(url: string, body: object) {
         // disabled). Fire-and-forget so it never blocks the chat UI.
         const latestTurn = threadMaxTurn(get().messages, false)
         if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
+        if (latestTurn > 0) void useActionSuggestionsStore.getState().runForTurn(latestTurn)
       }
     }
   } catch (e) {

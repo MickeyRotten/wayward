@@ -489,3 +489,16 @@ Done (commit 66fb5bf): reloadAll now uses Promise.allSettled, so one failing sto
 Done (commit 0a00300): this was fallout from the item-instances merge — the server + some client files were instance-based but itemsStore/models.ts/ItemsPanel/the editors had reverted to pre-instance. Reconciled the client back to the instance model (InventoryStack type, itemsStore.removeInstance, ItemsPanel + EquipSlotFields, PartyInspector equip/unequip, ChangeNotices), added the /inventory/remove-instance endpoint, and restored the idempotent migrate_to_item_instances so fresh + existing DBs convert catalog-id equipment + stacks into non-stacking instances (kept the merged Action-Suggestions/Scenario migrations). Verified: client build clean; fresh-seed smoke = 10 instances, 7 worn slots each resolving to a distinct instance (Tifa's two gloves are now two copies).
 
 ---
+[x] Bug: In Party Member view, when I unequip an item, it's removed from the Party Member's equipment, but still shows it as equipped in Inventory. I cannot re-equip it in the Party Member view (probably for this reason.)
+
+Done (commit 86e161d): the character sheets write equipment directly via savePlayerCharacter/savePartyMember, which weren't refreshing the inventory store — so its equipped/stowed flags (derived server-side from the equipment dicts) went stale, leaving the item shown as equipped and out of the sheet's stowed picker. Both save methods now refetch the inventory after saving, so unequip immediately frees the copy and it can be re-equipped.
+
+---
+
+[x] Restore: 
+- Add Remove -button into Inventory Item view. Removes the item from Inventory (Could be renamed to Drop Item).
+- Add the missing Equip / Unequip -button into Inventory Item view, with the old functionality: (Equip lives in the Inspector view, per your follow-up): selecting an item opens the Inspector, which for Equipment shows an "Equip" section — current wearers (name · slot) each with an UNEQUIP button, plus an "+ EQUIP TO…" button that lists the PC and ALL party members (including benched) to pick from. Equipping places the item in the best-fitting slot (an empty fitting slot if available, else the first fitting slot — whose previous item is automatically unequipped via lib/equipSlots.pickEquipSlot). Equipment references the item (it isn't consumed from the inventory stack). Works in Play (view) mode where gear management lives.
+
+Done (commit 86e161d): the item Inspector's Equip section is back to the aggregate view — every current wearer shown as name · slot with an UNEQUIP button, plus a "+ EQUIP TO…" picker listing the PC and ALL party members (including benched). Equipping takes a stowed copy into the best-fitting slot (pickEquipSlot; prior occupant auto-unequipped) and references the item without consuming it. Added a "DROP ITEM" button in the Inventory section that removes a stowed copy from the pack. (This replaced the narrower instance-only "This Copy" section.)
+
+---

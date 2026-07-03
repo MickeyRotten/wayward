@@ -898,6 +898,12 @@ async def delete_item(
 
 MAX_CARRY_SLOTS_DEFAULT = 12
 
+# The 12 valid equipment slot keys (used to validate /characters/equip|unequip).
+EQUIP_SLOT_KEYS = {
+    "head", "neck", "torsoOver", "torsoUnder", "leftHand", "rightHand",
+    "waist", "legsOver", "legsUnder", "feet", "accessory1", "accessory2",
+}
+
 
 async def _list_inventory_dicts(session: AsyncSession) -> list[dict]:
     """Return the current inventory as a list of stack dicts.

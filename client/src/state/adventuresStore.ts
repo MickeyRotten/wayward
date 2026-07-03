@@ -23,10 +23,12 @@ interface AdventuresState {
   remove: (id: string) => Promise<void>
 }
 
-/** Re-fetch every store after the active adventure/campaign changed. */
+/** Re-fetch every store after the active adventure/campaign changed.
+ *  Uses allSettled so one failing fetch can't abort the whole switch (which
+ *  left the UI blank/stale until a manual refresh). */
 export async function reloadAll() {
   useUiStore.getState().select(null)
-  await Promise.all([
+  const results = await Promise.allSettled([
     usePartyStore.getState().fetchAll(),
     useNarratorStore.getState().fetchConfig(),
     useChatStore.getState().fetchHistory(),
@@ -39,6 +41,9 @@ export async function reloadAll() {
     useScenarioStore.getState().fetchScenario(),
     useWorldbuildStore.getState().fetchProposals(),
   ])
+  for (const r of results) {
+    if (r.status === 'rejected') console.error('reloadAll: a store failed to refresh', r.reason)
+  }
 }
 
 export const useAdventuresStore = create<AdventuresState>((set, get) => ({

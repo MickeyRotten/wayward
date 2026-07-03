@@ -202,6 +202,8 @@ const RARITY_TEXT_COLORS: Record<Rarity, string> = {
 }
 
 const ITEM_TYPES: ItemType[] = ['Equipment', 'Tool', 'Consumable', 'Key Item', 'Artifact', 'Other']
+// Coarse body-slot categories (match the server's slot compatibility map).
+const SLOT_OPTIONS = ['Head', 'Neck', 'Torso', 'Hands', 'Waist', 'Legs', 'Feet', 'Accessory']
 const RARITY_OPTIONS: { value: Rarity; label: string }[] = [
   { value: 'c', label: 'Common' },
   { value: 'u', label: 'Uncommon' },
@@ -469,14 +471,20 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
             </select>
           </label>
 
-          {/* Slot (only for Equipment type) */}
-          <ItemField
-            label="Slot (equipment only)"
-            value={d.slot ?? ''}
-            onChange={(v) => update('slot', v || null)}
-            onBlur={(v) => update('slot', v || null, true)}
-            placeholder="e.g. Head, Torso, Hands"
-          />
+          {/* Slot (only meaningful for Equipment) — a dropdown of body slots. */}
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body block mb-0.5">Slot (equipment only)</span>
+            <select
+              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+              value={d.slot ?? ''}
+              onChange={(e) => update('slot', e.target.value || null, true)}
+            >
+              <option value="">— None —</option>
+              {SLOT_OPTIONS.map((sl) => (
+                <option key={sl} value={sl}>{sl}</option>
+              ))}
+            </select>
+          </label>
 
           <div className="grid grid-cols-2 gap-3">
             <ItemNumField

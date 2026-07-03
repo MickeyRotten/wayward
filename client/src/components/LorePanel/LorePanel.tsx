@@ -38,9 +38,10 @@ function sortList<T>(
   const indexed = list.map((x, i) => ({ x, i }))
   indexed.sort((a, b) => {
     let c = 0
-    if (key === 'alpha') c = get.name(a.x).localeCompare(get.name(b.x))
-    else if (key === 'type') c = get.type(a.x).localeCompare(get.type(b.x))
-    else if (key === 'rarity') c = get.rarity(a.x) - get.rarity(b.x)
+    // Coerce to string so a missing name/type never throws (blanking the panel).
+    if (key === 'alpha') c = String(get.name(a.x) ?? '').localeCompare(String(get.name(b.x) ?? ''))
+    else if (key === 'type') c = String(get.type(a.x) ?? '').localeCompare(String(get.type(b.x) ?? ''))
+    else if (key === 'rarity') c = (get.rarity(a.x) || 0) - (get.rarity(b.x) || 0)
     return c !== 0 ? c : a.i - b.i // stable; 'newest' = pure insertion order
   })
   const out = indexed.map((o) => o.x)

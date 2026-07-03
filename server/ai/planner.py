@@ -146,20 +146,28 @@ TOOL_SCHEMAS: list[dict] = [
     _fn("delete_objective", "Remove an objective (queued for confirmation), by quest title + text.",
         {"questTitle": {"type": "string"}, "objectiveText": {"type": "string"}}, ["questTitle", "objectiveText"]),
     _fn("create_member", "Add a party member.",
-        {"name": {"type": "string"}, "species": {"type": "string"}, "description": {"type": "string"},
-         "personality": {"type": "string"}, "fieldSkillName": {"type": "string"},
-         "fieldSkillDescription": {"type": "string"}}, ["name"]),
-    _fn("update_member", "Edit a party member's details/field skill, by name.",
-        {"name": {"type": "string"}, "species": {"type": "string"}, "description": {"type": "string"},
-         "personality": {"type": "string"}, "fieldSkillName": {"type": "string"},
-         "fieldSkillDescription": {"type": "string"}}, ["name"]),
+        {"name": {"type": "string"}, "species": {"type": "string"}, "gender": {"type": "string"},
+         "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
+         "description": {"type": "string"}, "personality": {"type": "string"},
+         "likes": {"type": "string"}, "dislikes": {"type": "string"},
+         "fieldSkillName": {"type": "string"}, "fieldSkillDescription": {"type": "string"}}, ["name"]),
+    _fn("update_member", "Edit a party member's details/field skill, by name. Pass newName to rename.",
+        {"name": {"type": "string", "description": "Which member to edit (their current name)."},
+         "newName": {"type": "string", "description": "New name, to rename the member."},
+         "species": {"type": "string"}, "gender": {"type": "string"},
+         "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
+         "description": {"type": "string"}, "personality": {"type": "string"},
+         "likes": {"type": "string"}, "dislikes": {"type": "string"},
+         "fieldSkillName": {"type": "string"}, "fieldSkillDescription": {"type": "string"}}, ["name"]),
     _fn("delete_member", "Remove a party member entirely (queued for confirmation), by name.",
         {"name": {"type": "string"}}, ["name"]),
     _fn("set_in_party", "Bench or re-add a member to the active party, by name.",
         {"name": {"type": "string"}, "inParty": {"type": "boolean"}}, ["name", "inParty"]),
     _fn("update_pc", "Edit the player character's details.",
-        {"name": {"type": "string"}, "species": {"type": "string"}, "description": {"type": "string"},
-         "personality": {"type": "string"}, "gender": {"type": "string"}}, []),
+        {"name": {"type": "string"}, "species": {"type": "string"}, "gender": {"type": "string"},
+         "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
+         "description": {"type": "string"}, "personality": {"type": "string"},
+         "likes": {"type": "string"}, "dislikes": {"type": "string"}}, []),
     _fn(
         "set_scenario",
         "Edit the Scenario's structured fields — the framing context for the whole adventure. "
@@ -408,8 +416,9 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         session.add(PartyMember(
             basic_info={"name": mname, "species": args.get("species", ""),
                         "description": args.get("description", ""), "personality": args.get("personality", ""),
-                        "gender": "", "age": 0, "heightCm": 0, "weightKg": 0,
-                        "portrait": "", "likes": "", "dislikes": ""},
+                        "gender": args.get("gender", ""), "age": args.get("age", 0) or 0,
+                        "heightCm": args.get("heightCm", 0) or 0, "weightKg": args.get("weightKg", 0) or 0,
+                        "portrait": "", "likes": args.get("likes", ""), "dislikes": args.get("dislikes", "")},
             equipment={},
             field_skill={"name": args.get("fieldSkillName", ""), "description": args.get("fieldSkillDescription", "")},
         ))
@@ -421,7 +430,10 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"No party member named '{args.get('name', '')}'.", None
         if name == "update_member":
             bi = dict(member.basic_info)
-            for k in ("species", "description", "personality"):
+            if args.get("newName"):
+                bi["name"] = args["newName"]
+            for k in ("species", "gender", "age", "heightCm", "weightKg",
+                      "description", "personality", "likes", "dislikes"):
                 if args.get(k) is not None:
                     bi[k] = args[k]
             member.basic_info = bi
@@ -444,7 +456,8 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         if not pc:
             return "No player character exists.", None
         bi = dict(pc.basic_info)
-        for k in ("name", "species", "description", "personality", "gender"):
+        for k in ("name", "species", "gender", "age", "heightCm", "weightKg",
+                  "description", "personality", "likes", "dislikes"):
             if args.get(k) is not None:
                 bi[k] = args[k]
         pc.basic_info = bi

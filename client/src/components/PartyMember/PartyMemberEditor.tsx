@@ -87,9 +87,9 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
   if (mode === 'view') {
     return (
       <div className="space-y-6 p-6">
-        {/* Portrait */}
+        {/* Portrait — fixed height, image fills the area (see feedback #463). */}
         {d.basicInfo.portrait && (
-          <div className="w-full aspect-3/4 border border-line rounded-md bg-bg2 overflow-hidden">
+          <div className="w-full h-72 border border-line rounded-md bg-bg2 overflow-hidden">
             <img
               src={`/portraits/${d.basicInfo.portrait}`}
               alt="Portrait"

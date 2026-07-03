@@ -112,6 +112,15 @@ class LorebookEntry(Base):
     locked: Mapped[bool] = mapped_column(Integer, default=False)
     cat: Mapped[str] = mapped_column(String, default="world")
 
+    # Structured Scenario fields — only meaningful on the single Scenario row
+    # (title == "Scenario", permanent=True, locked=True). Holds a dict with
+    # keys setting/historyBrief/species/geography/techAndMagic/other (all
+    # strings). This is the source of truth for the Scenario tab; `content` is
+    # derived from it via compose_scenario_content() (server/ai/scenario.py) so
+    # the lore-injection pipeline needs no changes. May be `{}` or `None` for
+    # rows that predate this column — always read via `entry.scenario_fields or {}`.
+    scenario_fields: Mapped[dict] = mapped_column(JSON, default=dict)
+
     # Item fields — only meaningful when cat == "items" (the unified item
     # catalog lives in the lorebook). title == item name, content == item desc.
     item_type: Mapped[str | None] = mapped_column(String, nullable=True)

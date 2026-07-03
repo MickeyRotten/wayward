@@ -17,6 +17,7 @@ import { useSettingsStore } from './state/settingsStore'
 import { useItemsStore } from './state/itemsStore'
 import { useQuestsStore } from './state/questsStore'
 import { useLoreStore } from './state/loreStore'
+import { useScenarioStore } from './state/scenarioStore'
 import { useWorldbuildStore } from './state/worldbuildStore'
 import { useAdventuresStore } from './state/adventuresStore'
 import { useCampaignsStore } from './state/campaignsStore'
@@ -64,6 +65,7 @@ function App() {
   const fetchQuests = useQuestsStore((s) => s.fetchQuests)
   const fetchLoreEntries = useLoreStore((s) => s.fetchEntries)
   const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
+  const fetchScenario = useScenarioStore((s) => s.fetchScenario)
   const fetchProposals = useWorldbuildStore((s) => s.fetchProposals)
   const fetchAdventures = useAdventuresStore((s) => s.fetch)
   const fetchCampaigns = useCampaignsStore((s) => s.fetch)
@@ -80,9 +82,10 @@ function App() {
     fetchQuests()
     fetchLoreEntries()
     fetchLoreConfig()
+    fetchScenario()
     fetchProposals()
     fetchAdventures()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchProposals, fetchAdventures, fetchCampaigns])
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchScenario, fetchProposals, fetchAdventures, fetchCampaigns])
 
   const handleTabChange = (tab: TabId) => {
     prevTabRef.current = tab

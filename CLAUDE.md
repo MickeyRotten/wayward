@@ -19,7 +19,8 @@ The heart of the app is a **polished, agentic LLM narrative scene** — chat-bas
 - **Party spotlight** — deterministic signals decide when party members speak (see "Party Member Spotlight Logic").
 - **Chronicler** — a passive post-turn world-builder that proposes lore/quest/member additions.
 - **Edit Mode (the Editor)** — a foreground, conversational world-builder; full CRUD over the world.
-- **Lorebook** (world/characters/items/monsters/spells, with keyword injection), **quests + objectives**, **inventory + a unified item system** (items are lore entries), the **Scenario** (a locked lore entry), an in-game **day** counter.
+- **Lorebook** (world/characters/items/monsters/spells, with keyword injection), **quests + objectives**, **inventory + a unified item system** (items are lore entries), a structured **Scenario** tab (Setting/History/Species/Geography/Technology & Magic/Other — see "The Scenario"), an in-game **day** counter.
+- **Action Suggestions** — optional, AI-generated contextual quick-action buttons above the chat input, alongside fixed canned actions (see "Action Suggestions").
 - **OpenRouter integration** — model list (filtered to tool-capable), sampling params, tool settings.
 - **Campaigns & Adventures** — separate worlds (campaigns) and save files (adventures), each its own SQLite file; Save/Load, campaign switching, and zip import/export for sharing (see "Campaigns & Adventures").
 - Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme.
@@ -69,9 +70,9 @@ Key tokens (see theme.css for the full set):
 Highlights / things that have changed from the original alpha plan:
 - **Equipment** is 12 fixed slots, but each value is now an **item id** referencing a lorebook item entry (not free text). `BasicInfo` (name/gender/species/age/height/weight/description/portrait/likes/dislikes/personality) and `FieldSkill` (name/description) are JSON on the PC/party rows.
 - **Items are lorebook entries** (`LorebookEntry`, `cat == "items"`, carrying type/slot/rarity/maxStack/uses) — there is no separate item table. The lorebook also holds world/characters/monsters/spells, with keyword-based injection (`LorebookConfig`).
-- **Scenario** is a permanent, **locked** World lore entry (not its own table); it reaches the narrator via lore injection.
-- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `planner_instructions` (each falls back to a built-in default when blank).
-- **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_carry_slots`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`.
+- **Scenario** is edited as 6 structured fields, composed into a permanent, **locked** World lore entry's `content` (not its own table) — see "The Scenario". It still reaches the narrator via ordinary lore injection.
+- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `planner_instructions`, `action_suggestions_enabled` (each text field falls back to a built-in default when blank).
+- **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_carry_slots`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`, `action_suggestions_model_id`.
 - **ChatMessage** (adventure-scoped) carries `role`, `content`, `turn_number`, `variant`, `speaker`, `mode` (`narrator`|`planner`), narrator-declared scene state (`location`, `time_of_day`, `weather`, `day`), `spotlight_reason`, and `applied_inventory_deltas`/`applied_equipment_changes` (for swipe/regenerate/delete reversal).
 - Also: `Quest` + `QuestObjective`, `InventoryStack`, `StorySummary`, `WorldbuildingProposal` (Chronicler), `AppState` (active campaign/adventure pointer).
 
@@ -204,12 +205,35 @@ Key points: the Chronicler reuses [`chat_completion_agent_turn`](server/ai/openr
 
 ---
 
+## Action Suggestions
+
+An optional, lightweight quick-actions row above the chat input in Play mode — a mix of always-available fixed buttons and short AI-generated contextual suggestions.
+
+- **Fixed buttons** (no LLM cost, always shown): Look Around, Talk to Party, Rest, and Use an Item (opens an inline popover listing current inventory via `ItemCard`; picking an item sends `"I use the <item>."` and relies on the narrator's existing `consume_item`/`equip` tools to apply the effect).
+- **AI-contextual suggestions**: 3-4 short, scene-specific phrases (e.g. "Ask Tifa about the ruins") from a lightweight one-shot agent ([`server/ai/action_suggester.py`](server/ai/action_suggester.py)) modeled on the Chronicler but much smaller — one tool call (`suggest_actions`), no DB persistence, no accept/reject; a transient list regenerated every turn and lost on refresh.
+- Gated by `NarratorConfig.action_suggestions_enabled` (**per-campaign**, default off — an extra LLM call per turn when on) with an optional model override `OpenRouterSettings.action_suggestions_model_id` (blank → main model), both editable in Config → Agents.
+- Fire-and-forget from `chatStore` after each narrator turn completes (`POST /action-suggestions/run`) — the same pattern as the Chronicler's `worldbuildStore.runForTurn`, so it never blocks the chat UI. Fixed buttons and AI suggestions alike just call the existing `sendTurn` with canned text — no special submission path.
+
+---
+
+## The Scenario
+
+The framing premise for the whole world, edited as **6 structured fields** in a dedicated **Scenario tab** in the Lore panel (shown first, before World/Characters/Items/Monsters/Spells): **Setting**, **History (Brief)**, **Species**, **Geography**, **Technology & Magic**, **Other**.
+
+- The fields are the source of truth. Saving (`GET`/`PUT /scenario`, a singleton resource mirroring `/narrator`) composes them into a single freeform string via `compose_scenario_content` ([`server/ai/scenario.py`](server/ai/scenario.py)) — skipping empty fields — and writes it as the `content` of the same permanent, **locked** World `LorebookEntry` the Scenario has always been. This means the existing lore-injection pipeline (`lore_injector.py`/`prompt_builder.py`) needed **zero changes** — it still just reads an ordinary freeform `content` string.
+- **Storage**: a `scenario_fields` JSON column directly on `LorebookEntry` (only ever populated on the single Scenario row), alongside the existing `content`.
+- **Legacy migration**: campaigns from before this feature have real freeform `content` but empty `scenario_fields`. The first time either is read (`GET /scenario`, or the Editor's `get_scenario` tool), the old text is carried into `setting` as a starting point — one-time, non-destructive, idempotent.
+- **Editor tool**: `set_scenario` is a **partial, per-field update** (pass only the field(s) changing; others untouched) rather than whole-text replacement; `get_scenario` reads back all 6 labeled fields.
+- The Scenario is excluded from the World tab's entry list (it has its own tab now) and is editable only in Edit Mode — Play mode shows the 6 fields as read-only text.
+
+---
+
 ## Edit Mode (the Editor)
 
 A **foreground** world-builder. Engine-style framing: **Play mode = Narration** (runtime), **Edit Mode = building the game**. Toggle it with the Unity-style **Play button on the left of the chat location banner** (lit gold while playing). When on, the chat's primary agent becomes the **Editor** ([`server/ai/planner.py`](server/ai/planner.py) — internal names still say "planner"/`planner_instructions`/`/planner/...`) with full CRUD over lore (all categories incl. dedicated `create_item`/`update_item` with type/slot/rarity + `equip`/`unequip`), quests/objectives, party members, the PC, the **Scenario**, and the **Narrator's instructions**. You converse with it and it creates/edits many things per turn, then replies conversationally.
 
 - **Separate thread.** Editor messages are tagged `ChatMessage.mode = 'planner'` and live in their own conversation (the toggle swaps the chat view). They **never enter narration context** — the narrator path filters `mode != 'planner'` in [`_load_game_context`](server/api/routes.py). Each thread numbers its own turns.
-- **Create/edit apply immediately** (committed each round, via `run_planner_agent` — same loop shape as the narrator; multi-round prose is accumulated, not discarded). **Deletes are queued**: the turn's `done` event carries `pendingDeletes`; the client shows a ConfirmDialog → `POST /planner/deletes/apply`. Locked entries (the Scenario) can be edited via `set_scenario` but never deleted.
+- **Create/edit apply immediately** (committed each round, via `run_planner_agent` — same loop shape as the narrator; multi-round prose is accumulated, not discarded). **Deletes are queued**: the turn's `done` event carries `pendingDeletes`; the client shows a ConfirmDialog → `POST /planner/deletes/apply`. Locked entries (the Scenario) can be edited via `set_scenario` — a structured, per-field partial update (see "The Scenario") — but never deleted.
 - **Edit Mode drives the rest of the UI:** the right-hand Inspector is editable in Edit Mode and read-only (view) in Play; "+ New Entry" (Lore) and "+ Add Member" appear only in Edit Mode; the whole app re-skins to the indigo theme. (Exception: **equipment** on the PC/party sheets is editable in Play mode too — managing gear is a play action.)
 - After an Editor turn the client refreshes lore/quests/party/items/narrator panels; the Chronicler does **not** run for Editor turns.
 - A future guided FTUE (Editor dialogue → Narrator) is intended; a structured starter message already opens in Edit Mode for a freshly created campaign.
@@ -306,13 +330,14 @@ wayward/
 │   │   ├── CharacterSheet/, PartyMember/   PC / member editors (view+edit)
 │   │   ├── Inspector/PartyInspector.tsx    Right pane — selected entity
 │   │   ├── ItemsPanel/, LorePanel/, QuestsPanel/   left panels
+│   │   ├── LorePanel/ScenarioEditor.tsx    the Scenario tab's 6-field form
 │   │   ├── Suggestions/SuggestionsPanel.tsx  Chronicler proposals ("Ideas")
 │   │   ├── SaveLoad/SaveLoadView.tsx       adventures Save/Load
 │   │   ├── Settings/SettingsPanel.tsx      Config (campaign, API/model, narration…)
 │   │   ├── IconRail/, Layout/, common/ExpandableTextarea.tsx, ConfirmDialog.tsx
 │   ├── state/   chatStore, partyStore, narratorStore, settingsStore, itemsStore,
-│   │            questsStore, loreStore, worldbuildStore, adventuresStore,
-│   │            campaignsStore, uiStore   (Zustand)
+│   │            questsStore, loreStore, scenarioStore, worldbuildStore,
+│   │            actionSuggestionsStore, adventuresStore, campaignsStore, uiStore   (Zustand)
 │   ├── lib/     api.ts, location.ts (scene-banner derivation), narration.ts
 │   │            (JRPG chat segmenter), equipSlots.ts (item↔slot fit)
 │   ├── theme.css / edit-theme.css / index.css   design tokens + Tailwind mapping
@@ -327,6 +352,8 @@ wayward/
 │   │   ├── narrator_agent.py   run_narrator_agent (the agentic loop) + tool schemas
 │   │   ├── narrator_actions.py tool handlers + legacy <<<ACTIONS>>> parser/executor
 │   │   ├── worldbuilder.py     the Chronicler (post-turn world-building)
+│   │   ├── action_suggester.py lightweight one-shot contextual quick-action suggestions
+│   │   ├── scenario.py         Scenario field composition (structured fields → derived content)
 │   │   ├── planner.py          the Editor (Edit Mode agent)
 │   │   └── item_detection.py   legacy deterministic item-use (non-tool path)
 │   ├── db/

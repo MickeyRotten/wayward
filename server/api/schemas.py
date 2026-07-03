@@ -99,6 +99,26 @@ class NarratorResponse(BaseModel):
     actionSuggestionsEnabled: bool
 
 
+# --- Scenario ---
+
+class ScenarioUpdate(BaseModel):
+    setting: str | None = None
+    historyBrief: str | None = None
+    species: str | None = None
+    geography: str | None = None
+    techAndMagic: str | None = None
+    other: str | None = None
+
+
+class ScenarioResponse(BaseModel):
+    setting: str = ""
+    historyBrief: str = ""
+    species: str = ""
+    geography: str = ""
+    techAndMagic: str = ""
+    other: str = ""
+
+
 # --- OpenRouter Settings ---
 
 class OpenRouterSettingsUpdate(BaseModel):

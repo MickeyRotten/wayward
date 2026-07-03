@@ -217,9 +217,8 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
   const inventory = useItemsStore((s) => s.inventory)
   const pc = usePartyStore((s) => s.playerCharacter)
   const members = usePartyStore((s) => s.partyMembers)
-  const savePlayerCharacter = usePartyStore((s) => s.savePlayerCharacter)
-  const savePartyMember = usePartyStore((s) => s.savePartyMember)
   const equipItem = usePartyStore((s) => s.equipItem)
+  const unequipSlot = usePartyStore((s) => s.unequipSlot)
   const select = useUiStore((s) => s.select)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
 
@@ -245,19 +244,8 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
     await equipItem(charId, item.id, slot, instanceId)
   }
 
-  const unequipFrom = async (charId: string) => {
-    if (pc && charId === pc.id) {
-      const equipment = { ...pc.equipment }
-      for (const key of EQUIP_SLOT_KEYS) if (equipment[key] === item.id) equipment[key] = null
-      await savePlayerCharacter({ ...pc, equipment })
-      return
-    }
-    const member = members.find((m) => m.id === charId)
-    if (member) {
-      const equipment = { ...member.equipment }
-      for (const key of EQUIP_SLOT_KEYS) if (equipment[key] === item.id) equipment[key] = null
-      await savePartyMember({ ...member, equipment })
-    }
+  const unequipFrom = async (charId: string, slot: string) => {
+    await unequipSlot(charId, slot)
   }
 
   useEffect(() => {

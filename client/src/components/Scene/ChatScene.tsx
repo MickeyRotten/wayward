@@ -1221,11 +1221,17 @@ function ChangeNotices({
 }) {
   const invDeltas = (message.appliedInventoryDeltas ?? []) as InventoryDelta[]
   const equipChanges = (message.appliedEquipmentChanges ?? []) as EquipmentChange[]
+  const inventory = useItemsStore((s) => s.inventory)
 
   if (invDeltas.length === 0 && equipChanges.length === 0) return null
 
-  const itemName = (id: string | null) =>
-    id ? (catalogMap.get(id)?.name ?? 'Unknown item') : 'nothing'
+  // Equipment-change ids are item INSTANCE ids — resolve via the instance list,
+  // falling back to the catalog (for inventory deltas, which carry catalog ids).
+  const itemName = (id: string | null) => {
+    if (!id) return 'nothing'
+    const inst = inventory.find((s) => s.instanceId === id)
+    return inst?.item?.name ?? catalogMap.get(id)?.name ?? 'an item'
+  }
 
   return (
     <div className="px-4 mt-1 space-y-1.5">

@@ -23,6 +23,7 @@ interface ItemsState {
   clearSearch: () => void
   addToInventory: (itemId: string, count?: number) => Promise<void>
   removeFromInventory: (itemId: string, count?: number) => Promise<void>
+  removeInstance: (instanceId: string) => Promise<void>
   createItem: (data: Omit<ItemCatalogEntry, 'id' | 'kind'>) => Promise<ItemCatalogEntry>
   updateItem: (id: string, data: Partial<ItemCatalogEntry>) => Promise<void>
   deleteItem: (id: string) => Promise<void>
@@ -65,6 +66,11 @@ export const useItemsStore = create<ItemsState>((set, get) => ({
 
   removeFromInventory: async (itemId, count = 1) => {
     await api.post('/inventory/remove', { itemId, count })
+    await get().fetchInventory()
+  },
+
+  removeInstance: async (instanceId) => {
+    await api.post('/inventory/remove-instance', { instanceId })
     await get().fetchInventory()
   },
 

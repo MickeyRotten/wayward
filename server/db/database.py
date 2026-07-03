@@ -12,6 +12,7 @@ Switching campaign/adventure just swaps the attached paths and disposes pooled
 connections so they re-attach. See storage.py for the folder layout + bootstrap.
 """
 
+import uuid
 from pathlib import Path
 
 from sqlalchemy import event, select, text
@@ -166,6 +167,11 @@ async def init_db() -> None:
         from server.db.seed import seed_defaults
         await seed_defaults()
 
+    # Convert any catalog-id equipment + inventory stacks (from seed/legacy) into
+    # non-stacking item instances. Idempotent — safe on already-migrated data.
+    if source in ("legacy", "fresh"):
+        await migrate_to_item_instances()
+
 
 async def _run_app_migrations() -> None:
     """Additive ALTERs for columns added to app.db (openrouter_settings) after a
@@ -192,8 +198,6 @@ async def _run_scope_migrations() -> None:
         ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
         ("campaign.lorebook_entries", "scenario_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN scenario_fields JSON"),
     ]
-    if not migrations:
-        return
     async with engine.begin() as conn:
         for qualified, column, ddl in migrations:
             schema, table = qualified.split(".", 1)
@@ -201,3 +205,78 @@ async def _run_scope_migrations() -> None:
             cols = [row[1] for row in result.fetchall()]
             if column not in cols:
                 await conn.execute(text(ddl))
+    await migrate_to_item_instances()
+
+
+async def migrate_to_item_instances() -> None:
+    """One-time, idempotent back-fill from legacy InventoryStack + catalog-id
+    equipment slots to ItemInstance.
+
+    - Each legacy inventory stack becomes instance row(s): Equipment splits into
+      ``count`` rows of 1; stackables stay one row with the count. Migrated stacks
+      are then deleted, so re-running is a no-op.
+    - Each character equipment slot still holding a *catalog* item id is given a
+      freshly-minted instance and rewritten to that instance id. Slots already
+      holding an instance id are left alone — safe to call repeatedly.
+    """
+    if async_session is None or _active_adventure_path is None:
+        return
+
+    async with engine.begin() as conn:
+        res = await conn.execute(text("PRAGMA adventure.table_info(item_instances)"))
+        if not res.fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.item_instances "
+                "(id VARCHAR NOT NULL PRIMARY KEY, item_id VARCHAR NOT NULL, count INTEGER DEFAULT 1)"
+            ))
+
+    from server.db.models import (
+        InventoryStack, ItemInstance, LorebookEntry, PartyMember, PlayerCharacter,
+    )
+
+    async with async_session() as s:
+        catalog = (await s.execute(
+            select(LorebookEntry).where(LorebookEntry.cat == "items")
+        )).scalars().all()
+        item_type = {c.id: (c.item_type or "") for c in catalog}
+        catalog_ids = set(item_type.keys())
+        instance_ids = {
+            i.id for i in (await s.execute(select(ItemInstance))).scalars().all()
+        }
+
+        # Legacy inventory stacks → instances, then consume the stacks.
+        stacks = (await s.execute(select(InventoryStack))).scalars().all()
+        for st in stacks:
+            if item_type.get(st.item_id) == "Equipment":
+                for _ in range(max(1, st.count)):
+                    inst = ItemInstance(id=str(uuid.uuid4()), item_id=st.item_id, count=1)
+                    s.add(inst)
+                    instance_ids.add(inst.id)
+            else:
+                inst = ItemInstance(id=str(uuid.uuid4()), item_id=st.item_id, count=max(1, st.count))
+                s.add(inst)
+                instance_ids.add(inst.id)
+            await s.delete(st)
+
+        # Equipment slots that still hold a catalog item id → mint an instance.
+        chars = [
+            *(await s.execute(select(PlayerCharacter))).scalars().all(),
+            *(await s.execute(select(PartyMember))).scalars().all(),
+        ]
+        for ch in chars:
+            equipment = dict(ch.equipment or {})
+            changed = False
+            for slot, val in list(equipment.items()):
+                if not val or val in instance_ids:
+                    continue
+                if val in catalog_ids:
+                    inst = ItemInstance(id=str(uuid.uuid4()), item_id=val, count=1)
+                    s.add(inst)
+                    instance_ids.add(inst.id)
+                    equipment[slot] = inst.id
+                    changed = True
+                # else: dangling reference — leave as-is
+            if changed:
+                ch.equipment = equipment
+
+        await s.commit()

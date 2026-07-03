@@ -1,39 +1,17 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
-import { usePartyStore } from '../../state/partyStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { EQUIP_SLOT_KEYS } from '../../lib/equipSlots'
-import type { ItemCatalogEntry, Rarity, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
-
-/** Build itemId → list of character display-names currently wearing it. */
-function buildEquippedBy(pc: PlayerCharacter | null, members: PartyMember[]): Map<string, string[]> {
-  const map = new Map<string, string[]>()
-  const add = (equipment: Equipment, name: string) => {
-    for (const key of EQUIP_SLOT_KEYS) {
-      const id = equipment[key]
-      if (!id) continue
-      const list = map.get(id) ?? []
-      if (!list.includes(name)) list.push(name)
-      map.set(id, list)
-    }
-  }
-  if (pc) add(pc.equipment, pc.basicInfo?.name || 'You')
-  for (const m of members) add(m.equipment, m.basicInfo?.name || 'Unnamed')
-  return map
-}
+import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 export function ItemsPanel() {
   const inventory = useItemsStore((s) => s.inventory)
   const maxCarrySlots = useItemsStore((s) => s.maxCarrySlots)
-  const removeFromInventory = useItemsStore((s) => s.removeFromInventory)
+  const removeInstance = useItemsStore((s) => s.removeInstance)
   const editMode = useChatStore((s) => s.planningMode)
-  const playerCharacter = usePartyStore((s) => s.playerCharacter)
-  const partyMembers = usePartyStore((s) => s.partyMembers)
-  const catalog = useItemsStore((s) => s.catalog)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
@@ -41,23 +19,12 @@ export function ItemsPanel() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmRemove, setConfirmRemove] = useState(false)
 
-  const equippedBy = useMemo(
-    () => buildEquippedBy(playerCharacter, partyMembers),
-    [playerCharacter, partyMembers],
-  )
+  // The inventory now lists every owned instance (stowed + equipped). Capacity
+  // counts only stowed instances (worn gear isn't in the pack).
+  const stowedCount = inventory.filter((s) => !s.equippedBy).length
 
-  // Equipped items are always shown in the inventory, even when worn rather than
-  // carried as a stack — surface those as extra (non-removable) rows.
-  const equippedOnly = useMemo(() => {
-    const carried = new Set(inventory.map((s) => s.itemId))
-    return [...equippedBy.keys()]
-      .filter((id) => !carried.has(id))
-      .map((id) => catalog.find((i) => i.id === id))
-      .filter((i): i is ItemCatalogEntry => !!i)
-  }, [equippedBy, inventory, catalog])
-
-  const isSelected = (instanceId: string) =>
-    selection?.kind === 'item' && selection.instanceId === instanceId
+  const isSelected = (itemId: string) =>
+    selection?.kind === 'item' && selection.id === itemId
 
   // Cancel remove-mode when leaving Edit Mode.
   useEffect(() => {
@@ -78,11 +45,9 @@ export function ItemsPanel() {
 
   const handleRemoveSelected = async () => {
     setConfirmRemove(false)
-    for (const id of [...selectedIds]) {
-      const stack = inventory.find((s) => s.instanceId === id)
-      if (!stack) continue
+    for (const instanceId of [...selectedIds]) {
       try {
-        await removeFromInventory(stack.itemId, stack.count)
+        await removeInstance(instanceId)
       } catch { /* skip */ }
     }
     cancelRemove()
@@ -95,14 +60,14 @@ export function ItemsPanel() {
         <div className="flex items-baseline justify-between">
           <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">INVENTORY</h2>
           <span className="font-ui text-[11px] text-textsec tracking-wider">
-            {inventory.length} / {maxCarrySlots}
+            {stowedCount} / {maxCarrySlots}
           </span>
         </div>
       </div>
 
-      {/* Inventory list */}
+      {/* Inventory list — every owned instance; worn gear is flagged "Equipped". */}
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
-        {inventory.length === 0 && equippedOnly.length === 0 && (
+        {inventory.length === 0 && (
           <p className="text-[12px] text-textdim font-body px-2 py-4 text-center">
             No items in inventory
           </p>
@@ -110,38 +75,29 @@ export function ItemsPanel() {
         {inventory.map((stack) => {
           const item = stack.item
           if (!item) return null
+          const removable = !stack.equippedBy // can't remove worn gear from the pack
           return (
             <SelectableRow
               key={stack.instanceId}
               removeMode={removeMode}
+              removable={removable}
               checked={selectedIds.has(stack.instanceId)}
               onToggle={() => toggleSelected(stack.instanceId)}
             >
               <ItemCard
                 item={item}
                 count={stack.count}
-                selected={removeMode ? selectedIds.has(stack.instanceId) : isSelected(stack.instanceId)}
+                selected={removeMode ? selectedIds.has(stack.instanceId) : isSelected(stack.itemId)}
                 onClick={() => (
                   removeMode
-                    ? toggleSelected(stack.instanceId)
-                    : select({ kind: 'item', id: stack.itemId, instanceId: stack.instanceId })
+                    ? (removable && toggleSelected(stack.instanceId))
+                    : select({ kind: 'item', id: stack.itemId })
                 )}
                 equippedBy={stack.equippedByName ? [stack.equippedByName] : undefined}
               />
             </SelectableRow>
           )
         })}
-
-        {/* Equipped but not carried — shown so all gear is visible (not removable). */}
-        {!removeMode && equippedOnly.map((item) => (
-          <ItemCard
-            key={item.id}
-            item={item}
-            selected={isSelected(item.id)}
-            onClick={() => select({ kind: 'item', id: item.id })}
-            equippedBy={equippedBy.get(item.id)}
-          />
-        ))}
 
         {/* Add item — hidden while removing */}
         {!removeMode && (
@@ -197,12 +153,13 @@ export function ItemsPanel() {
   )
 }
 
-/** Wraps a card with a checkbox when in remove-mode. */
+/** Wraps a card with a checkbox when in remove-mode. Worn gear isn't removable. */
 function SelectableRow({
-  removeMode, checked, onToggle, children,
+  removeMode, checked, removable = true, onToggle, children,
 }: {
   removeMode: boolean
   checked: boolean
+  removable?: boolean
   onToggle: () => void
   children: ReactNode
 }) {
@@ -213,9 +170,11 @@ function SelectableRow({
         type="checkbox"
         className="shrink-0 accent-gold"
         checked={checked}
+        disabled={!removable}
         onChange={onToggle}
+        title={removable ? undefined : 'Equipped — unequip it first'}
       />
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className={`flex-1 min-w-0 ${removable ? '' : 'opacity-40'}`}>{children}</div>
     </div>
   )
 }

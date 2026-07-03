@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlayerCharacter, Equipment, BasicInfo, ItemCatalogEntry, Rarity } from '@shared/types/models'
+import type { PlayerCharacter, Equipment, BasicInfo, Rarity } from '@shared/types/models'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
@@ -41,7 +41,6 @@ const EQUIP_SLOTS: { key: keyof Equipment; label: string }[] = [
 export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const pc = usePartyStore((s) => s.playerCharacter)
   const save = usePartyStore((s) => s.savePlayerCharacter)
-  const catalog = useItemsStore((s) => s.catalog)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PlayerCharacter | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -120,7 +119,6 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
                 slotKey={key}
                 label={label}
                 value={d.equipment[key]}
-                catalog={catalog}
                 onChange={(id) => updateEquip(key, id, true)}
               />
             ))}
@@ -164,7 +162,6 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
               slotKey={key}
               label={label}
               value={d.equipment[key]}
-              catalog={catalog}
               onChange={(id) => updateEquip(key, id, true)}
             />
           ))}
@@ -251,33 +248,32 @@ function TextArea({ label, value, onChange, onBlur }: {
    party's Inventory and filtered to items that fit this slot: an "Equip" button
    when empty, the item + a small remove (×) button when full, and a filterable
    dropdown (no minimum query length) when picking. */
-function EquipSlotField({ slotKey, label, value, catalog, onChange }: {
+function EquipSlotField({ slotKey, label, value, onChange }: {
   slotKey: keyof Equipment
   label: string
-  value: string | null
-  catalog: ItemCatalogEntry[]
-  onChange: (id: string | null) => void
+  value: string | null  // an item INSTANCE id (or null)
+  onChange: (instanceId: string | null) => void
 }) {
   const inventory = useItemsStore((s) => s.inventory)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const currentItem = value ? catalog.find((i) => i.id === value) : undefined
+  // Resolve the equipped instance id → its catalog item.
+  const currentItem = value ? inventory.find((s) => s.instanceId === value)?.item : undefined
 
   const q = search.toLowerCase().trim()
-  // Inventory items that fit this slot (Equipment type, matching slot), filtered.
+  // STOWED equipment instances that fit this slot (each copy is selectable).
   const results = inventory
-    .map((s) => s.item)
-    .filter((i): i is ItemCatalogEntry => !!i && i.type === 'Equipment' && itemFitsSlot(i.slot, slotKey))
-    .filter((i) => !q || i.name.toLowerCase().includes(q))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter((s) => !s.equippedBy && s.item && s.item.type === 'Equipment' && itemFitsSlot(s.item.slot, slotKey))
+    .filter((s) => !q || (s.item!.name.toLowerCase().includes(q)))
+    .sort((a, b) => (a.item!.name).localeCompare(b.item!.name))
 
   const openPicker = () => { setSearch(''); setOpen(true); setTimeout(() => inputRef.current?.focus(), 0) }
   const closePicker = () => { setOpen(false); setSearch('') }
 
-  const handleSelect = (item: ItemCatalogEntry) => {
-    onChange(item.id)
+  const handleSelect = (instanceId: string) => {
+    onChange(instanceId)
     closePicker()
   }
 
@@ -303,24 +299,27 @@ function EquipSlotField({ slotKey, label, value, catalog, onChange }: {
             {results.length === 0 ? (
               <div className="px-2.5 py-2 text-xs text-textdim font-body">No matching items in inventory</div>
             ) : (
-              results.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-bg2 text-left"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleSelect(item)}
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity] || RARITY_COLORS.c}`}
-                    title={RARITY_LABELS[item.rarity] || 'Common'}
-                  />
-                  <span className="text-sm font-body text-text truncate">{item.name}</span>
-                  {item.slot && (
-                    <span className="text-[10px] text-textdim font-ui ml-auto shrink-0">{item.slot}</span>
-                  )}
-                </button>
-              ))
+              results.map((stack) => {
+                const item = stack.item!
+                return (
+                  <button
+                    key={stack.instanceId}
+                    type="button"
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-bg2 text-left"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleSelect(stack.instanceId)}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[item.rarity] || RARITY_COLORS.c}`}
+                      title={RARITY_LABELS[item.rarity] || 'Common'}
+                    />
+                    <span className="text-sm font-body text-text truncate">{item.name}</span>
+                    {item.slot && (
+                      <span className="text-[10px] text-textdim font-ui ml-auto shrink-0">{item.slot}</span>
+                    )}
+                  </button>
+                )
+              })
             )}
           </div>
         </div>

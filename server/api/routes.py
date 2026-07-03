@@ -972,6 +972,24 @@ async def get_inventory_capacity(session: AsyncSession = Depends(get_session)):
     return {"used": used, "max": max_slots}
 
 
+@router.post("/inventory/remove-instance")
+async def remove_inventory_instance(
+    data: dict = Body(default={}),
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a specific stowed instance by its instance id (equipment-aware UI)."""
+    instance_id = data.get("instanceId")
+    inst = await session.get(ItemInstance, instance_id) if instance_id else None
+    if not inst:
+        raise HTTPException(404, "Instance not found")
+    equipped = await inv_ops.equipped_map(session)
+    if inst.id in equipped:
+        raise HTTPException(400, "Item is equipped — unequip it first")
+    await session.delete(inst)
+    await session.commit()
+    return {"ok": True}
+
+
 async def _resolve_character_by_id(session: AsyncSession, char_id: str):
     ch = await session.get(PlayerCharacter, char_id)
     if ch is None:

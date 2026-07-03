@@ -28,9 +28,16 @@ export interface ItemCatalogEntry {
   desc: string
 }
 
+// One owned physical copy of an item. Equipment is non-stacking (count 1, one
+// row per copy); stackables keep a count. `equippedBy`/`slot` are derived from
+// the character equipment dicts server-side (null when stowed in the pack).
 export interface InventoryStack {
+  instanceId: string
   itemId: string
   count: number
+  equippedBy?: string | null
+  equippedByName?: string | null
+  slot?: string | null
 }
 
 export interface BasicInfo {

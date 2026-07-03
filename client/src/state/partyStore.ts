@@ -36,6 +36,9 @@ export const usePartyStore = create<PartyState>((set, get) => ({
       equipment: pc.equipment,
     })
     set({ playerCharacter: saved, lastSavedAt: Date.now() })
+    // Equipment may have changed → refresh inventory so equipped/stowed flags
+    // (derived from the equipment dicts) stay in sync.
+    void useItemsStore.getState().fetchInventory()
   },
 
   addPartyMember: async () => {
@@ -56,6 +59,7 @@ export const usePartyStore = create<PartyState>((set, get) => ({
       ),
       lastSavedAt: Date.now(),
     })
+    void useItemsStore.getState().fetchInventory()
   },
 
   removePartyMember: async (id) => {

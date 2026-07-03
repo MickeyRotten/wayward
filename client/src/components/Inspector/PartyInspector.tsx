@@ -230,24 +230,39 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
   const [removeError, setRemoveError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
 
-  // The specific copy being inspected (when selected from the inventory).
+  // The specific copy inspected (when opened from an inventory row), plus the
+  // aggregate view: every character wearing a copy, and the stowed count.
   const thisInstance = instanceId ? inventory.find((s) => s.instanceId === instanceId) : undefined
   const stowedCount = inventory.filter((s) => s.itemId === item.id && !s.equippedBy).length
+  const wornBy = inventory
+    .filter((s) => s.itemId === item.id && s.equippedBy)
+    .map((s) => ({ charId: s.equippedBy as string, name: s.equippedByName || 'Someone', slot: s.slot as string }))
+  const firstStowed = () => inventory.find((s) => s.itemId === item.id && !s.equippedBy)
 
   const charEquipment = (charId: string): Equipment | undefined =>
     pc && charId === pc.id ? pc.equipment : members.find((m) => m.id === charId)?.equipment
 
-  // Equip THIS instance (if one is selected) onto a character.
+  // Equip a stowed copy onto a character (best-fitting slot; any prior occupant
+  // is auto-unequipped by pickEquipSlot + the server).
   const equipOnto = async (charId: string) => {
     setPickerOpen(false)
     const equipment = charEquipment(charId)
     if (!equipment) return
     const slot = pickEquipSlot(item.slot, equipment)
-    await equipItem(charId, item.id, slot, instanceId)
+    await equipItem(charId, item.id, slot, firstStowed()?.instanceId)
   }
 
   const unequipFrom = async (charId: string, slot: string) => {
     await unequipSlot(charId, slot)
+  }
+
+  const dropItem = async () => {
+    setRemoveError('')
+    const target = (thisInstance && !thisInstance.equippedBy) ? thisInstance : firstStowed()
+    if (!target) return
+    try { await removeInstance(target.instanceId) } catch (e: unknown) {
+      setRemoveError(e instanceof Error ? e.message : 'Failed')
+    }
   }
 
   useEffect(() => {
@@ -308,72 +323,51 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
           </ItemSection>
         )}
 
-        {/* This copy — status + remove (when a specific instance is selected) */}
-        {thisInstance && (
-          <ItemSection title="This Copy">
+        {/* Inventory — stowed count + Drop Item */}
+        {stowedCount > 0 && (
+          <ItemSection title="Inventory">
             <div className="flex items-center justify-between gap-2">
               <span className="font-body text-sm text-text">
-                {thisInstance.equippedBy ? (
-                  <>
-                    <span className="text-gold2">{thisInstance.equippedByName || 'Equipped'}</span>
-                    <span className="text-textdim"> · {EQUIP_SLOT_LABELS[thisInstance.slot as keyof Equipment] ?? thisInstance.slot}</span>
-                  </>
-                ) : (
-                  <span className="text-textdim">Stowed in the pack</span>
-                )}
+                Stowed: <span className="text-gold">{stowedCount}</span>
               </span>
-              {!thisInstance.equippedBy && (
-                <button
-                  type="button"
-                  className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                  onClick={async () => {
-                    setRemoveError('')
-                    try { await removeInstance(thisInstance.instanceId) } catch (e: unknown) {
-                      setRemoveError(e instanceof Error ? e.message : 'Failed')
-                    }
-                  }}
-                >
-                  REMOVE
-                </button>
-              )}
+              <button
+                type="button"
+                className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                onClick={dropItem}
+              >
+                DROP ITEM
+              </button>
             </div>
             {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
           </ItemSection>
         )}
 
-        {/* Aggregate inventory count when not inspecting a specific copy. */}
-        {!thisInstance && stowedCount > 0 && (
-          <ItemSection title="Inventory">
-            <span className="font-body text-sm text-text">
-              Stowed: <span className="text-gold">{stowedCount}</span>
-            </span>
-          </ItemSection>
-        )}
-
-        {/* Equip — for equipment. Instance-specific when a copy is selected. */}
-        {item.type === 'Equipment' && thisInstance && (
+        {/* Equip — current wearers (each with Unequip) + equip to any character. */}
+        {item.type === 'Equipment' && (
           <ItemSection title="Equip">
             <div className="space-y-2">
-              {thisInstance.equippedBy ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-body text-sm text-text">
-                    Worn by <span className="text-gold2">{thisInstance.equippedByName}</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                    onClick={() => unequipFrom(thisInstance.equippedBy as string, thisInstance.slot as string)}
-                  >
-                    UNEQUIP
-                  </button>
-                </div>
-              ) : pickerOpen ? (
-                <EquipPicker
-                  pc={pc}
-                  members={members}
-                  onPick={equipOnto}
-                  onCancel={() => setPickerOpen(false)}
-                />
+              {wornBy.length > 0 ? (
+                wornBy.map((w, i) => (
+                  <div key={`${w.charId}-${w.slot}-${i}`} className="flex items-center justify-between gap-2">
+                    <span className="font-body text-sm text-text">
+                      <span className="text-gold2">{w.name}</span>
+                      <span className="text-textdim"> · {EQUIP_SLOT_LABELS[w.slot as keyof Equipment] ?? w.slot}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                      onClick={() => unequipFrom(w.charId, w.slot)}
+                    >
+                      UNEQUIP
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="font-body text-[12px] text-textdim">Not equipped by anyone.</p>
+              )}
+
+              {stowedCount > 0 && (pickerOpen ? (
+                <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
               ) : (
                 <button
                   type="button"
@@ -382,7 +376,7 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
                 >
                   + EQUIP TO…
                 </button>
-              )}
+              ))}
             </div>
           </ItemSection>
         )}

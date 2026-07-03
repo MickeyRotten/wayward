@@ -86,6 +86,7 @@ class NarratorUpdate(BaseModel):
     firstMessage: str | None = None
     postHistoryInstructions: str | None = None
     plannerInstructions: str | None = None
+    actionSuggestionsEnabled: bool | None = None
 
 
 class NarratorResponse(BaseModel):
@@ -95,6 +96,7 @@ class NarratorResponse(BaseModel):
     firstMessage: str
     postHistoryInstructions: str
     plannerInstructions: str
+    actionSuggestionsEnabled: bool
 
 
 # --- OpenRouter Settings ---
@@ -117,6 +119,7 @@ class OpenRouterSettingsUpdate(BaseModel):
     useTools: bool = True
     worldbuildingMode: str = "confirmation"
     worldbuildingModelId: str = ""
+    actionSuggestionsModelId: str = ""
     summaryThreshold: float = 0.7
     summaryModelId: str = ""
 
@@ -138,6 +141,7 @@ class OpenRouterSettingsResponse(BaseModel):
     useTools: bool
     worldbuildingMode: str
     worldbuildingModelId: str
+    actionSuggestionsModelId: str
     summaryThreshold: float
     summaryModelId: str
     apiKeySet: bool
@@ -200,6 +204,16 @@ class WorldbuildProposalSchema(BaseModel):
 
 class ChatMessageUpdate(BaseModel):
     content: str
+
+
+# --- Action Suggestions ---
+
+class ActionSuggestionsRunRequest(BaseModel):
+    turn: int | None = None
+
+
+class ActionSuggestionsResponse(BaseModel):
+    suggestions: list[str]
 
 
 # --- Item Catalog ---

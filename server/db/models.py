@@ -62,6 +62,11 @@ class OpenRouterSettings(Base):
     # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
     worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")
     worldbuilding_model_id: Mapped[str] = mapped_column(String, default="")
+    # Action Suggestions (contextual quick-action buttons): optional separate
+    # model (blank => main model). Enablement is per-campaign, on
+    # NarratorConfig.action_suggestions_enabled — this only picks which model
+    # runs it, kept app-wide like worldbuilding_model_id/summary_model_id.
+    action_suggestions_model_id: Mapped[str] = mapped_column(String, default="")
     # History summarisation: compress older turns when context usage exceeds this
     # fraction of the budget; optional separate model (blank => main model).
     summary_threshold: Mapped[float] = mapped_column(Float, default=0.7)
@@ -88,6 +93,10 @@ class NarratorConfig(Base):
     # Core instructions for the Planner persona (Planning mode). Editable in
     # Config; falls back to the built-in default when blank.
     planner_instructions: Mapped[str] = mapped_column(Text, default="")
+    # Action Suggestions: AI-generated contextual quick-action buttons above
+    # the chat input. Opt-in (off by default) since it's an extra LLM call
+    # per turn. Fixed/canned buttons (Look Around, Rest, etc.) are unaffected.
+    action_suggestions_enabled: Mapped[bool] = mapped_column(Integer, default=False)
 
 
 class LorebookEntry(Base):

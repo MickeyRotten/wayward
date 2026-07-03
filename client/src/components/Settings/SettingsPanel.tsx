@@ -46,6 +46,7 @@ export function SettingsPanel() {
   const [useTools, setUseTools] = useState(settings.useTools)
   const [wbMode, setWbMode] = useState(settings.worldbuildingMode)
   const [wbModelId, setWbModelId] = useState(settings.worldbuildingModelId)
+  const [actionSuggestionsModelId, setActionSuggestionsModelId] = useState(settings.actionSuggestionsModelId)
   const [summaryThreshold, setSummaryThreshold] = useState(settings.summaryThreshold)
   const [summaryModelId, setSummaryModelId] = useState(settings.summaryModelId)
   const [showAllModels, setShowAllModels] = useState(false)
@@ -54,6 +55,7 @@ export function SettingsPanel() {
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
   const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
   const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
+  const [actionSuggestionsEnabled, setActionSuggestionsEnabled] = useState(narrator.actionSuggestionsEnabled)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -72,9 +74,10 @@ export function SettingsPanel() {
     setUseTools(settings.useTools)
     setWbMode(settings.worldbuildingMode)
     setWbModelId(settings.worldbuildingModelId)
+    setActionSuggestionsModelId(settings.actionSuggestionsModelId)
     setSummaryThreshold(settings.summaryThreshold)
     setSummaryModelId(settings.summaryModelId)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.summaryThreshold, settings.summaryModelId])
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -82,7 +85,8 @@ export function SettingsPanel() {
     setSpotlightRule(narrator.spotlightRule)
     setPostHistory(narrator.postHistoryInstructions)
     setPlannerInstructions(narrator.plannerInstructions)
-  }, [narrator.instructions, narrator.firstMessage, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions])
+    setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
+  }, [narrator.instructions, narrator.firstMessage, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -113,10 +117,11 @@ export function SettingsPanel() {
       useTools,
       worldbuildingMode: wbMode,
       worldbuildingModelId: wbModelId,
+      actionSuggestionsModelId,
       summaryThreshold,
       summaryModelId,
     })
-    await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions })
+    await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled })
     // Carry-slot capacity is derived server-side; refetch inventory so the
     // Items panel reflects the new max immediately.
     await useItemsStore.getState().fetchInventory()
@@ -430,6 +435,34 @@ export function SettingsPanel() {
             />
             <span className="text-[10px] text-textdim font-body">
               Optional. A cheap/fast model is a good choice for summarising.
+            </span>
+          </label>
+
+          <div className="border-t border-line my-1" />
+          <div>
+            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Action Suggestions</span>
+          </div>
+          <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+            <input
+              type="checkbox"
+              checked={actionSuggestionsEnabled}
+              onChange={(e) => setActionSuggestionsEnabled(e.target.checked)}
+            />
+            Show AI-suggested actions above the input
+          </label>
+          <span className="text-[10px] text-textdim font-body">
+            After each narration, generates a few short scene-specific action buttons (e.g. "Push open the heavy door"). Off by default — an extra small LLM call per turn when enabled. Fixed buttons (Look Around, Rest, Use an Item, Talk to Party) always show regardless of this setting.
+          </span>
+          <label className="block">
+            <span className="text-[11px] text-textdim font-body">Action Suggestions Model</span>
+            <ModelPicker
+              value={actionSuggestionsModelId}
+              onChange={setActionSuggestionsModelId}
+              models={settings.availableModels}
+              showAll={showAllModels}
+            />
+            <span className="text-[10px] text-textdim font-body">
+              Optional. Leave as "Use main model", or pick a cheap/fast tool-capable model.
             </span>
           </label>
         </Section>

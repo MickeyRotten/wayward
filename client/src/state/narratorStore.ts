@@ -8,6 +8,7 @@ interface NarratorConfigResponse {
   firstMessage: string
   postHistoryInstructions: string
   plannerInstructions: string
+  actionSuggestionsEnabled: boolean
 }
 
 interface NarratorState {
@@ -17,6 +18,7 @@ interface NarratorState {
   firstMessage: string
   postHistoryInstructions: string
   plannerInstructions: string
+  actionSuggestionsEnabled: boolean
   fetchConfig: () => Promise<void>
   save: (update: Partial<NarratorConfigResponse>) => Promise<void>
 }
@@ -28,6 +30,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
   firstMessage: '',
   postHistoryInstructions: '',
   plannerInstructions: '',
+  actionSuggestionsEnabled: false,
 
   fetchConfig: async () => {
     const n = await api.get<NarratorConfigResponse>('/narrator')
@@ -38,6 +41,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       firstMessage: n.firstMessage,
       postHistoryInstructions: n.postHistoryInstructions,
       plannerInstructions: n.plannerInstructions,
+      actionSuggestionsEnabled: n.actionSuggestionsEnabled,
     })
   },
 
@@ -50,6 +54,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       firstMessage: n.firstMessage,
       postHistoryInstructions: n.postHistoryInstructions,
       plannerInstructions: n.plannerInstructions,
+      actionSuggestionsEnabled: n.actionSuggestionsEnabled,
     })
   },
 }))

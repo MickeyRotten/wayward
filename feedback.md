@@ -451,30 +451,39 @@ Done: inventory item cards now show an "Equipped · <names>" indicator (gold, wi
 Done (Equip lives in the Inspector view, per your follow-up): selecting an item opens the Inspector, which for Equipment shows an "Equip" section — current wearers (name · slot) each with an UNEQUIP button, plus an "+ EQUIP TO…" button that lists the PC and ALL party members (including benched) to pick from. Equipping places the item in the best-fitting slot (an empty fitting slot if available, else the first fitting slot — whose previous item is automatically unequipped via lib/equipSlots.pickEquipSlot). Equipment references the item (it isn't consumed from the inventory stack). Works in Play (view) mode where gear management lives.
 
 ---
-[ ] Ensure that Editor has access to all editable fields, such as:
- - the new Scenario fields
+[x] Iteration: When I edit an item, the Slot field is a text field. Should be a dropdown.
+
+Done (commit 66fb5bf): the item editor's Slot is now a dropdown of body-slot categories (Head, Neck, Torso, Hands, Waist, Legs, Feet, Accessory, plus "— None —").
+
+---
+[x] Iteration: Ensure that Editor has access to all editable fields, such as:
+ - the new Scenario fields (Setting, History, Species, Geography, Technology & Magic, Other)
  - First Message field
  - all PC / Party Member fields, including Age, Species, Gender, etc.
 
----
-[ ] Editor seems a bit dumb at times. When I try to do an extended brainstorm session with it, it doesn't get from context that I want to edit the thing we're working on unless I explicitly state what I want to edit, e.g. turn 1: "make this scenario", turn 2: "let's make it more X", and it doesn't know what Turn 2 is in reference to, unless I mention "let's make the scenario more X". Editor should be more of an Assistant for brainstorming and discussion too.
+Done (commit da644ed): the Scenario structured fields (set_scenario) and First Message (set_first_message) were already exposed. Expanded update_pc / update_member / create_member to cover the full basic-info set — gender, age, heightCm, weightKg, likes, dislikes (plus newName to rename a member).
 
 ---
-[ ] Portraits in the Party Member view should have a fixed height. Image should fill.
+[x] Iteration: Portraits in the Party Member view should have a fixed height. Image should fill.
+
+Done (commit da644ed): the PC/member Inspector view portrait now uses a fixed height (h-72) with the image filling (object-cover) instead of a width-driven aspect ratio.
 
 ---
-[ ] I'd like to be able to edit the portrait in the Party Member view (resize the visible container, whose aspect ratio is fixed to the aspect ratio of the profile picture container), e.g. an "Edit Portrait" button that brings up the edit modal. The image in Inspector View should be the "full image", aka automatically fills the image area, no editing required.
+[ ] Iteration: I'd like to be able to edit the portrait in the Party Member view (resize the visible container, whose aspect ratio is fixed to the aspect ratio of the profile picture container), e.g. an "Edit Portrait" button that brings up the edit modal. The image in Inspector View should be the "full image", aka automatically fills the image area, no editing required.
 
 ---
-[ ] For all items in the Inventory, I'd like to have an "Add to Chat" button in the inspector view. This doesn't do anything except automatically add the name of the item into the chat input box, appended at the end (after a space), for ease of referencing items.
+[x] Bug: In Lorebook, sorting by Type doesn't work. UI disappears and nothing happens.
+
+Done (commit 66fb5bf): the sort comparator coerces name/type to strings, so a missing value no longer throws (which was blanking the panel).
 
 ---
-[ ] I'd love a QoL system where a prefix in chat brings up a list of all inventory items, and works as a filter too. E.g. if I start writing "@dra", it should show a contextual list above the chat box with all inventory entries containing "dra", such as Tide-Salt Draught. Just "@" shows all inventory items. When I confirm or click, it replaces the string with the full name of the item.
+[x] Bug: When I select a new Campaign, UI disappears and nothing happens. I have to refresh for the new Campaign to load.
+
+Done (commit 66fb5bf): reloadAll now uses Promise.allSettled, so one failing store fetch during a campaign switch can no longer abort the whole reload (which left the UI blank until a manual refresh).
 
 ---
-[ ] In Lorebook, sorting by Type doesn't work. UI disappears and nothing happens.
+[x] Bug: When I try to remove an item in my inventory using the Remove button in the Inspector (view), it shows: "removeInstance is not a function"
 
----
-[ ] When I select a new Campaign, UI disappears and nothing happens. I have to refresh for the new Campaign to load.
+Done (commit 0a00300): this was fallout from the item-instances merge — the server + some client files were instance-based but itemsStore/models.ts/ItemsPanel/the editors had reverted to pre-instance. Reconciled the client back to the instance model (InventoryStack type, itemsStore.removeInstance, ItemsPanel + EquipSlotFields, PartyInspector equip/unequip, ChangeNotices), added the /inventory/remove-instance endpoint, and restored the idempotent migrate_to_item_instances so fresh + existing DBs convert catalog-id equipment + stacks into non-stacking instances (kept the merged Action-Suggestions/Scenario migrations). Verified: client build clean; fresh-seed smoke = 10 instances, 7 worn slots each resolving to a distinct instance (Tifa's two gloves are now two copies).
 
 ---

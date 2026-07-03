@@ -19,7 +19,7 @@ The heart of the app is a **polished, agentic LLM narrative scene** — chat-bas
 - **Party spotlight** — deterministic signals decide when party members speak (see "Party Member Spotlight Logic").
 - **Chronicler** — a passive post-turn world-builder that proposes lore/quest/member additions.
 - **Edit Mode (the Editor)** — a foreground, conversational world-builder; full CRUD over the world.
-- **Lorebook** (world/characters/items/monsters/spells, with keyword injection), **quests + objectives**, **inventory + a unified item system** (items are lore entries), a structured **Scenario** tab (Setting/History/Species/Geography/Technology & Magic/Other — see "The Scenario"), an in-game **day** counter.
+- **Lorebook** (world/characters/items/monsters/spells, with keyword injection), **quests + objectives**, **inventory + a unified item system** (items are lore entries; owned copies are non-stacking `ItemInstance`s — see "Data Models"), **equip/unequip + Drop** from the item Inspector, a **crop/zoom portrait editor**, a structured **Scenario** tab (Setting/History/Species/Geography/Technology & Magic/Other — see "The Scenario"), an in-game **day** counter.
 - **Action Suggestions** — optional, AI-generated contextual quick-action buttons above the chat input, alongside fixed canned actions (see "Action Suggestions").
 - **OpenRouter integration** — model list (filtered to tool-capable), sampling params, tool settings.
 - **Campaigns & Adventures** — separate worlds (campaigns) and save files (adventures), each its own SQLite file; Save/Load, campaign switching, and zip import/export for sharing (see "Campaigns & Adventures").
@@ -68,13 +68,14 @@ Key tokens (see theme.css for the full set):
 **Source of truth: [`server/db/models.py`](server/db/models.py)** (SQLAlchemy) and [`shared/types/models.ts`](shared/types/models.ts) (the mirrored TS). Models are **schema-tagged by scope** (see "Campaigns & Adventures"): `app` (settings), `campaign` (the world), `adventure` (a save). Every entity keeps a stable UUID + `schema_version`.
 
 Highlights / things that have changed from the original alpha plan:
-- **Equipment** is 12 fixed slots, but each value is now an **item id** referencing a lorebook item entry (not free text). `BasicInfo` (name/gender/species/age/height/weight/description/portrait/likes/dislikes/personality) and `FieldSkill` (name/description) are JSON on the PC/party rows.
-- **Items are lorebook entries** (`LorebookEntry`, `cat == "items"`, carrying type/slot/rarity/maxStack/uses) — there is no separate item table. The lorebook also holds world/characters/monsters/spells, with keyword-based injection (`LorebookConfig`).
+- **Items are lorebook entries** (`LorebookEntry`, `cat == "items"`, carrying type/slot/rarity/maxStack/uses) — the shared *catalog* (campaign-scoped). No separate item table. The lorebook also holds world/characters/monsters/spells, with keyword-based injection (`LorebookConfig`).
+- **Item instances** (`ItemInstance`, adventure-scoped) are the party's owned physical copies — one row per copy (`id` UUID, `item_id` → catalog, `count`). **Equipment never stacks** (`count==1`, one row per copy, duplicates are distinct instances); stackables (consumables…) keep one row with a count. The legacy `InventoryStack` remains only for the one-time back-fill (`migrate_to_item_instances` in [`database.py`](server/db/database.py)). Instance helpers live in [`server/db/inventory.py`](server/db/inventory.py) (`equipped_map`, `capacity_used`, `find_stowed_instance`, `grant_items`/`remove_items`, `equip_instance`).
+- **Equipment** is 12 fixed slots; each value is an **instance id** (references an `ItemInstance`, not the catalog). "Equipped" is **derived** — an instance is *equipped* iff some character's `equipment[slot]` references its id, else it's *stowed* in the pack (single source of truth; no `equipped_by` column). `/inventory` returns every instance with server-derived `equippedBy`/`slot`; carry capacity counts stowed instances only. `BasicInfo` (name/gender/species/age/height/weight/description/portrait/likes/dislikes/personality) and `FieldSkill` (name/description) are JSON on the PC/party rows.
 - **Scenario** is edited as 6 structured fields, composed into a permanent, **locked** World lore entry's `content` (not its own table) — see "The Scenario". It still reaches the narrator via ordinary lore injection.
 - **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `planner_instructions`, `action_suggestions_enabled` (each text field falls back to a built-in default when blank).
 - **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_carry_slots`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`, `action_suggestions_model_id`.
 - **ChatMessage** (adventure-scoped) carries `role`, `content`, `turn_number`, `variant`, `speaker`, `mode` (`narrator`|`planner`), narrator-declared scene state (`location`, `time_of_day`, `weather`, `day`), `spotlight_reason`, and `applied_inventory_deltas`/`applied_equipment_changes` (for swipe/regenerate/delete reversal).
-- Also: `Quest` + `QuestObjective`, `InventoryStack`, `StorySummary`, `WorldbuildingProposal` (Chronicler), `AppState` (active campaign/adventure pointer).
+- Also: `Quest` + `QuestObjective`, `ItemInstance` (+ legacy `InventoryStack`), `StorySummary`, `WorldbuildingProposal` (Chronicler), `AppState` (active campaign/adventure pointer).
 
 Attributes (STR/CON/…) are narrative flavor only — not currently surfaced as a hard mechanic.
 
@@ -173,7 +174,9 @@ The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](
 - *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`, `update_summary` (replaces threshold summarization — the model compresses history when nudged by a context hint).
 - *Read:* `lookup_item`, `search_items`, `list_inventory`, `get_character` — let the model validate before acting (e.g. confirm an item exists and its slot before `equip`).
 
-**Persistence/reversal is unchanged.** Tools mutate the DB during the loop; the accumulated inventory deltas, equipment changes, and scene state are recorded on the `ChatMessage` exactly as before, so swipe/regenerate/delete reversal (`_reverse_message_effects`) works identically.
+The item tools operate on **instances**: `grant`/`equip` reuse a stowed instance or mint one; `unequip` just clears the slot (the instance becomes stowed — no inventory delta); `remove`/`consume` delete a stowed instance or decrement a stackable. Equipment inventory deltas and equipment changes carry **instance ids** so reversal restores the exact copy.
+
+**Persistence/reversal is unchanged in shape.** Tools mutate the DB during the loop; the accumulated inventory deltas, equipment changes, and scene state are recorded on the `ChatMessage`, so swipe/regenerate/delete reversal (`_reverse_message_effects`) works identically — now threading instance ids.
 
 **Model support & fallback.** Tool calling needs a tool-capable model. The model picker (`supportsTools` from OpenRouter's `supported_parameters`) defaults to tool-capable models. When `use_tools` is off **or** the selected model lacks tool support, the narrator falls back to the legacy `<<<ACTIONS>>>` text-block path — `parse_action_block`/`execute_actions`/`ACTION_INSTRUCTION` are retained for exactly this reason. Both `use_tools` and `max_tool_rounds` live on `OpenRouterSettings`, editable in Config → API & Model.
 
@@ -245,7 +248,7 @@ A **foreground** world-builder. Engine-style framing: **Play mode = Narration** 
 Storage is **modular, per-world, shareable**. A **Campaign** is a world; an **Adventure** is a save file within it.
 
 - **On disk** (`server/data/`, gitignored): `app.db` (settings + active-scope pointer), then `campaigns/<id>/{campaign.json, campaign.db, portraits/, adventures/<id>/{adventure.json, adventure.db, portraits/}}`. Campaign DB = lore + items + narrator config; adventure DB = PC, party, quests, inventory, chat, summary, proposals. JSON sidecars are the cheap index for Save/Load cards.
-- **At runtime** ([`server/db/database.py`](server/db/database.py)): one engine on `app.db` **ATTACHes** the active `campaign.db` (AS `campaign`) and `adventure.db` (AS `adventure`) on every connection. Because models are schema-tagged, one session reads/writes all three transparently (`select(LorebookEntry)` → `campaign.lorebook_entries`). `switch_active()` swaps the attached paths and disposes pooled connections so they re-attach. Use `new_session()` (not a top-level import of the sessionmaker) so callers get the live engine. Cross-scope references (equipment/inventory → item ids) are resolved **in Python**, never via cross-file SQL joins.
+- **At runtime** ([`server/db/database.py`](server/db/database.py)): one engine on `app.db` **ATTACHes** the active `campaign.db` (AS `campaign`) and `adventure.db` (AS `adventure`) on every connection. Because models are schema-tagged, one session reads/writes all three transparently (`select(LorebookEntry)` → `campaign.lorebook_entries`). `switch_active()` swaps the attached paths and disposes pooled connections so they re-attach. Use `new_session()` (not a top-level import of the sessionmaker) so callers get the live engine. Cross-scope references (equipment slot → instance id → catalog item id) are resolved **in Python**, never via cross-file SQL joins.
 - **Storage helpers + migration** in [`server/db/storage.py`](server/db/storage.py): folder/json layout, list/create campaign+adventure, and a one-time migration that splits a legacy single `wayward.db` into the default scope (kept as a backup).
 - **Management:** Save/Load adventures in the **Saves** rail tab (new adventure = blank slate, sharing the campaign's world). Config → **Campaign** switches/creates/deletes campaigns (new campaign opens in Edit Mode). **Export/Import** a campaign as a self-contained `.zip` (DB files + referenced portraits); import always creates a new, name-deduped campaign.
 
@@ -328,7 +331,8 @@ wayward/
 │   │   ├── Scene/ChatScene.tsx     Chat + banner; JRPG dialogue blocks, formatting
 │   │   ├── Home/                   PC + party (HomeView)
 │   │   ├── CharacterSheet/, PartyMember/   PC / member editors (view+edit)
-│   │   ├── Inspector/PartyInspector.tsx    Right pane — selected entity
+│   │   ├── PortraitBlock.tsx, PortraitEditor.tsx   portrait display + crop/zoom modal
+│   │   ├── Inspector/PartyInspector.tsx    Right pane — selected entity (+ item equip/drop)
 │   │   ├── ItemsPanel/, LorePanel/, QuestsPanel/   left panels
 │   │   ├── LorePanel/ScenarioEditor.tsx    the Scenario tab's 6-field form
 │   │   ├── Suggestions/SuggestionsPanel.tsx  Chronicler proposals ("Ideas")
@@ -358,7 +362,9 @@ wayward/
 │   │   └── item_detection.py   legacy deterministic item-use (non-tool path)
 │   ├── db/
 │   │   ├── models.py    SQLAlchemy (schema-tagged: app / campaign / adventure)
-│   │   ├── database.py  multi-DB ATTACH engine, init_db, switch_active, new_session
+│   │   ├── inventory.py item-instance helpers (equip/grant/remove, equipped map, capacity)
+│   │   ├── database.py  multi-DB ATTACH engine, init_db, switch_active, new_session,
+│   │   │                migrate_to_item_instances (idempotent back-fill)
 │   │   ├── storage.py   campaign/adventure folders + json + legacy migration
 │   │   └── seed.py      default demo content (Seraphine + Tifa + Rosalina + world)
 │   ├── api/routes.py    all REST + /chat/turn (+ swipe/regenerate) + agents + zip I/O

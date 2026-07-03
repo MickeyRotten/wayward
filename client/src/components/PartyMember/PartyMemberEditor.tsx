@@ -3,7 +3,7 @@ import type { PartyMember, Equipment, BasicInfo, FieldSkill, Rarity } from '@sha
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
-import { PortraitUpload } from '../PortraitUpload'
+import { PortraitBlock } from '../PortraitBlock'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { itemFitsSlot } from '../../lib/equipSlots'
@@ -87,16 +87,8 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
   if (mode === 'view') {
     return (
       <div className="space-y-6 p-6">
-        {/* Portrait — fixed height, image fills the area (see feedback #463). */}
-        {d.basicInfo.portrait && (
-          <div className="w-full h-72 border border-line rounded-md bg-bg2 overflow-hidden">
-            <img
-              src={`/portraits/${d.basicInfo.portrait}`}
-              alt="Portrait"
-              className="w-full h-full object-cover object-top"
-            />
-          </div>
-        )}
+        {/* Portrait — fixed 3:4, image fills; Edit Portrait opens the crop modal. */}
+        <PortraitBlock portrait={d.basicInfo.portrait} onChange={(fn) => updateBasic('portrait', fn, true)} />
 
         {/* Basic Info */}
         <Section title="Basic Info">
@@ -162,10 +154,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
       </div>
 
       {/* Portrait */}
-      <PortraitUpload
-        portrait={d.basicInfo.portrait}
-        onUploaded={(filename) => updateBasic('portrait', filename)}
-      />
+      <PortraitBlock portrait={d.basicInfo.portrait} onChange={(fn) => updateBasic('portrait', fn, true)} />
 
       {/* Basic Info */}
       <Section title="Basic Info">

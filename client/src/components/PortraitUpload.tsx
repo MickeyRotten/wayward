@@ -1,5 +1,15 @@
 import { useRef } from 'react'
 
+/** Upload an image blob (e.g. a cropped canvas export) → returns the filename. */
+export async function uploadPortraitBlob(blob: Blob): Promise<string | null> {
+  const form = new FormData()
+  form.append('file', blob, 'portrait.jpg')
+  const res = await fetch('/api/portraits/upload', { method: 'POST', body: form })
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.filename as string
+}
+
 export function PortraitUpload({
   portrait,
   onUploaded,

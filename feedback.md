@@ -469,7 +469,9 @@ Done (commit da644ed): the Scenario structured fields (set_scenario) and First M
 Done (commit da644ed): the PC/member Inspector view portrait now uses a fixed height (h-72) with the image filling (object-cover) instead of a width-driven aspect ratio.
 
 ---
-[ ] Iteration: I'd like to be able to edit the portrait in the Party Member view (resize the visible container, whose aspect ratio is fixed to the aspect ratio of the profile picture container), e.g. an "Edit Portrait" button that brings up the edit modal. The image in Inspector View should be the "full image", aka automatically fills the image area, no editing required.
+[x] Iteration: I'd like to be able to edit the portrait in the Party Member view (resize the visible container, whose aspect ratio is fixed to the aspect ratio of the profile picture container), e.g. an "Edit Portrait" button that brings up the edit modal. The image in Inspector View should be the "full image", aka automatically fills the image area, no editing required.
+
+Done: added a self-contained crop/zoom portrait editor (client/src/components/PortraitEditor.tsx — no external deps). A shared PortraitBlock shows the portrait in a fixed 3:4 container (image fills, no inline editing) with an "Edit Portrait" / "Add Portrait" button that opens the modal: a fixed 3:4 crop frame with drag-to-pan + wheel/slider zoom. On Save it bakes the framed region to a JPEG (canvas) and uploads it via the existing /api/portraits/upload, storing the result as the portrait. Wired into both the PC sheet and party member sheets, in view (Play) and edit modes. Chosen the bake approach so every view (Inspector, Home cards, chat, saves) just shows the finished, face-framed image.
 
 ---
 [x] Bug: In Lorebook, sorting by Type doesn't work. UI disappears and nothing happens.

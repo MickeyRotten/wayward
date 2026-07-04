@@ -17,9 +17,16 @@ function Step($m){ Write-Host "[setup]   $m" -ForegroundColor Yellow }
 function Ok($m){   Write-Host "[ok]      $m" -ForegroundColor Green }
 
 try {
-    Write-Host "=================================================="
-    Write-Host "  Wayward Alpha - setup & launch"
-    Write-Host "=================================================="
+    $banner = @'
+ __      __                                         .___
+/  \    /  \_____  ___.__.__  _  _______ _______  __| _/
+\   \/\/   /\__  \<   |  |\ \/ \/ /\__  \\_  __ \/ __ |
+ \        /  / __ \\___  | \     /  / __ \|  | \/ /_/ |
+  \__/\  /  (____  / ____|  \/\_/  (____  /__|  \____ |
+       \/        \/\/                   \/           \/
+'@
+    Write-Host $banner -ForegroundColor Yellow
+    Write-Host "  Alpha - setup & launch" -ForegroundColor DarkGray
 
     # ---------------------------------------------------------------
     # 1. Node.js (portable install under %LOCALAPPDATA%\nodejs)

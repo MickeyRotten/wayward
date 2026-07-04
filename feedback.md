@@ -699,13 +699,15 @@ Done: replaced the whole Quest + QuestObjective system with a flat **Task** mode
 Done (client/src/lib/narration.ts): the client segmenter's `splitSpokenLine` split the dialogue line at the FIRST closing quote, so a line with interleaved attribution (…Or," she adds, "…pays.") got cut after "Or," and the rest fell out of the card as narration. Changed it to split at the LAST closing quote instead: the whole multi-span line (both quoted spans + the "she adds, glancing sidelong at you," attribution between them) now stays as one dialogue beat, while a pure trailing tag like `"We should move." she said.` still splits the tag out of the box. Verified against the reported example plus edge cases (single span, two spans, trailing tag, unterminated quote) — all segment as intended; client tsc clean.
 
 ---
-[ ] For fun, add the following Ascii art to the launcher:
+[x] For fun, add the following Ascii art to the launcher:
  __      __                                         .___
 /  \    /  \_____  ___.__.__  _  _______ _______  __| _/
 \   \/\/   /\__  \<   |  |\ \/ \/ /\__  \\_  __ \/ __ | 
  \        /  / __ \\___  | \     /  / __ \|  | \/ /_/ | 
   \__/\  /  (____  / ____|  \/\_/  (____  /__|  \____ | 
        \/        \/\/                   \/           \/ 
+
+Done (Run.ps1): replaced the plain "===/ Wayward Alpha / ===" text banner at launch with the "Wayward" ASCII art, printed in gold (Write-Host -ForegroundColor Yellow) with a dimmed "Alpha - setup & launch" subtitle below it. Stored as a single-quoted here-string so the backslashes/pipes render literally. Run.bat is unchanged (it just delegates to Run.ps1). Verified the script still parses and the banner renders.
 
 ---
 [ ] PLAN MODE TASK:

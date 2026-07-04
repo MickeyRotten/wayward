@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { type SortKey, SORT_OPTIONS, RARITY_ORDER, sortList } from '../../lib/sortEntries'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 export function ItemsPanel() {
@@ -17,6 +18,21 @@ export function ItemsPanel() {
   const [removeMode, setRemoveMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('newest')
+  const [sortAsc, setSortAsc] = useState(false)
+
+  const sortedInventory = useMemo(
+    () => sortList(
+      inventory,
+      sortKey, sortAsc,
+      {
+        name: (s) => s.item?.name ?? '',
+        type: (s) => s.item?.type ?? '',
+        rarity: (s) => RARITY_ORDER[s.item?.rarity as Rarity] ?? 0,
+      },
+    ),
+    [inventory, sortKey, sortAsc],
+  )
 
   // The inventory now lists every owned instance (stowed + equipped). The
   // header count shows how many copies are stowed in the pack (worn gear aside).
@@ -64,6 +80,31 @@ export function ItemsPanel() {
         </div>
       </div>
 
+      {/* Sorting (mirrors the Lorebook) */}
+      <div className="px-4 pb-3 flex items-center gap-2">
+        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase shrink-0">Sorting:</span>
+        <select
+          aria-label="Sort inventory"
+          className="flex-1 min-w-0 border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text outline-none focus:border-line2"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.id} value={o.id}>{o.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          title={sortAsc ? 'Ascending' : 'Descending'}
+          className="shrink-0 border border-line text-textsec hover:text-text hover:border-line2 px-1.5 py-1 transition-colors"
+          onClick={() => setSortAsc((a) => !a)}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {sortAsc ? <path d="M12 19V5M5 12l7-7 7 7" /> : <path d="M12 5v14M5 12l7 7 7-7" />}
+          </svg>
+        </button>
+      </div>
+
       {/* Inventory list — every owned instance; worn gear is flagged "Equipped". */}
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
         {inventory.length === 0 && (
@@ -71,7 +112,7 @@ export function ItemsPanel() {
             No items in inventory
           </p>
         )}
-        {inventory.map((stack) => {
+        {sortedInventory.map((stack) => {
           const item = stack.item
           if (!item) return null
           const removable = !stack.equippedBy // can't remove worn gear from the pack

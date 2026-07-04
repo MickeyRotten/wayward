@@ -9,7 +9,8 @@ import { ItemCard } from '../ItemCard'
 import { CategoryIcon } from '../CategoryIcon'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ScenarioEditor } from './ScenarioEditor'
-import type { LoreCategory, LorebookEntry, Rarity } from '@shared/types/models'
+import { type SortKey, SORT_OPTIONS, RARITY_ORDER, sortList } from '../../lib/sortEntries'
+import type { LoreCategory, LorebookEntry } from '@shared/types/models'
 
 const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
   { id: 'world', label: 'World' },
@@ -18,35 +19,6 @@ const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
   { id: 'monsters', label: 'Monsters' },
   { id: 'spells', label: 'Spells' },
 ]
-
-type SortKey = 'newest' | 'alpha' | 'type' | 'rarity'
-const SORT_OPTIONS: { id: SortKey; label: string }[] = [
-  { id: 'newest', label: 'By newest' },
-  { id: 'alpha', label: 'Alphabetically' },
-  { id: 'type', label: 'By type' },
-  { id: 'rarity', label: 'By rarity' },
-]
-const RARITY_ORDER: Record<Rarity, number> = { c: 0, u: 1, r: 2, e: 3, l: 4 }
-
-/** Sort a list (preserving insertion order as the 'newest' basis / tiebreak). */
-function sortList<T>(
-  list: T[],
-  key: SortKey,
-  asc: boolean,
-  get: { name: (x: T) => string; type: (x: T) => string; rarity: (x: T) => number },
-): T[] {
-  const indexed = list.map((x, i) => ({ x, i }))
-  indexed.sort((a, b) => {
-    let c = 0
-    // Coerce to string so a missing name/type never throws (blanking the panel).
-    if (key === 'alpha') c = String(get.name(a.x) ?? '').localeCompare(String(get.name(b.x) ?? ''))
-    else if (key === 'type') c = String(get.type(a.x) ?? '').localeCompare(String(get.type(b.x) ?? ''))
-    else if (key === 'rarity') c = (get.rarity(a.x) || 0) - (get.rarity(b.x) || 0)
-    return c !== 0 ? c : a.i - b.i // stable; 'newest' = pure insertion order
-  })
-  const out = indexed.map((o) => o.x)
-  return asc ? out : out.reverse()
-}
 
 export function LorePanel() {
   const entries = useLoreStore((s) => s.entries)

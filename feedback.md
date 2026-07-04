@@ -512,10 +512,12 @@ Done (commit 4323ed2): the "Use an Item" button was wrapped in a `<div className
 ---
 [x] Remove: Let's remove the Inventory slot limit system. It's a needless complexity.
 
-Done: removed the carry-slot cap end to end. Server: dropped `capacity_used`/`_max_slots` and every "inventory is full" check in inventory.py, both capacity checks in narrator_actions.py (agent + legacy paths), the `/inventory/capacity` endpoint, the `max_carry_slots` column on OpenRouterSettings, and the field from the settings schema/response/export/import. Client: removed `maxCarrySlots` from settingsStore/itemsStore/models.ts, the "N / max" header (now shows a plain item count), and the "Max Carry Slots" field in Config → Adventure Settings. Inventory is now unbounded. (The DB column is simply no longer mapped; existing DBs keep the vestigial column harmlessly.) Verified: client tsc clean, server modules import clean.
+Done (commit d4f12d7): removed the carry-slot cap end to end. Server: dropped `capacity_used`/`_max_slots` and every "inventory is full" check in inventory.py, both capacity checks in narrator_actions.py (agent + legacy paths), the `/inventory/capacity` endpoint, the `max_carry_slots` column on OpenRouterSettings, and the field from the settings schema/response/export/import. Client: removed `maxCarrySlots` from settingsStore/itemsStore/models.ts, the "N / max" header (now shows a plain item count), and the "Max Carry Slots" field in Config → Adventure Settings. Inventory is now unbounded. (The DB column is simply no longer mapped; existing DBs keep the vestigial column harmlessly.) Verified: client tsc clean, server modules import clean.
 
 ---
-[ ] Iteration: Add sorting to Inventory, same as in Lorebook.
+[x] Iteration: Add sorting to Inventory, same as in Lorebook.
+
+Done: extracted the Lorebook's sort logic into a shared client/src/lib/sortEntries.ts (SortKey, SORT_OPTIONS, RARITY_ORDER, sortList) and reused it in both panels. Inventory now has the same "Sorting:" row below the header — a dropdown (By newest / Alphabetically / By type / By rarity) plus an asc/desc arrow toggle — sorting the inventory stacks by item name/type/rarity (newest = insertion order). LorePanel refactored to import the shared helper (no behavior change).
 
 ---
 [ ] Iteration: Action Suggestions. 

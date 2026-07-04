@@ -6,6 +6,7 @@ import { useUiStore } from '../../state/uiStore'
 import { PortraitBlock } from '../PortraitBlock'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { itemFitsSlot } from '../../lib/equipSlots'
+import { ItemCard } from '../ItemCard'
 
 const RARITY_COLORS: Record<Rarity, string> = {
   c: 'bg-rarity-c',
@@ -273,13 +274,12 @@ function EquipSlotField({ slotKey, label, value, onChange }: {
 
   return (
     <div className="relative">
-      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
       {open ? (
         <div>
           <input
             ref={inputRef}
             className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-            placeholder="Filter inventory..."
+            placeholder={`Filter for ${label}…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onBlur={() => setTimeout(closePicker, 200)}
@@ -313,26 +313,25 @@ function EquipSlotField({ slotKey, label, value, onChange }: {
           </div>
         </div>
       ) : currentItem ? (
-        <div className="flex items-center gap-2 w-full border border-line bg-bg0 px-2.5 py-1.5">
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${RARITY_COLORS[currentItem.rarity] || RARITY_COLORS.c}`}
-            title={RARITY_LABELS[currentItem.rarity] || 'Common'}
-          />
-          <span className="text-sm font-body text-text flex-1 truncate">{currentItem.name}</span>
+        // Filled slot → the item's card (click to swap). The slot name is
+        // omitted; the icon + context convey it. A × unequips it.
+        <div className="relative">
+          <ItemCard item={currentItem} selected={false} onClick={openPicker} />
           <button
             type="button"
-            className="text-textdim hover:text-danger text-base font-ui shrink-0 leading-none px-1"
-            onClick={handleClear}
-            title="Remove"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 text-textdim hover:text-danger text-base font-ui leading-none px-1 bg-bg2/80 rounded"
+            onClick={(e) => { e.stopPropagation(); handleClear() }}
+            title={`Unequip ${label}`}
           >&times;</button>
         </div>
       ) : (
+        // Empty slot → a placeholder that reads the slot's name.
         <button
           type="button"
-          className="w-full font-ui text-[11px] text-textsec border border-dashed border-line px-2.5 py-1.5 hover:border-line2 hover:text-text transition-colors text-left"
+          className="w-full font-ui text-[11px] text-textsec border border-dashed border-line rounded-md px-3 py-2 hover:border-line2 hover:text-text transition-colors text-left"
           onClick={openPicker}
         >
-          + Equip
+          {label}
         </button>
       )}
     </div>

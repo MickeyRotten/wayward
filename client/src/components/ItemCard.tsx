@@ -57,12 +57,13 @@ export function ItemCard({
   )
 }
 
-/** A small gold circle showing the first letter of an equipping character's name. */
+/** A small gold rounded-rectangle badge showing the first letter of an
+    equipping character's name. */
 function EquippedByBadge({ name }: { name: string }) {
   const letter = (name || '?').trim()[0]?.toUpperCase() || '?'
   return (
     <span
-      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full bg-gold/15 border border-gold/40 text-gold2 font-ui text-[10px] leading-none"
+      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] bg-gold/15 border border-gold/40 text-gold2 font-ui text-[10px] leading-none"
       title={`Equipped · ${name}`}
     >
       {letter}

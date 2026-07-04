@@ -677,6 +677,10 @@ Done: the narrator had no guidance that the inventory is the *party's* only, so 
 Done: both card types are now single-row and shorter (py-2.5 → py-1.5). ItemCard (ItemCard.tsx): dropped the uppercase type sub-header (the type icon already conveys it; added the type as a hover tooltip on the icon via a new optional `title` on ItemTypeIcon), and the old "Equipped · Names" text row is replaced by a compact first-letter badge per wearer on the right edge (`EquippedByBadge` — an 18px gold circle with the character's initial + a full-name tooltip). LoreCard (LorePanel.tsx): removed the "{cat} · N kw" sub-header for both the icon variant and the character letter-avatar variant, collapsing each to a single centered row (character avatar column trimmed 56→44px). Verified: client tsc clean.
 
 ---
-[ ] Equipment view on PC / Party Members should use the Item Cards. An empty slot can read the name of the slot (inside the empty slot), but a filled slot does not need it. The player can understand it from the item card icon, and from context.
+[x] Equipment view on PC / Party Members should use the Item Cards. An empty slot can read the name of the slot (inside the empty slot), but a filled slot does not need it. The player can understand it from the item card icon, and from context.
+
+Done: the equipment slot control (`EquipSlotField`, duplicated in CharacterSheetEditor.tsx and PartyMemberEditor.tsx) now renders a filled slot as the shared <ItemCard> (click it to swap; a small × overlaid on the right unequips) with no slot-name label, and an empty slot as a dashed placeholder that reads the slot's own name ("Head", "Left Hand", …) instead of a generic "+ Equip". The external label above each slot was removed; while the picker is open the filter placeholder reads "Filter for {slot}…" so the target slot is still clear. Verified: full client build clean.
+
+Follow-up (user request): the equipped-by badge on ItemCard is a rounded rectangle (rounded-[4px]), not a circle.
 
 ---

@@ -646,7 +646,7 @@ Done: broadened the Chronicler-reversal that runs on regenerate/swipe/delete (`r
 
 ---
 
-[ ] Bug: When I give an item to an NPC, the Narrator has a hard time figuring out what to do. It tends to add that item into my inventory first, then remove it, resulting in a +-0 situation. Expert from terminal log:
+[x] Bug: When I give an item to an NPC, the Narrator has a hard time figuring out what to do. It tends to add that item into my inventory first, then remove it, resulting in a +-0 situation. Expert from terminal log:
 
   ── [user] ──
 Give Miri the Charged Butt Plug
@@ -664,5 +664,7 @@ INFO:     127.0.0.1:57167 - "POST /api/action-suggestions/run HTTP/1.1" 200 OK
 16:22:50 INFO wayward.worldbuilder | CHRONICLER PROPOSAL turn=10 Update lore: Charged Butt Plug [pending]
 INFO:     127.0.0.1:57166 - "POST /api/worldbuild/run HTTP/1.1" 200 OK
 INFO:     127.0.0.1:57175 - "GET /api/worldbuild/proposals?status=pending HTTP/1.1" 200 OK
+
+Done: the narrator had no guidance that the inventory is the *party's* only, so "give X to <NPC>" read as an ambiguous transfer and it hedged with grant_item + remove_item (net zero). Tightened the tool guidance and schemas in narrator_agent.py: TOOL_GUIDANCE now states the inventory is the player party's alone (NPCs/monsters have none), that giving/handing/selling an item to anyone NOT in the party is a *single* remove_item (and if the party never had it, change nothing — just narrate), and that grant_item is only for the party GAINING an item; handing between party members changes nothing. The grant_item/remove_item tool descriptions were reworded to the same effect ("Do NOT call grant_item when the party gives an item away"; "remove_item is the ONLY tool needed when giving away — never pair it with grant_item"). Behavioural (LLM) fix — no deterministic test; module imports clean.
 
 ---

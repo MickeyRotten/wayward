@@ -42,6 +42,9 @@ TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them 
 - When you grant or equip an item, it must already exist in the world. If unsure, call lookup_item or search_items before grant_item/equip — guessing a name that doesn't exist does nothing.
 - Use set_scene whenever the location, time of day, or weather is first established or changes. Also set the in-game `day` (starting at 1) when a new day begins — e.g. after the party sleeps or time skips to the next morning — incrementing by 1 each new day.
 - Use consume_item when the player uses up an item they carry (e.g. drinks a potion).
+- The inventory is the PLAYER PARTY's inventory only — NPCs and monsters do not have inventories you track.
+  - The player giving/handing/selling an item to an NPC (anyone NOT in the player's party) is a single remove_item — it leaves the party's inventory. Do NOT grant_item then remove_item (that nets to zero and is wrong). If the party never actually had that item, change no inventory at all — just narrate.
+  - Only grant_item when the party GAINS an item (found, bought, looted, received as a gift). Handing between party members changes nothing — the party still owns it.
 - Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
 - Most turns need no tools at all — just narrate."""
 
@@ -98,7 +101,7 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "grant_item",
-            "description": "Add an existing world item to the party inventory.",
+            "description": "Add an existing world item to the party inventory (the party GAINED it: found/bought/looted/received). Do NOT call this when the party gives an item away.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -113,7 +116,7 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "remove_item",
-            "description": "Remove an item from the party inventory (lost, given away, destroyed).",
+            "description": "Remove an item the party owns from its inventory (given to an NPC, sold, lost, destroyed). This is the ONLY tool needed when the party gives an item away — never pair it with grant_item.",
             "parameters": {
                 "type": "object",
                 "properties": {

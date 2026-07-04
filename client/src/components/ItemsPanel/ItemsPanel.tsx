@@ -38,8 +38,10 @@ export function ItemsPanel() {
   // header count shows how many copies are stowed in the pack (worn gear aside).
   const stowedCount = inventory.filter((s) => !s.equippedBy).length
 
-  const isSelected = (itemId: string) =>
-    selection?.kind === 'item' && selection.id === itemId
+  // Select a *specific copy*: a given instance highlights (and inspects) only
+  // that row, so two copies of the same item are independently selectable.
+  const isSelected = (instanceId: string) =>
+    selection?.kind === 'item' && selection.instanceId === instanceId
 
   // Cancel remove-mode when leaving Edit Mode.
   useEffect(() => {
@@ -127,11 +129,11 @@ export function ItemsPanel() {
               <ItemCard
                 item={item}
                 count={stack.count}
-                selected={removeMode ? selectedIds.has(stack.instanceId) : isSelected(stack.itemId)}
+                selected={removeMode ? selectedIds.has(stack.instanceId) : isSelected(stack.instanceId)}
                 onClick={() => (
                   removeMode
                     ? (removable && toggleSelected(stack.instanceId))
-                    : select({ kind: 'item', id: stack.itemId })
+                    : select({ kind: 'item', id: stack.itemId, instanceId: stack.instanceId })
                 )}
                 equippedBy={stack.equippedByName ? [stack.equippedByName] : undefined}
               />

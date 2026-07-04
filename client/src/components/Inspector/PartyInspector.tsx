@@ -243,13 +243,15 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
     pc && charId === pc.id ? pc.equipment : members.find((m) => m.id === charId)?.equipment
 
   // Equip a stowed copy onto a character (best-fitting slot; any prior occupant
-  // is auto-unequipped by pickEquipSlot + the server).
+  // is auto-unequipped by pickEquipSlot + the server). When a specific copy is
+  // inspected, equip THAT instance; otherwise pick any stowed copy.
   const equipOnto = async (charId: string) => {
     setPickerOpen(false)
     const equipment = charEquipment(charId)
     if (!equipment) return
     const slot = pickEquipSlot(item.slot, equipment)
-    await equipItem(charId, item.id, slot, firstStowed()?.instanceId)
+    const copyId = thisInstance ? thisInstance.instanceId : firstStowed()?.instanceId
+    await equipItem(charId, item.id, slot, copyId)
   }
 
   const unequipFrom = async (charId: string, slot: string) => {
@@ -258,8 +260,9 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
 
   const dropItem = async () => {
     setRemoveError('')
-    const target = (thisInstance && !thisInstance.equippedBy) ? thisInstance : firstStowed()
-    if (!target) return
+    // Prefer the inspected copy; never drop a worn copy.
+    const target = thisInstance ?? firstStowed()
+    if (!target || target.equippedBy) return
     try { await removeInstance(target.instanceId) } catch (e: unknown) {
       setRemoveError(e instanceof Error ? e.message : 'Failed')
     }
@@ -323,62 +326,122 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
           </ItemSection>
         )}
 
-        {/* Inventory — stowed count + Drop Item */}
-        {stowedCount > 0 && (
-          <ItemSection title="Inventory">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-body text-sm text-text">
-                Stowed: <span className="text-gold">{stowedCount}</span>
-              </span>
-              <button
-                type="button"
-                className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                onClick={dropItem}
-              >
-                DROP ITEM
-              </button>
-            </div>
-            {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
-          </ItemSection>
-        )}
+        {thisInstance ? (
+          /* Per-instance view: a specific copy was selected in the Inventory —
+             show only THAT copy's state and act on it alone. */
+          <>
+            <ItemSection title="This Copy">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-body text-sm text-text">
+                  {thisInstance.equippedBy ? (
+                    <>
+                      Equipped by <span className="text-gold2">{thisInstance.equippedByName || 'Someone'}</span>
+                      {thisInstance.slot && (
+                        <span className="text-textdim"> · {EQUIP_SLOT_LABELS[thisInstance.slot as keyof Equipment] ?? thisInstance.slot}</span>
+                      )}
+                    </>
+                  ) : (
+                    'Stowed in the pack'
+                  )}
+                </span>
+                {!thisInstance.equippedBy && (
+                  <button
+                    type="button"
+                    className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                    onClick={dropItem}
+                  >
+                    DROP ITEM
+                  </button>
+                )}
+              </div>
+              {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
+            </ItemSection>
 
-        {/* Equip — current wearers (each with Unequip) + equip to any character. */}
-        {item.type === 'Equipment' && (
-          <ItemSection title="Equip">
-            <div className="space-y-2">
-              {wornBy.length > 0 ? (
-                wornBy.map((w, i) => (
-                  <div key={`${w.charId}-${w.slot}-${i}`} className="flex items-center justify-between gap-2">
-                    <span className="font-body text-sm text-text">
-                      <span className="text-gold2">{w.name}</span>
-                      <span className="text-textdim"> · {EQUIP_SLOT_LABELS[w.slot as keyof Equipment] ?? w.slot}</span>
-                    </span>
+            {item.type === 'Equipment' && (
+              <ItemSection title="Equip">
+                <div className="space-y-2">
+                  {thisInstance.equippedBy ? (
                     <button
                       type="button"
-                      className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                      onClick={() => unequipFrom(w.charId, w.slot)}
+                      className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
+                      onClick={() => unequipFrom(thisInstance.equippedBy as string, thisInstance.slot as string)}
                     >
-                      UNEQUIP
+                      UNEQUIP THIS COPY
                     </button>
-                  </div>
-                ))
-              ) : (
-                <p className="font-body text-[12px] text-textdim">Not equipped by anyone.</p>
-              )}
+                  ) : (pickerOpen ? (
+                    <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
+                  ) : (
+                    <button
+                      type="button"
+                      className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
+                      onClick={() => setPickerOpen(true)}
+                    >
+                      + EQUIP TO…
+                    </button>
+                  ))}
+                </div>
+              </ItemSection>
+            )}
+          </>
+        ) : (
+          /* Aggregate view: opened from Lore → Items (no specific copy). */
+          <>
+            {stowedCount > 0 && (
+              <ItemSection title="Inventory">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-body text-sm text-text">
+                    Stowed: <span className="text-gold">{stowedCount}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                    onClick={dropItem}
+                  >
+                    DROP ITEM
+                  </button>
+                </div>
+                {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
+              </ItemSection>
+            )}
 
-              {stowedCount > 0 && (pickerOpen ? (
-                <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
-              ) : (
-                <button
-                  type="button"
-                  className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
-                  onClick={() => setPickerOpen(true)}
-                >
-                  + EQUIP TO…
-                </button>
-              ))}
-            </div>
-          </ItemSection>
+            {item.type === 'Equipment' && (
+              <ItemSection title="Equip">
+                <div className="space-y-2">
+                  {wornBy.length > 0 ? (
+                    wornBy.map((w, i) => (
+                      <div key={`${w.charId}-${w.slot}-${i}`} className="flex items-center justify-between gap-2">
+                        <span className="font-body text-sm text-text">
+                          <span className="text-gold2">{w.name}</span>
+                          <span className="text-textdim"> · {EQUIP_SLOT_LABELS[w.slot as keyof Equipment] ?? w.slot}</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
+                          onClick={() => unequipFrom(w.charId, w.slot)}
+                        >
+                          UNEQUIP
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="font-body text-[12px] text-textdim">Not equipped by anyone.</p>
+                  )}
+
+                  {stowedCount > 0 && (pickerOpen ? (
+                    <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
+                  ) : (
+                    <button
+                      type="button"
+                      className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
+                      onClick={() => setPickerOpen(true)}
+                    >
+                      + EQUIP TO…
+                    </button>
+                  ))}
+                </div>
+              </ItemSection>
+            )}
+          </>
         )}
       </div>
     )

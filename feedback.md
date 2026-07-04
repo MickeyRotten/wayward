@@ -502,7 +502,9 @@ Done (commit 86e161d): the character sheets write equipment directly via savePla
 Done (commit 86e161d): the item Inspector's Equip section is back to the aggregate view — every current wearer shown as name · slot with an UNEQUIP button, plus a "+ EQUIP TO…" picker listing the PC and ALL party members (including benched). Equipping takes a stowed copy into the best-fitting slot (pickEquipSlot; prior occupant auto-unequipped) and references the item without consuming it. Added a "DROP ITEM" button in the Inventory section that removes a stowed copy from the pack. (This replaced the narrower instance-only "This Copy" section.)
 
 ---
-[ ] Iteration: The same item in Inventory should be its own instance. e.g. if I have two Iron Knuckle Dusters, and I select one, only that one should be selected, and shows only the Equip / Unequip for that particular instance of that item.
+[x] Iteration: The same item in Inventory should be its own instance. e.g. if I have two Iron Knuckle Dusters, and I select one, only that one should be selected, and shows only the Equip / Unequip for that particular instance of that item.
+
+Done: Inventory rows now select a specific copy. Selecting a row sets `selection.instanceId` (not just the catalog id), and the row-highlight compares instanceId, so two copies of the same item highlight independently. The item Inspector branches: with a specific copy (opened from the Inventory) it shows a "This Copy" section — "Equipped by <name> · <slot>" with an "Unequip this copy" button, or "Stowed in the pack" with Drop + "+ Equip to…" that equips THAT exact instance. Opened from Lore → Items (no copy) it keeps the aggregate view (all wearers, stowed count). Verified by client type-check; equip/unequip/drop now thread the inspected instance id.
 
 ---
 [x] Visual Bug: "Use an Item" button seems to be a couple of pixels lower than the other buttons
@@ -517,7 +519,7 @@ Done (commit d4f12d7): removed the carry-slot cap end to end. Server: dropped `c
 ---
 [x] Iteration: Add sorting to Inventory, same as in Lorebook.
 
-Done: extracted the Lorebook's sort logic into a shared client/src/lib/sortEntries.ts (SortKey, SORT_OPTIONS, RARITY_ORDER, sortList) and reused it in both panels. Inventory now has the same "Sorting:" row below the header — a dropdown (By newest / Alphabetically / By type / By rarity) plus an asc/desc arrow toggle — sorting the inventory stacks by item name/type/rarity (newest = insertion order). LorePanel refactored to import the shared helper (no behavior change).
+Done (commit f738510): extracted the Lorebook's sort logic into a shared client/src/lib/sortEntries.ts (SortKey, SORT_OPTIONS, RARITY_ORDER, sortList) and reused it in both panels. Inventory now has the same "Sorting:" row below the header — a dropdown (By newest / Alphabetically / By type / By rarity) plus an asc/desc arrow toggle — sorting the inventory stacks by item name/type/rarity (newest = insertion order). LorePanel refactored to import the shared helper (no behavior change).
 
 ---
 [ ] Iteration: Action Suggestions. 

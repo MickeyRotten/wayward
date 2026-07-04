@@ -592,7 +592,7 @@ export function ChatScene() {
             disabled={busy || !apiKeySet}
             onClick={() => sendTurn('I take a moment to rest.')}
           />
-          <div className="relative">
+          <div className="relative flex">
             <QuickActionButton
               label="Use an Item"
               disabled={busy || !apiKeySet || inventory.length === 0}

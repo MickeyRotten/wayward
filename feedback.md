@@ -505,6 +505,60 @@ Done (commit 86e161d): the item Inspector's Equip section is back to the aggrega
 [ ] Iteration: The same item in Inventory should be its own instance. e.g. if I have two Iron Knuckle Dusters, and I select one, only that one should be selected, and shows only the Equip / Unequip for that particular instance of that item.
 
 ---
-[ ] Bug: "Use an Item" button seems to be a couple of pixels lower than the other buttons
+[x] Visual Bug: "Use an Item" button seems to be a couple of pixels lower than the other buttons
+
+Done: the "Use an Item" button was wrapped in a `<div className="relative">` (for its popover) — that block wrapper introduced an inline-block baseline/descender gap, so the button rendered a few pixels below its flex siblings. Changed the wrapper to `relative flex`, which removes the baseline gap and aligns it with the other quick-action buttons.
+
+---
+[ ] Remove: Let's remove the Inventory slot limit system. It's a needless complexity.
+
+---
+[ ] Iteration: Add sorting to Inventory, same as in Lorebook.
+
+---
+[ ] Iteration: Action Suggestions. 
+
+- **Reactive action suggestions**: The AI‑generated suggestions are great, but they appear above the input, which looks a bit bad. Instead of this, surface them as **interactive choices in the chat itself** (like a modern visual novel) after a narration turn, styled as elegant buttons. This reduces the distance between reading and acting.
+
+---
+[ ] Iteration: The Config panel has many settings (model, tokens, worldbuilding mode, suggestions toggle, etc.). Group them into logical tabs or collapsible sections with clear descriptions:
+
+- **Campaign** (current campaign, delete campaign, new campaign)
+- **AI & Model** (model picker, temperature, max tokens)
+- **Agents & Tools** (use tools, max rounds, chronicler mode, suggestions toggle)
+- **World** (narrator instructions)
+
+Within each section, clearly differentiate each sub-section, e.g. by making them into collapsible sections as well.
+
+Add a small **“Reset to defaults”** link next to each section, except Campaign.
+
+Move First Message into the Scenario tab, but don't make it a part of Scenario.
+
+---
+[ ] Iteration: New Campaign:
+
+- In Config there should be a button for Create a New Campaign.
+  - Pressing it opens a modal with settings for the new campaign.
+- In those settings, I can choose a template for it from a dropdown list.
+- For now, the templates are Empty (nothing filled out), and Fantasy.
+- Templates should be separate JSONs in a folder called templates.
+
+---
+[ ] Universal defaults:
+- Ensure that Narration instructions, Spotlight rule, and Editor instructions are not empty when creating a new Campaign.
+
+---
+[ ] Defaults for a new Fantasy campaign.
+
+- Set something brief as default for all the Scenario fields, a generic high-fantasy setting
+- Default PC: Name - Hero, Species - Human, Gender - Male, Age - 22, very generic description.
+  - Default equipment for PC: Sword, Adventurer's Tunic, Tattered Pants, Worn Boots, Ratty Boxer Shorts
+- Default Party Member: Name - Varena, Species - Elf, Gender - Female, Age - 120, generic description out of a stereotypical white male D&D fan's imagination
+  - Default equipment for Varena: Longbow, Elvish Tunic (light and revealing), Thigh high boots, choker, Quill (Accessory)
+- Default items in Lorebook: The above equipment, Health Potion, Rations, Gold (Currency)
+- Default items in Inventory: The above equipment, Health Potion x3, Rations x2, Gold x10
+- 1 World Entry: Some generic forest, e.g. Murkwood.
+- 1 Monster Entry: Goblin
+- Default first message: PC standing at the entrance of the generic forest.
 
 ---

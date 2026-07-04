@@ -20,7 +20,7 @@ The heart of the app is a **polished, agentic LLM narrative scene** — chat-bas
 - **Chronicler** — a passive post-turn world-builder that proposes lore/quest/member additions.
 - **Edit Mode (the Editor)** — a foreground, conversational world-builder; full CRUD over the world.
 - **Lorebook** (world/characters/items/monsters/spells, with keyword injection), **quests + objectives**, **inventory + a unified item system** (items are lore entries; owned copies are non-stacking `ItemInstance`s — see "Data Models"), **equip/unequip + Drop** from the item Inspector, a **crop/zoom portrait editor**, a structured **Scenario** tab (Setting/History/Species/Geography/Technology & Magic/Other — see "The Scenario"), an in-game **day** counter.
-- **Action Suggestions** — optional, AI-generated contextual quick-action buttons above the chat input, alongside fixed canned actions (see "Action Suggestions").
+- **Action Suggestions** — optional, AI-generated contextual choice buttons rendered in-chat (visual-novel style) under the latest beat, alongside fixed canned actions above the input (see "Action Suggestions").
 - **OpenRouter integration** — model list (filtered to tool-capable), sampling params, tool settings.
 - **Campaigns & Adventures** — separate worlds (campaigns) and save files (adventures), each its own SQLite file; Save/Load, campaign switching, and zip import/export for sharing (see "Campaigns & Adventures").
 - Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme.
@@ -210,10 +210,10 @@ Key points: the Chronicler reuses [`chat_completion_agent_turn`](server/ai/openr
 
 ## Action Suggestions
 
-An optional, lightweight quick-actions row above the chat input in Play mode — a mix of always-available fixed buttons and short AI-generated contextual suggestions.
+Two surfaces in Play mode: always-available fixed buttons in a row above the chat input, and short AI-generated contextual suggestions rendered **inside the chat** (visual-novel style) under the latest narration beat.
 
-- **Fixed buttons** (no LLM cost, always shown): Look Around, Talk to Party, Rest, and Use an Item (opens an inline popover listing current inventory via `ItemCard`; picking an item sends `"I use the <item>."` and relies on the narrator's existing `consume_item`/`equip` tools to apply the effect).
-- **AI-contextual suggestions**: 3-4 short, scene-specific phrases (e.g. "Ask Tifa about the ruins") from a lightweight one-shot agent ([`server/ai/action_suggester.py`](server/ai/action_suggester.py)) modeled on the Chronicler but much smaller — one tool call (`suggest_actions`), no DB persistence, no accept/reject; a transient list regenerated every turn and lost on refresh.
+- **Fixed buttons** (no LLM cost, always shown, above the input): Look Around, Talk to Party, Rest, and Use an Item (opens an inline popover listing current inventory via `ItemCard`; picking an item sends `"I use the <item>."` and relies on the narrator's existing `consume_item`/`equip` tools to apply the effect).
+- **AI-contextual suggestions**: 3-4 short, scene-specific phrases (e.g. "Ask Tifa about the ruins") from a lightweight one-shot agent ([`server/ai/action_suggester.py`](server/ai/action_suggester.py)) modeled on the Chronicler but much smaller — one tool call (`suggest_actions`), no DB persistence, no accept/reject; a transient list regenerated every turn and lost on refresh. Rendered as elegant choice buttons at the bottom of the chat (only when idle), not above the input.
 - Gated by `NarratorConfig.action_suggestions_enabled` (**per-campaign**, default off — an extra LLM call per turn when on) with an optional model override `OpenRouterSettings.action_suggestions_model_id` (blank → main model), both editable in Config → Agents.
 - Fire-and-forget from `chatStore` after each narrator turn completes (`POST /action-suggestions/run`) — the same pattern as the Chronicler's `worldbuildStore.runForTurn`, so it never blocks the chat UI. Fixed buttons and AI suggestions alike just call the existing `sendTurn` with canned text — no special submission path.
 

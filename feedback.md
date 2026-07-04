@@ -504,7 +504,7 @@ Done (commit 86e161d): the item Inspector's Equip section is back to the aggrega
 ---
 [x] Iteration: The same item in Inventory should be its own instance. e.g. if I have two Iron Knuckle Dusters, and I select one, only that one should be selected, and shows only the Equip / Unequip for that particular instance of that item.
 
-Done: Inventory rows now select a specific copy. Selecting a row sets `selection.instanceId` (not just the catalog id), and the row-highlight compares instanceId, so two copies of the same item highlight independently. The item Inspector branches: with a specific copy (opened from the Inventory) it shows a "This Copy" section — "Equipped by <name> · <slot>" with an "Unequip this copy" button, or "Stowed in the pack" with Drop + "+ Equip to…" that equips THAT exact instance. Opened from Lore → Items (no copy) it keeps the aggregate view (all wearers, stowed count). Verified by client type-check; equip/unequip/drop now thread the inspected instance id.
+Done (commit 6d77b9e): Inventory rows now select a specific copy. Selecting a row sets `selection.instanceId` (not just the catalog id), and the row-highlight compares instanceId, so two copies of the same item highlight independently. The item Inspector branches: with a specific copy (opened from the Inventory) it shows a "This Copy" section — "Equipped by <name> · <slot>" with an "Unequip this copy" button, or "Stowed in the pack" with Drop + "+ Equip to…" that equips THAT exact instance. Opened from Lore → Items (no copy) it keeps the aggregate view (all wearers, stowed count). Verified by client type-check; equip/unequip/drop now thread the inspected instance id.
 
 ---
 [x] Visual Bug: "Use an Item" button seems to be a couple of pixels lower than the other buttons
@@ -522,9 +522,11 @@ Done (commit d4f12d7): removed the carry-slot cap end to end. Server: dropped `c
 Done (commit f738510): extracted the Lorebook's sort logic into a shared client/src/lib/sortEntries.ts (SortKey, SORT_OPTIONS, RARITY_ORDER, sortList) and reused it in both panels. Inventory now has the same "Sorting:" row below the header — a dropdown (By newest / Alphabetically / By type / By rarity) plus an asc/desc arrow toggle — sorting the inventory stacks by item name/type/rarity (newest = insertion order). LorePanel refactored to import the shared helper (no behavior change).
 
 ---
-[ ] Iteration: Action Suggestions. 
+[x] Iteration: Action Suggestions. 
 
 - **Reactive action suggestions**: The AI‑generated suggestions are great, but they appear above the input, which looks a bit bad. Instead of this, surface them as **interactive choices in the chat itself** (like a modern visual novel) after a narration turn, styled as elegant buttons. This reduces the distance between reading and acting.
+
+Done: the AI-generated suggestions moved out of the quick-actions row (above the input) and into the chat itself, rendered under the latest narration beat as a vertical stack of elegant VN-style choice buttons (left-aligned, gold "›" marker, hover-gold). They only show when idle (not while the narrator/Chronicler is working) and clicking one sends it via the existing sendTurn. The fixed buttons (Look Around / Talk to Party / Rest / Use an Item) stay above the input. No backend change — same transient per-turn suggestions list.
 
 ---
 [ ] Iteration: The Config panel has many settings (model, tokens, worldbuilding mode, suggestions toggle, etc.). Group them into logical tabs or collapsible sections with clear descriptions:

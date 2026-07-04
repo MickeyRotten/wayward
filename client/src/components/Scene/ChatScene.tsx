@@ -494,6 +494,24 @@ export function ChatScene() {
           </button>
         )}
 
+        {/* Reactive action suggestions — VN-style choices under the last beat,
+            shown only when idle so they read as "what do you do?" options. */}
+        {!planningMode && !busy && actionSuggestionsEnabled && actionSuggestions.length > 0 && (
+          <div className="mr-auto w-full max-w-[85%] flex flex-col gap-1.5 pl-1 pt-1">
+            {actionSuggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                disabled={busy || !apiKeySet}
+                onClick={() => sendTurn(s)}
+                className="group text-left font-body text-sm text-text2 border border-line rounded-md bg-bg2/40 px-3.5 py-2 hover:border-gold hover:text-text hover:bg-gold/5 transition-colors disabled:opacity-40"
+              >
+                <span className="text-golddeep group-hover:text-gold mr-2">›</span>{s}
+              </button>
+            ))}
+          </div>
+        )}
+
         {error && (
           <div className="mr-auto max-w-[85%] border border-danger-border bg-danger-bg rounded-md px-4 py-3">
             <div className="flex items-center gap-2 mb-1">
@@ -622,14 +640,6 @@ export function ChatScene() {
               </>
             )}
           </div>
-          {actionSuggestionsEnabled && actionSuggestions.map((s) => (
-            <QuickActionButton
-              key={s}
-              label={s}
-              disabled={busy || !apiKeySet}
-              onClick={() => sendTurn(s)}
-            />
-          ))}
         </div>
       )}
 

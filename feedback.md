@@ -672,3 +672,11 @@ INFO:     127.0.0.1:57175 - "GET /api/worldbuild/proposals?status=pending HTTP/1
 Done: the narrator had no guidance that the inventory is the *party's* only, so "give X to <NPC>" read as an ambiguous transfer and it hedged with grant_item + remove_item (net zero). Tightened the tool guidance and schemas in narrator_agent.py: TOOL_GUIDANCE now states the inventory is the player party's alone (NPCs/monsters have none), that giving/handing/selling an item to anyone NOT in the party is a *single* remove_item (and if the party never had it, change nothing — just narrate), and that grant_item is only for the party GAINING an item; handing between party members changes nothing. The grant_item/remove_item tool descriptions were reworded to the same effect ("Do NOT call grant_item when the party gives an item away"; "remove_item is the ONLY tool needed when giving away — never pair it with grant_item"). Behavioural (LLM) fix — no deterministic test; module imports clean.
 
 ---
+[x] Item and Lore Entry Cards could be just a bit smaller, vertically. The icon already tells the Type, so we can remove the small sub-header from the cards. An equipped item could just have a letter-icon on the right hand side, telling who has it equipped (first letter of the name).
+
+Done: both card types are now single-row and shorter (py-2.5 → py-1.5). ItemCard (ItemCard.tsx): dropped the uppercase type sub-header (the type icon already conveys it; added the type as a hover tooltip on the icon via a new optional `title` on ItemTypeIcon), and the old "Equipped · Names" text row is replaced by a compact first-letter badge per wearer on the right edge (`EquippedByBadge` — an 18px gold circle with the character's initial + a full-name tooltip). LoreCard (LorePanel.tsx): removed the "{cat} · N kw" sub-header for both the icon variant and the character letter-avatar variant, collapsing each to a single centered row (character avatar column trimmed 56→44px). Verified: client tsc clean.
+
+---
+[ ] Equipment view on PC / Party Members should use the Item Cards. An empty slot can read the name of the slot (inside the empty slot), but a filled slot does not need it. The player can understand it from the item card icon, and from context.
+
+---

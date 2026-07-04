@@ -342,41 +342,33 @@ function LockGlyph() {
    categories use the item-card layout with a category icon and no rarity bar.
    Disabled entries are dimmed. */
 function LoreCard({ entry, selected, onClick }: { entry: LorebookEntry; selected: boolean; onClick: () => void }) {
-  const subtitle = `${entry.cat}${entry.keywords.length ? ` · ${entry.keywords.length} kw` : ''}`
   const base = `group relative w-full text-left border rounded-md overflow-hidden transition-colors ${
     selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
   } ${entry.enabled ? '' : 'opacity-60'}`
 
+  // The category icon (or letter avatar) conveys the type — no text sub-header.
   if (entry.cat === 'characters') {
     return (
       <button type="button" className={`${base} flex items-stretch`} onClick={onClick}>
         <SelectionBar show={selected} />
-        <div className="w-14 self-stretch shrink-0 border-r border-line bg-bg3 flex items-center justify-center">
-          <span className="font-disp text-[20px] text-textdim pt-[2px]">{(entry.title || '?')[0].toUpperCase()}</span>
+        <div className="w-11 self-stretch shrink-0 border-r border-line bg-bg3 flex items-center justify-center">
+          <span className="font-disp text-[18px] text-textdim pt-[2px]">{(entry.title || '?')[0].toUpperCase()}</span>
         </div>
-        <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-center">
-          <div className="flex items-center gap-2">
-            <span className="font-body text-sm text-text truncate flex-1">{entry.title || 'Untitled'}</span>
-            {entry.locked && <LockGlyph />}
-          </div>
-          <span className="font-ui text-[8px] text-textdim tracking-wider uppercase">{subtitle}</span>
+        <div className="min-w-0 flex-1 px-3 py-1.5 flex items-center gap-2">
+          <span className="font-body text-sm text-text truncate flex-1">{entry.title || 'Untitled'}</span>
+          {entry.locked && <LockGlyph />}
         </div>
       </button>
     )
   }
 
   return (
-    <button type="button" className={`${base} pl-3 pr-3 py-2.5`} onClick={onClick}>
+    <button type="button" className={`${base} pl-3 pr-3 py-1.5`} onClick={onClick}>
       <SelectionBar show={selected} />
       <div className="flex items-center gap-2.5">
         <CategoryIcon cat={entry.cat} className="text-gold shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-body text-sm text-text truncate flex-1">{entry.title || 'Untitled'}</span>
-            {entry.locked && <LockGlyph />}
-          </div>
-          <span className="font-ui text-[8px] text-textdim tracking-wider uppercase">{subtitle}</span>
-        </div>
+        <span className="font-body text-sm text-text truncate flex-1 min-w-0">{entry.title || 'Untitled'}</span>
+        {entry.locked && <LockGlyph />}
       </div>
     </button>
   )

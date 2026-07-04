@@ -591,6 +591,8 @@ Done (commit a57e41d): `tool_get_character` (the narrator's get_character tool) 
 - If World, keep it also generic and nothing about the Party.
 - etc.
 
+Done: added per-category "timeless world fact" rules to BOTH agents. Chronicler (worldbuilder.py): guidance now spells out per-category rules (items = describe the item itself generically, never who holds it, and ALWAYS set itemType/slot/rarity; world = generic place, nothing about the party; monsters/spells/NPCs likewise). Its create_lore tool gained itemType/slot/rarity params, the create proposal carries them, and apply_proposal now sets item_type/slot/rarity/max_stack on Chronicler-made items (previously they had no Type). Editor (planner.py): added a "TIMELESS ENTRIES" rule with the same per-category guidance. Verified with a smoke test — a Chronicler item proposal applies with type=Equipment, slot=Hands, rarity=r.
+
 ---
 [x] Iteration: Inventory AND Lore>Items should have filtering tabs for Types: All, Equipment, Tool, Consumable, Key Item, Artifact, Other. The filter dropdown should still exist, but we can remove by type from it.
 
@@ -607,3 +609,4 @@ Done: in the item Inspector's per-copy (Inventory) view the buttons now read sim
 - **Streaming improvements**: Already in place, but ensure that during long narrator tool loops, the UI shows a **“Working…” spinner** or “The narrator is thinking…” state so the player doesn’t think it’s frozen.
 - **Transparent agents**: Always show which Agent is currently working, and what they're (roughly) doing.
 - **Graceful fallback when tools fail**: If the model calls a tool with invalid arguments, show a small **system message** in chat: “(The narrator tried to equip a non‑existent item, but the world stayed safe.)” This prevents silent corruption and confusion.
+- As for Narrator, show a seconds passed counter for Agents

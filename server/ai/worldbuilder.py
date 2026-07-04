@@ -131,7 +131,14 @@ Rules (strict — follow them exactly):
 - Never record a PARTY MEMBER or the PLAYER CHARACTER as lore. The party roster is tracked separately; do not file companions or the player under characters (or any category).
 - create_member ONLY when a NAMED character has clearly and deliberately joined the party as a travelling companion.
 - Record only what the narration actually established as fact — do not invent. No transient mood or weather.
-- Keep entries concise and concrete: a short descriptive paragraph, not a story."""
+- Keep entries concise and concrete: a short descriptive paragraph, not a story.
+
+Per-category rules (write the entry as a timeless world fact, NOT a diary of this turn):
+- items — Describe the item ITSELF, generically: what it is, looks like, does. Do NOT mention who currently holds or wears it, or the scene it appeared in. ALWAYS set its "itemType" (Equipment, Tool, Consumable, Key Item, Artifact, or Other); for Equipment also set a body "slot" (Head, Neck, Torso, Hands, Waist, Legs, Feet, or Accessory); set "rarity" if the fiction implies one (c=common, u=uncommon, r=rare, e=epic, l=legendary; default common).
+- world (places) — Describe the place generically and permanently. Nothing about the party, what they did there this turn, or transient events.
+- monsters — Describe the creature/type in general (appearance, behaviour, danger), not this one encounter's outcome.
+- spells — Describe the spell's effect and limits in general, not who cast it just now.
+- characters (NPCs) — Describe the person: who they are, appearance, role. Not the party's momentary interaction with them."""
 
 
 TOOL_SCHEMAS: list[dict] = [
@@ -139,14 +146,17 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "create_lore",
-            "description": "Record a new lorebook entry for something the fiction has established.",
+            "description": "Record a new lorebook entry for something the fiction has established. For cat='items', ALSO set itemType (and slot for Equipment).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "cat": {"type": "string", "enum": sorted(LORE_CATS)},
                     "title": {"type": "string", "description": "Short name, e.g. 'Sunken Chapel'."},
-                    "content": {"type": "string", "description": "A concise descriptive paragraph."},
+                    "content": {"type": "string", "description": "A concise descriptive paragraph. For items, describe the item itself — not who holds it."},
                     "keywords": {"type": "array", "items": {"type": "string"}},
+                    "itemType": {"type": "string", "enum": ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Other"], "description": "Items only. The kind of item."},
+                    "slot": {"type": "string", "enum": ["Head", "Neck", "Torso", "Hands", "Waist", "Legs", "Feet", "Accessory"], "description": "Equipment items only. The body slot it's worn in."},
+                    "rarity": {"type": "string", "enum": ["c", "u", "r", "e", "l"], "description": "Items only. c=common u=uncommon r=rare e=epic l=legendary."},
                 },
                 "required": ["cat", "title", "content"],
             },
@@ -431,6 +441,11 @@ async def _proposal_from_call(
         if cat == "items" and not _is_bolded(title, narration):
             return None
         payload = {"cat": cat, "title": title, "content": args.get("content", ""), "keywords": args.get("keywords", [])}
+        if cat == "items":
+            payload["itemType"] = (args.get("itemType") or "Other")
+            payload["rarity"] = (args.get("rarity") or "c")
+            if args.get("slot"):
+                payload["slot"] = args.get("slot")
         return WorldbuildingProposal(
             turn_number=turn_number, kind="lore", operation="create",
             payload=payload, summary=_summary("lore", "create", payload),
@@ -528,10 +543,16 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
     kind, op = proposal.kind, proposal.operation
 
     if kind == "lore" and op == "create":
+        cat = p.get("cat", "world")
         entry = LorebookEntry(
             title=p.get("title", ""), content=p.get("content", ""),
-            keywords=p.get("keywords") or [], cat=p.get("cat", "world"),
+            keywords=p.get("keywords") or [], cat=cat,
         )
+        if cat == "items":
+            entry.item_type = p.get("itemType") or "Other"
+            entry.rarity = p.get("rarity") or "c"
+            entry.slot = p.get("slot")
+            entry.max_stack = 1
         session.add(entry)
         await session.flush()
         proposal.target_id = entry.id  # tie the created entry to this proposal/turn

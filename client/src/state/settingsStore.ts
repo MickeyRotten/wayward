@@ -13,7 +13,6 @@ interface SettingsState {
   repetitionPenalty: number
   maxTokensResponse: number
   maxContextTokens: number
-  maxCarrySlots: number
   maxPartySize: number
   maxToolRounds: number
   useTools: boolean
@@ -43,7 +42,6 @@ function applyResponse(s: SettingsResponse) {
     repetitionPenalty: s.repetitionPenalty,
     maxTokensResponse: s.maxTokensResponse,
     maxContextTokens: s.maxContextTokens,
-    maxCarrySlots: s.maxCarrySlots,
     maxPartySize: s.maxPartySize,
     maxToolRounds: s.maxToolRounds,
     useTools: s.useTools,
@@ -67,7 +65,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   repetitionPenalty: 1.0,
   maxTokensResponse: 1000,
   maxContextTokens: 128000,
-  maxCarrySlots: 12,
   maxPartySize: 3,
   maxToolRounds: 6,
   useTools: true,
@@ -97,7 +94,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       repetitionPenalty: update.repetitionPenalty ?? state.repetitionPenalty,
       maxTokensResponse: update.maxTokensResponse ?? state.maxTokensResponse,
       maxContextTokens: update.maxContextTokens ?? state.maxContextTokens,
-      maxCarrySlots: update.maxCarrySlots ?? state.maxCarrySlots,
       maxPartySize: update.maxPartySize ?? state.maxPartySize,
       maxToolRounds: update.maxToolRounds ?? state.maxToolRounds,
       useTools: update.useTools ?? state.useTools,

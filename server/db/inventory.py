@@ -34,13 +34,6 @@ async def equipped_map(session: AsyncSession) -> dict[str, dict]:
     return out
 
 
-async def capacity_used(session: AsyncSession) -> int:
-    """Number of STOWED instances (equipped instances don't use a carry slot)."""
-    equipped = set((await equipped_map(session)).keys())
-    rows = (await session.execute(select(ItemInstance))).scalars().all()
-    return sum(1 for i in rows if i.id not in equipped)
-
-
 async def find_stowed_instance(session: AsyncSession, item_id: str) -> ItemInstance | None:
     """An unequipped instance of the given catalog item, if any."""
     equipped = set((await equipped_map(session)).keys())
@@ -65,12 +58,6 @@ async def is_equipment(session: AsyncSession, item_id: str) -> bool:
     return bool(e and e.cat == "items" and (e.item_type or "") == "Equipment")
 
 
-async def _max_slots(session: AsyncSession) -> int:
-    from server.db.models import OpenRouterSettings
-    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    return settings.max_carry_slots if settings else 12
-
-
 async def grant_items(session: AsyncSession, item: LorebookEntry, count: int, source: str) -> tuple[str, list[dict]]:
     """Add ``count`` of a catalog item to the pack.
 
@@ -79,25 +66,16 @@ async def grant_items(session: AsyncSession, item: LorebookEntry, count: int, so
     single stowed instance (delta by item id). Returns (message, inventory_deltas).
     """
     deltas: list[dict] = []
-    max_slots = await _max_slots(session)
     if (item.item_type or "") == "Equipment":
-        added = 0
         for _ in range(count):
-            if await capacity_used(session) >= max_slots:
-                break
             inst = create_instance(session, item.id, 1)
             deltas.append({"itemId": item.id, "delta": 1, "source": source, "instanceId": inst.id})
-            added += 1
-        if added == 0:
-            return (f"Inventory is full; could not add '{item.title}'.", [])
-        return (f"Added {added}× {item.title} to the party inventory.", deltas)
+        return (f"Added {count}× {item.title} to the party inventory.", deltas)
 
     existing = await find_stowed_instance(session, item.id)
     if existing:
         existing.count += count
     else:
-        if await capacity_used(session) >= max_slots:
-            return (f"Inventory is full; could not add '{item.title}'.", [])
         create_instance(session, item.id, count)
     deltas.append({"itemId": item.id, "delta": count, "source": source})
     return (f"Added {count}× {item.title} to the party inventory.", deltas)

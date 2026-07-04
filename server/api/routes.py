@@ -730,7 +730,6 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         repetitionPenalty=s.repetition_penalty,
         maxTokensResponse=s.max_tokens_response,
         maxContextTokens=s.max_context_tokens,
-        maxCarrySlots=s.max_carry_slots,
         maxPartySize=s.max_party_size,
         maxToolRounds=s.max_tool_rounds,
         useTools=bool(s.use_tools),
@@ -774,7 +773,6 @@ async def update_openrouter_settings(
     s.repetition_penalty = data.repetitionPenalty
     s.max_tokens_response = data.maxTokensResponse
     s.max_context_tokens = data.maxContextTokens
-    s.max_carry_slots = data.maxCarrySlots
     s.max_party_size = data.maxPartySize
     s.max_tool_rounds = data.maxToolRounds
     s.use_tools = data.useTools
@@ -896,8 +894,6 @@ async def delete_item(
 
 # ── Inventory ─────────────────────────────────────────────────────
 
-MAX_CARRY_SLOTS_DEFAULT = 12
-
 # The 12 valid equipment slot keys (used to validate /characters/equip|unequip).
 EQUIP_SLOT_KEYS = {
     "head", "neck", "torsoOver", "torsoUnder", "leftHand", "rightHand",
@@ -968,14 +964,6 @@ async def remove_from_inventory(
         raise HTTPException(404, message)
     await session.commit()
     return {"ok": True}
-
-
-@router.get("/inventory/capacity")
-async def get_inventory_capacity(session: AsyncSession = Depends(get_session)):
-    used = await inv_ops.capacity_used(session)
-    settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    max_slots = settings.max_carry_slots if settings else MAX_CARRY_SLOTS_DEFAULT
-    return {"used": used, "max": max_slots}
 
 
 @router.post("/inventory/remove-instance")
@@ -1526,7 +1514,6 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "temperature": settings.temperature if settings else 0.7,
             "maxTokensResponse": settings.max_tokens_response if settings else 1000,
             "maxContextTokens": settings.max_context_tokens if settings else 128000,
-            "maxCarrySlots": settings.max_carry_slots if settings else 12,
             "maxPartySize": settings.max_party_size if settings else 3,
             "maxToolRounds": settings.max_tool_rounds if settings else 6,
             "useTools": bool(settings.use_tools) if settings else True,
@@ -1653,7 +1640,6 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         temperature=s.get("temperature", 0.7),
         max_tokens_response=s.get("maxTokensResponse", 1000),
         max_context_tokens=s.get("maxContextTokens", 128000),
-        max_carry_slots=s.get("maxCarrySlots", 12),
         max_party_size=s.get("maxPartySize", 3),
         max_tool_rounds=s.get("maxToolRounds", 6),
         use_tools=s.get("useTools", True),

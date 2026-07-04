@@ -14,7 +14,6 @@ export interface InventoryStackWithItem extends InventoryStack {
 interface ItemsState {
   catalog: ItemCatalogEntry[]
   inventory: InventoryStackWithItem[]
-  maxCarrySlots: number
   searchResults: ItemCatalogEntry[]
 
   fetchCatalog: () => Promise<void>
@@ -32,7 +31,6 @@ interface ItemsState {
 export const useItemsStore = create<ItemsState>((set, get) => ({
   catalog: [],
   inventory: [],
-  maxCarrySlots: 12,
   searchResults: [],
 
   fetchCatalog: async () => {
@@ -41,11 +39,8 @@ export const useItemsStore = create<ItemsState>((set, get) => ({
   },
 
   fetchInventory: async () => {
-    const [stacks, capacity] = await Promise.all([
-      api.get<InventoryStackWithItem[]>('/inventory'),
-      api.get<{ used: number; max: number }>('/inventory/capacity'),
-    ])
-    set({ inventory: stacks, maxCarrySlots: capacity.max })
+    const stacks = await api.get<InventoryStackWithItem[]>('/inventory')
+    set({ inventory: stacks })
   },
 
   searchItems: async (q: string) => {

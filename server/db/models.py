@@ -50,9 +50,8 @@ class OpenRouterSettings(Base):
     repetition_penalty: Mapped[float] = mapped_column(Float, default=1.0)
     max_tokens_response: Mapped[int] = mapped_column(Integer, default=1000)
     max_context_tokens: Mapped[int] = mapped_column(Integer, default=128000)
-    # Adventure-ish settings kept app-global for now (move to per-adventure scope
-    # in a later phase). Unchanged API shape keeps Phase 1 client-free.
-    max_carry_slots: Mapped[int] = mapped_column(Integer, default=12)
+    # Adventure-ish setting kept app-global for now (move to per-adventure scope
+    # in a later phase).
     max_party_size: Mapped[int] = mapped_column(Integer, default=3)
     # Agentic tool loop: cap on tool round-trips per turn, and a master toggle
     # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.

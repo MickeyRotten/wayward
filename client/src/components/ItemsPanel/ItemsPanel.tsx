@@ -9,7 +9,6 @@ import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 export function ItemsPanel() {
   const inventory = useItemsStore((s) => s.inventory)
-  const maxCarrySlots = useItemsStore((s) => s.maxCarrySlots)
   const removeInstance = useItemsStore((s) => s.removeInstance)
   const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
@@ -19,8 +18,8 @@ export function ItemsPanel() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmRemove, setConfirmRemove] = useState(false)
 
-  // The inventory now lists every owned instance (stowed + equipped). Capacity
-  // counts only stowed instances (worn gear isn't in the pack).
+  // The inventory now lists every owned instance (stowed + equipped). The
+  // header count shows how many copies are stowed in the pack (worn gear aside).
   const stowedCount = inventory.filter((s) => !s.equippedBy).length
 
   const isSelected = (itemId: string) =>
@@ -60,7 +59,7 @@ export function ItemsPanel() {
         <div className="flex items-baseline justify-between">
           <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">INVENTORY</h2>
           <span className="font-ui text-[11px] text-textsec tracking-wider">
-            {stowedCount} / {maxCarrySlots}
+            {stowedCount} {stowedCount === 1 ? 'item' : 'items'}
           </span>
         </div>
       </div>

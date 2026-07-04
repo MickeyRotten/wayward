@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.db.models import (
     InventoryStack,
     LorebookEntry,
-    OpenRouterSettings,
     PartyMember,
     PlayerCharacter,
 )
@@ -121,27 +120,8 @@ async def execute_actions(
         ).scalars().first()
 
         if existing:
-            # Adding to existing stack is always fine
             existing.count += count
         else:
-            # Check carry capacity before creating new stack
-            total_stacks = (
-                await session.execute(
-                    select(func.count()).select_from(InventoryStack)
-                )
-            ).scalar()
-            settings = (
-                await session.execute(select(OpenRouterSettings))
-            ).scalars().first()
-            max_slots = settings.max_carry_slots if settings else 12
-
-            if total_stacks >= max_slots:
-                log.info(
-                    "Narrator addItems: inventory full (%d/%d), dropping '%s'",
-                    total_stacks, max_slots, item_name,
-                )
-                continue
-
             session.add(InventoryStack(item_id=item.id, count=count))
 
         inv_deltas.append({
@@ -411,13 +391,6 @@ async def _change_inventory(
         if existing:
             existing.count += count
         else:
-            total_stacks = (
-                await session.execute(select(func.count()).select_from(InventoryStack))
-            ).scalar()
-            settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-            max_slots = settings.max_carry_slots if settings else 12
-            if total_stacks >= max_slots:
-                return ToolEffect(result=f"Inventory is full ({total_stacks}/{max_slots}); could not add '{item.title}'.")
             session.add(InventoryStack(item_id=item.id, count=count))
         return ToolEffect(
             result=f"Added {count}× {item.title} to the party inventory.",

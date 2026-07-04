@@ -133,7 +133,6 @@ class OpenRouterSettingsUpdate(BaseModel):
     repetitionPenalty: float = 1.0
     maxTokensResponse: int = 1000
     maxContextTokens: int = 128000
-    maxCarrySlots: int = 12
     maxPartySize: int = 3
     maxToolRounds: int = 6
     useTools: bool = True
@@ -155,7 +154,6 @@ class OpenRouterSettingsResponse(BaseModel):
     repetitionPenalty: float
     maxTokensResponse: int
     maxContextTokens: int
-    maxCarrySlots: int
     maxPartySize: int
     maxToolRounds: int
     useTools: bool

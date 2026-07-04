@@ -91,7 +91,6 @@ export interface OpenRouterSettings {
   repetitionPenalty: number
   maxTokensResponse: number
   maxContextTokens: number
-  maxCarrySlots: number
   maxPartySize: number
   maxToolRounds: number
   useTools: boolean

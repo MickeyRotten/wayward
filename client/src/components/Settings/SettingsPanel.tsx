@@ -40,7 +40,6 @@ export function SettingsPanel() {
   const [presPen, setPresPen] = useState(settings.presencePenalty)
   const [repPen, setRepPen] = useState(settings.repetitionPenalty)
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
-  const [maxCarrySlots, setMaxCarrySlots] = useState(settings.maxCarrySlots)
   const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
   const [maxToolRounds, setMaxToolRounds] = useState(settings.maxToolRounds)
   const [useTools, setUseTools] = useState(settings.useTools)
@@ -68,7 +67,6 @@ export function SettingsPanel() {
     setPresPen(settings.presencePenalty)
     setRepPen(settings.repetitionPenalty)
     setMaxTokens(settings.maxTokensResponse)
-    setMaxCarrySlots(settings.maxCarrySlots)
     setMaxPartySize(settings.maxPartySize)
     setMaxToolRounds(settings.maxToolRounds)
     setUseTools(settings.useTools)
@@ -77,7 +75,7 @@ export function SettingsPanel() {
     setActionSuggestionsModelId(settings.actionSuggestionsModelId)
     setSummaryThreshold(settings.summaryThreshold)
     setSummaryModelId(settings.summaryModelId)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxCarrySlots, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId])
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -111,7 +109,6 @@ export function SettingsPanel() {
       repetitionPenalty: repPen,
       maxTokensResponse: maxTokens,
       maxContextTokens: settings.maxContextTokens,
-      maxCarrySlots,
       maxPartySize,
       maxToolRounds,
       useTools,
@@ -122,9 +119,6 @@ export function SettingsPanel() {
       summaryModelId,
     })
     await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled })
-    // Carry-slot capacity is derived server-side; refetch inventory so the
-    // Items panel reflects the new max immediately.
-    await useItemsStore.getState().fetchInventory()
     setApiKey('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
@@ -480,19 +474,6 @@ export function SettingsPanel() {
             />
             <span className="text-[10px] text-textdim font-body">
               Active party members (excluding the player character).
-            </span>
-          </label>
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Max Carry Slots</span>
-            <input
-              type="number"
-              min={1}
-              className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
-              value={maxCarrySlots}
-              onChange={(e) => setMaxCarrySlots(Math.max(1, Number(e.target.value) || 12))}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              How many distinct item stacks the party can carry.
             </span>
           </label>
         </Section>

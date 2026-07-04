@@ -507,10 +507,12 @@ Done (commit 86e161d): the item Inspector's Equip section is back to the aggrega
 ---
 [x] Visual Bug: "Use an Item" button seems to be a couple of pixels lower than the other buttons
 
-Done: the "Use an Item" button was wrapped in a `<div className="relative">` (for its popover) — that block wrapper introduced an inline-block baseline/descender gap, so the button rendered a few pixels below its flex siblings. Changed the wrapper to `relative flex`, which removes the baseline gap and aligns it with the other quick-action buttons.
+Done (commit 4323ed2): the "Use an Item" button was wrapped in a `<div className="relative">` (for its popover) — that block wrapper introduced an inline-block baseline/descender gap, so the button rendered a few pixels below its flex siblings. Changed the wrapper to `relative flex`, which removes the baseline gap and aligns it with the other quick-action buttons.
 
 ---
-[ ] Remove: Let's remove the Inventory slot limit system. It's a needless complexity.
+[x] Remove: Let's remove the Inventory slot limit system. It's a needless complexity.
+
+Done: removed the carry-slot cap end to end. Server: dropped `capacity_used`/`_max_slots` and every "inventory is full" check in inventory.py, both capacity checks in narrator_actions.py (agent + legacy paths), the `/inventory/capacity` endpoint, the `max_carry_slots` column on OpenRouterSettings, and the field from the settings schema/response/export/import. Client: removed `maxCarrySlots` from settingsStore/itemsStore/models.ts, the "N / max" header (now shows a plain item count), and the "Max Carry Slots" field in Config → Adventure Settings. Inventory is now unbounded. (The DB column is simply no longer mapped; existing DBs keep the vestigial column harmlessly.) Verified: client tsc clean, server modules import clean.
 
 ---
 [ ] Iteration: Add sorting to Inventory, same as in Lorebook.

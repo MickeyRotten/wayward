@@ -631,7 +631,9 @@ I asked the Party Member (Tifa) to equip an item. Narrator replied, and showed t
 [ ] Iteration: AI-suggested actions should always start with "I...", as the player writes from the first person perspective.
 
 ---
-[ ] Iteration: If I regenerate a post that has a pending Lore suggestion, the Lore suggestions generated during that turn should be removed and re-generated (if needed). The same with automatically accepted and manually accepted entries.
+[x] Iteration: If I regenerate a post that has a pending Lore suggestion, the Lore suggestions generated during that turn should be removed and re-generated (if needed). The same with automatically accepted and manually accepted entries.
+
+Done: broadened the Chronicler-reversal that runs on regenerate/swipe/delete (`reverse_chronicler_creations` → `reverse_chronicler_effects` in worldbuilder.py). Previously it only undid *accepted create* lore/quest proposals and left pending/rejected rows dangling. Now, for the reversed turn(s), it: (1) deletes accepted *creates* (lore, quests, objectives); (2) **restores accepted *updates*** — `apply_proposal` snapshots the pre-edit state into a reserved `_prev` payload key (content/keywords for lore, status/desc for quests, done/text for objectives), which reversal writes back (proposals are processed newest-first so the earliest snapshot wins when several turns touched the same entry); (3) drops *all* of the turn's proposal rows (pending/rejected/failed included — they belonged to the discarded telling), which also fixes delete-and-after leaving orphaned pending proposals. Accepted **member** recruitments stay intact (deliberate) with their record kept; locked entries (Scenario) are never touched. `_prev` is stripped before payloads go to the client. After regenerate the existing `worldbuildStore.runForTurn` fires a fresh Chronicler pass, so suggestions are re-generated. Verified with a smoke test: accepted create deleted, accepted update restored to original content, and all of the turn's pending proposals cleared.
 
 ---
 [ ] Iteration: Action Suggestions agent probably needs a bit more context for the suggestions, rather than just the current turn.

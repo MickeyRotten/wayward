@@ -23,7 +23,7 @@ from server.ai.item_detection import (
     reverse_inventory_deltas,
 )
 from server.ai.narrator_agent import run_narrator_agent
-from server.ai.worldbuilder import apply_proposal, reverse_chronicler_creations, run_worldbuilder
+from server.ai.worldbuilder import apply_proposal, reverse_chronicler_effects, run_worldbuilder
 from server.ai.action_suggester import run_action_suggester
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
@@ -1412,7 +1412,7 @@ async def delete_message_and_after(
 
     # Chronicler facts are tied to their message: drop lore/quests the Chronicler
     # created on this turn and every turn after it (the ones being deleted).
-    await reverse_chronicler_creations(session, msg.turn_number)
+    await reverse_chronicler_effects(session, msg.turn_number)
 
     await session.execute(
         delete(ChatMessage).where(ChatMessage.id >= msg.id)
@@ -2100,7 +2100,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         await _reverse_message_effects(latest_variant, session)
     # The prior variant's Chronicler lore/quests belong to the discarded telling
     # of this turn — drop them; the re-run's Chronicler pass will record fresh.
-    await reverse_chronicler_creations(session, turn, exact=True)
+    await reverse_chronicler_effects(session, turn, exact=True)
     await session.commit()
     agentic = await _should_use_tools(settings)
     # Re-detect against the now-restored inventory (legacy path only); agentic
@@ -2183,7 +2183,7 @@ async def regenerate(
 
     # Drop the discarded telling's Chronicler lore/quests for this turn; the
     # re-run's Chronicler pass records fresh ones tied to the new message.
-    await reverse_chronicler_creations(session, last_turn, exact=True)
+    await reverse_chronicler_effects(session, last_turn, exact=True)
 
     # REGENERATE wipes all existing assistant variants for this turn
     await session.execute(
@@ -2269,9 +2269,11 @@ async def get_summary(session: AsyncSession = Depends(get_session)):
 # ── World-building (Chronicler) ───────────────────────────────────
 
 def _proposal_to_schema(p: WorldbuildingProposal) -> WorldbuildProposalSchema:
+    # Strip the internal ``_prev`` reversal snapshot from the client-facing payload.
+    payload = {k: v for k, v in (p.payload or {}).items() if k != "_prev"}
     return WorldbuildProposalSchema(
         id=p.id, turnNumber=p.turn_number, kind=p.kind, operation=p.operation,
-        targetId=p.target_id, payload=p.payload or {}, summary=p.summary,
+        targetId=p.target_id, payload=payload, summary=p.summary,
         status=p.status, note=p.note,
     )
 

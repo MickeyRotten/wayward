@@ -537,6 +537,14 @@ async def _proposal_from_call(
     return None
 
 
+def _snapshot_prev(proposal: WorldbuildingProposal, prev: dict) -> None:
+    """Record an entry's pre-update state on the proposal so a regenerate/delete
+    of its turn can restore it. Stored under a reserved ``_prev`` payload key
+    (stripped before the payload is sent to the client). Reassign the dict so
+    SQLAlchemy tracks the JSON mutation."""
+    proposal.payload = {**(proposal.payload or {}), "_prev": prev}
+
+
 async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession) -> tuple[bool, str | None]:
     """Execute a proposal's write against the DB. Returns (ok, note)."""
     p = proposal.payload or {}
@@ -564,6 +572,8 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
             return False, "Lore entry no longer exists."
         if entry.locked:
             return False, "Entry is locked."
+        # Snapshot prior state so a regenerate/delete of this turn can restore it.
+        _snapshot_prev(proposal, {"content": entry.content, "keywords": list(entry.keywords or [])})
         if p.get("content") is not None:
             entry.content = p["content"]
         if p.get("keywords") is not None:
@@ -583,6 +593,7 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         quest = await session.get(Quest, proposal.target_id)
         if not quest:
             return False, "Quest no longer exists."
+        _snapshot_prev(proposal, {"status": quest.status, "desc": quest.desc})
         if p.get("status"):
             quest.status = p["status"]
         if p.get("desc") is not None:
@@ -604,6 +615,7 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         obj = await session.get(QuestObjective, proposal.target_id)
         if not obj:
             return False, "Objective no longer exists."
+        _snapshot_prev(proposal, {"done": obj.done, "text": obj.text})
         if p.get("done") is not None:
             obj.done = bool(p["done"])
         if p.get("text") is not None:
@@ -638,54 +650,120 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
     return False, f"Unknown proposal {kind}/{op}."
 
 
-async def reverse_chronicler_creations(
+async def _reverse_accepted_proposal(p: WorldbuildingProposal, session: AsyncSession) -> bool:
+    """Undo one accepted proposal's DB effect. Returns True if something changed.
+
+    Members are never reversed (recruiting is deliberate); locked entries (e.g.
+    the Scenario) are never touched. Updates restore the ``_prev`` snapshot
+    recorded at apply time."""
+    kind, op = p.kind, p.operation
+    prev = (p.payload or {}).get("_prev") or {}
+
+    if kind == "lore" and op == "create":
+        entry = await session.get(LorebookEntry, p.target_id) if p.target_id else None
+        if entry is not None and not entry.locked:
+            await session.delete(entry)
+            return True
+        return False
+
+    if kind == "lore" and op == "update":
+        entry = await session.get(LorebookEntry, p.target_id) if p.target_id else None
+        if entry is not None and not entry.locked and prev:
+            if "content" in prev:
+                entry.content = prev["content"]
+            if "keywords" in prev:
+                entry.keywords = prev["keywords"]
+            return True
+        return False
+
+    if kind == "quest" and op == "create":
+        quest = await session.get(Quest, p.target_id) if p.target_id else None
+        if quest is not None:
+            objs = (await session.execute(
+                select(QuestObjective).where(QuestObjective.quest_id == quest.id)
+            )).scalars().all()
+            for o in objs:
+                await session.delete(o)
+            await session.delete(quest)
+            return True
+        return False
+
+    if kind == "quest" and op == "update":
+        quest = await session.get(Quest, p.target_id) if p.target_id else None
+        if quest is not None and prev:
+            if "status" in prev:
+                quest.status = prev["status"]
+            if "desc" in prev:
+                quest.desc = prev["desc"]
+            return True
+        return False
+
+    if kind == "quest_objective" and op == "create":
+        obj = await session.get(QuestObjective, p.target_id) if p.target_id else None
+        if obj is not None:
+            await session.delete(obj)
+            return True
+        return False
+
+    if kind == "quest_objective" and op == "update":
+        obj = await session.get(QuestObjective, p.target_id) if p.target_id else None
+        if obj is not None and prev:
+            if "done" in prev:
+                obj.done = bool(prev["done"])
+            if "text" in prev:
+                obj.text = prev["text"]
+            return True
+        return False
+
+    return False  # member creations and anything else are left in place
+
+
+async def reverse_chronicler_effects(
     session: AsyncSession, from_turn: int, *, exact: bool = False
 ) -> int:
-    """Undo lore/quest entries the Chronicler CREATED on the given turn(s).
+    """Undo the Chronicler's lore/quest effects on the given turn(s) and drop the
+    turn's proposal rows.
 
-    Chronicler facts are tied to the message that triggered them: when that
-    message is deleted, regenerated, or swiped, the entries it spawned are
-    removed too. We use the proposal rows as the link (turn_number + the
-    target_id recorded at apply time). Only *accepted* *create* proposals for
-    lore/quests are reversed — members are NOT (recruiting is deliberate), and
-    locked entries (e.g. the Scenario) are never touched. Returns entries removed.
+    Chronicler suggestions are tied to the message that triggered them: when that
+    message is deleted, regenerated, or swiped, the entries it spawned (or the
+    edits it made) are undone and its proposals cleared, so the re-run records a
+    fresh set. We use the proposal rows as the link (turn_number + the target_id
+    recorded at apply time).
 
-    ``exact`` restricts to a single turn (swipe/regenerate of that turn);
-    otherwise it reverses that turn and everything after (delete-and-after).
+    - *accepted* create/update proposals (lore, quests, objectives) are reversed
+      — creates deleted, updates restored from their ``_prev`` snapshot;
+    - *pending / rejected / failed* proposals for the turn are simply dropped
+      (they belonged to the discarded telling);
+    - accepted *member* recruitments are left intact (deliberate) and their
+      proposal row is kept as the record;
+    - locked entries (e.g. the Scenario) are never touched.
+
+    Returns the number of entries reversed. ``exact`` restricts to a single turn
+    (swipe/regenerate of that turn); otherwise it reverses that turn and
+    everything after (delete-and-after).
     """
     turn_cond = (
         WorldbuildingProposal.turn_number == from_turn if exact
         else WorldbuildingProposal.turn_number >= from_turn
     )
+    # Descending so that when several turns touch the same entry, the earliest
+    # update's snapshot is restored last and therefore wins.
     proposals = (await session.execute(
-        select(WorldbuildingProposal).where(
-            turn_cond,
-            WorldbuildingProposal.status == "accepted",
-            WorldbuildingProposal.operation == "create",
-            WorldbuildingProposal.kind.in_(("lore", "quest")),
+        select(WorldbuildingProposal).where(turn_cond).order_by(
+            WorldbuildingProposal.turn_number.desc(), WorldbuildingProposal.id.desc()
         )
     )).scalars().all()
 
-    removed = 0
+    reversed_count = 0
     for p in proposals:
-        if p.target_id:
-            if p.kind == "lore":
-                entry = await session.get(LorebookEntry, p.target_id)
-                if entry is not None and not entry.locked:
-                    await session.delete(entry)
-                    removed += 1
-            elif p.kind == "quest":
-                quest = await session.get(Quest, p.target_id)
-                if quest is not None:
-                    objs = (await session.execute(
-                        select(QuestObjective).where(QuestObjective.quest_id == quest.id)
-                    )).scalars().all()
-                    for o in objs:
-                        await session.delete(o)
-                    await session.delete(quest)
-                    removed += 1
+        # Keep the record of a deliberate recruitment; the member stays.
+        if p.kind == "member" and p.status == "accepted":
+            continue
+        if p.status == "accepted":
+            if await _reverse_accepted_proposal(p, session):
+                reversed_count += 1
         await session.delete(p)  # drop the now-orphaned proposal record
-    return removed
+    return reversed_count
 
 
 async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:

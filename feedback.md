@@ -604,9 +604,16 @@ Done: added a shared <ItemTypeTabs> chip row (All / Equipment / Tool / Consumabl
 Done: in the item Inspector's per-copy (Inventory) view the buttons now read simply "Equip" and "Unequip" (were "+ EQUIP TO…" and "UNEQUIP THIS COPY").
 
 ---
-[ ] Iteration: Improved operation transparency.
+[x] Iteration: Improved operation transparency.
 
 - **Streaming improvements**: Already in place, but ensure that during long narrator tool loops, the UI shows a **“Working…” spinner** or “The narrator is thinking…” state so the player doesn’t think it’s frozen.
 - **Transparent agents**: Always show which Agent is currently working, and what they're (roughly) doing.
 - **Graceful fallback when tools fail**: If the model calls a tool with invalid arguments, show a small **system message** in chat: “(The narrator tried to equip a non‑existent item, but the world stayed safe.)” This prevents silent corruption and confusion.
 - As for Narrator, show a seconds passed counter for Agents
+
+Done:
+- Streaming / which-agent (already largely in place, kept): the generating indicator shows the working agent — THINKING (Narrator), THE EDITOR IS WORKING, THE CHRONICLER IS RECORDING — plus a friendly per-tool status label (e.g. "Equipping gear", "Writing lore") while tool rounds run.
+- Graceful tool-fail notice (NEW): ToolEffect gained an `ok` flag, set False on every mutating narrator tool that can't do what was asked (missing item/character, invalid slot, empty slot, bad count). The agent loop turns those into a spoiler-safe note ("The narrator tried to equip a nonexistent item (X) onto Y, but the world stayed safe."), threads them through the SSE done event, and the chat renders them as dismissible italic system notices — so a bad tool call is visible instead of silently doing nothing. Verified with a smoke test (bad equip/grant/unequip → ok=False + correct note; real equip and read-only tools stay ok).
+- Seconds counter (NEW): extracted a reusable <Elapsed> "Ns" counter and added it to the Editor and Chronicler indicators and the tool-status line (the Narrator's THINKING already had one), so every agent shows elapsed time.
+
+---

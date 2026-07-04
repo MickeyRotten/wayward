@@ -270,6 +270,7 @@ async def run_narrator_agent(
     equip_changes: list[dict] = []
     scene: dict = {}
     final_content = ""
+    tool_failures: list[str] = []
 
     max_rounds = max(1, settings.max_tool_rounds or 6)
     full_max_tokens = settings.max_tokens_response
@@ -357,13 +358,17 @@ async def run_narrator_agent(
                 inv_deltas.extend(effect.inv_deltas)
                 equip_changes.extend(effect.equip_changes)
                 scene.update(effect.scene)
+                if not effect.ok:
+                    note = _failure_note(name, args)
+                    if note:
+                        tool_failures.append(note)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "content": effect.result,
                 })
                 log.info("AGENT TOOL turn=%s %s(%s) -> %s", current_turn, name, args, effect.result)
-                yield {"type": "tool", "name": name, "result": effect.result}
+                yield {"type": "tool", "name": name, "result": effect.result, "ok": effect.ok}
 
             await agent_session.commit()
 
@@ -373,6 +378,7 @@ async def run_narrator_agent(
         "scene": scene,
         "inv_deltas": inv_deltas,
         "equip_changes": equip_changes,
+        "tool_failures": tool_failures,
     }
 
 
@@ -381,3 +387,19 @@ async def _execute_tool(name: str, args: dict, session) -> ToolEffect:
     if not handler:
         return ToolEffect(result=f"Unknown tool '{name}'.")
     return await handler(args, session)
+
+
+def _failure_note(name: str, args: dict) -> str | None:
+    """A short, spoiler-safe player-facing note for a mutating tool that failed,
+    so a bad tool call is visible ("the world stayed safe") rather than silent."""
+    item = args.get("itemName") or ""
+    who = args.get("characterName") or ""
+    if name == "equip":
+        target = f" onto {who}" if who else ""
+        return f"The narrator tried to equip a nonexistent item{(' (' + item + ')') if item else ''}{target}, but the world stayed safe."
+    if name == "unequip":
+        return f"The narrator tried to unequip an empty slot{(' on ' + who) if who else ''}, but nothing changed."
+    if name in ("grant_item", "remove_item", "consume_item"):
+        verb = {"grant_item": "grant", "remove_item": "remove", "consume_item": "use"}[name]
+        return f"The narrator tried to {verb} an item that isn't in the world{(' (' + item + ')') if item else ''}, but the world stayed safe."
+    return None

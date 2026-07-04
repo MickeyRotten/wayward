@@ -350,6 +350,10 @@ class ToolEffect:
     inv_deltas: list[dict] = field(default_factory=list)
     equip_changes: list[dict] = field(default_factory=list)
     scene: dict = field(default_factory=dict)
+    # False when a mutating tool could not do what was asked (bad args, missing
+    # item/character, wrong slot, …) — surfaced to the player as a graceful
+    # "the world stayed safe" notice. Read-only lookups leave this True.
+    ok: bool = True
 
 
 async def tool_set_scene(args: dict, session: AsyncSession) -> ToolEffect:
@@ -380,7 +384,7 @@ async def _change_inventory(
     """Shared add/remove for grant_item / remove_item / consume_item."""
     item = await _resolve_item(session, item_name)
     if not item:
-        return ToolEffect(result=f"No item named '{item_name}' exists in the world. Use lookup_item or search_items first.")
+        return ToolEffect(result=f"No item named '{item_name}' exists in the world. Use lookup_item or search_items first.", ok=False)
 
     existing = (
         await session.execute(
@@ -400,7 +404,7 @@ async def _change_inventory(
 
     # Removal (count < 0)
     if not existing:
-        return ToolEffect(result=f"'{item.title}' is not in the inventory; nothing removed.")
+        return ToolEffect(result=f"'{item.title}' is not in the inventory; nothing removed.", ok=False)
     removed = min(existing.count, -count)
     existing.count -= removed
     if existing.count <= 0:
@@ -414,21 +418,21 @@ async def _change_inventory(
 async def tool_grant_item(args: dict, session: AsyncSession) -> ToolEffect:
     count = int(args.get("count", 1) or 1)
     if count < 1:
-        return ToolEffect(result="count must be at least 1.")
+        return ToolEffect(result="count must be at least 1.", ok=False)
     return await _change_inventory(session, args.get("itemName", ""), count, "narrator_grant")
 
 
 async def tool_remove_item(args: dict, session: AsyncSession) -> ToolEffect:
     count = int(args.get("count", 1) or 1)
     if count < 1:
-        return ToolEffect(result="count must be at least 1.")
+        return ToolEffect(result="count must be at least 1.", ok=False)
     return await _change_inventory(session, args.get("itemName", ""), -count, "narrator_grant")
 
 
 async def tool_consume_item(args: dict, session: AsyncSession) -> ToolEffect:
     count = int(args.get("count", 1) or 1)
     if count < 1:
-        return ToolEffect(result="count must be at least 1.")
+        return ToolEffect(result="count must be at least 1.", ok=False)
     return await _change_inventory(session, args.get("itemName", ""), -count, "player_action")
 
 
@@ -437,21 +441,21 @@ async def tool_equip(args: dict, session: AsyncSession) -> ToolEffect:
     slot = args.get("slot", "")
     item_name = args.get("itemName", "")
     if not char_name or not slot or not item_name:
-        return ToolEffect(result="equip requires characterName, slot, and itemName.")
+        return ToolEffect(result="equip requires characterName, slot, and itemName.", ok=False)
     if slot not in VALID_EQUIPMENT_SLOTS:
-        return ToolEffect(result=f"'{slot}' is not a valid equipment slot.")
+        return ToolEffect(result=f"'{slot}' is not a valid equipment slot.", ok=False)
 
     character, char_id = await _resolve_character(session, char_name)
     if character is None:
-        return ToolEffect(result=f"No character named '{char_name}'.")
+        return ToolEffect(result=f"No character named '{char_name}'.", ok=False)
 
     item = await _resolve_item(session, item_name)
     if not item:
-        return ToolEffect(result=f"No item named '{item_name}' exists in the world.")
+        return ToolEffect(result=f"No item named '{item_name}' exists in the world.", ok=False)
     if item.item_type != "Equipment":
-        return ToolEffect(result=f"'{item.title}' is type '{item.item_type}', not Equipment; it cannot be equipped.")
+        return ToolEffect(result=f"'{item.title}' is type '{item.item_type}', not Equipment; it cannot be equipped.", ok=False)
     if item.slot and not _is_slot_compatible(item.slot, slot):
-        return ToolEffect(result=f"'{item.title}' ({item.slot}) cannot go in slot '{slot}'.")
+        return ToolEffect(result=f"'{item.title}' ({item.slot}) cannot go in slot '{slot}'.", ok=False)
 
     equipment = dict(character.equipment) if character.equipment else {}
     previous_item_id = equipment.get(slot)
@@ -470,18 +474,18 @@ async def tool_unequip(args: dict, session: AsyncSession) -> ToolEffect:
     char_name = args.get("characterName", "")
     slot = args.get("slot", "")
     if not char_name or not slot:
-        return ToolEffect(result="unequip requires characterName and slot.")
+        return ToolEffect(result="unequip requires characterName and slot.", ok=False)
     if slot not in VALID_EQUIPMENT_SLOTS:
-        return ToolEffect(result=f"'{slot}' is not a valid equipment slot.")
+        return ToolEffect(result=f"'{slot}' is not a valid equipment slot.", ok=False)
 
     character, char_id = await _resolve_character(session, char_name)
     if character is None:
-        return ToolEffect(result=f"No character named '{char_name}'.")
+        return ToolEffect(result=f"No character named '{char_name}'.", ok=False)
 
     equipment = dict(character.equipment) if character.equipment else {}
     previous_item_id = equipment.get(slot)
     if not previous_item_id:
-        return ToolEffect(result=f"{char_name}'s {slot} slot is already empty.")
+        return ToolEffect(result=f"{char_name}'s {slot} slot is already empty.", ok=False)
     equipment[slot] = None
     character.equipment = equipment
 

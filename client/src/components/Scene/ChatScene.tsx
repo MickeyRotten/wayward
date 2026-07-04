@@ -25,6 +25,8 @@ export function ChatScene() {
   const streamingContent = useChatStore((s) => s.streamingContent)
   const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
   const toolStatus = useChatStore((s) => s.toolStatus)
+  const toolFailures = useChatStore((s) => s.toolFailures)
+  const clearToolFailures = useChatStore((s) => s.clearToolFailures)
   const error = useChatStore((s) => s.error)
   const sendTurn = useChatStore((s) => s.sendTurn)
   const regenerate = useChatStore((s) => s.regenerate)
@@ -446,11 +448,11 @@ export function ChatScene() {
             <div className="pt-2">
               {toolStatus ? (
                 <span className="font-ui text-[10px] text-gold/80 tracking-wider">
-                  {toolStatus.toUpperCase()}<span className="animate-pulse"> ···</span>
+                  {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
                 </span>
               ) : planningMode ? (
                 <span className="font-ui text-[10px] text-textdim tracking-wider">
-                  THE EDITOR IS WORKING<span className="animate-pulse"> ···</span>
+                  THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
                 </span>
               ) : (
                 <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
@@ -469,7 +471,7 @@ export function ChatScene() {
             </div>
             <div className="pt-2">
               <span className="font-ui text-[10px] text-textdim tracking-wider">
-                THE CHRONICLER IS RECORDING
+                THE CHRONICLER IS RECORDING<Elapsed startedAt={null} />
                 <span className="animate-pulse"> ···</span>
               </span>
             </div>
@@ -491,6 +493,23 @@ export function ChatScene() {
               <span className="text-gold/80 tracking-wider">CHRONICLER RECORDED · </span>
               {lastApplied.map((p) => p.summary).join(' · ')}
             </span>
+          </button>
+        )}
+
+        {/* Graceful tool-failure notices — a bad tool call (missing item, empty
+            slot, …) is surfaced here instead of silently corrupting state. */}
+        {!busy && toolFailures.length > 0 && (
+          <button
+            type="button"
+            onClick={clearToolFailures}
+            className="mr-auto max-w-[85%] text-left flex flex-col gap-1 border border-line rounded-md bg-bg2/40 px-3 py-2 hover:border-line2 transition-colors"
+            title="Dismiss"
+          >
+            {toolFailures.map((f, i) => (
+              <span key={i} className="font-body text-[12px] text-textdim italic leading-relaxed">
+                ({f})
+              </span>
+            ))}
           </button>
         )}
 
@@ -1530,6 +1549,20 @@ function computeSceneHeaders(
     if (!changed) return undefined
     return { location: lastLoc, timeOfDay: lastTod }
   })
+}
+
+// A live "Ns" elapsed counter. Counts from `startedAt` if given, else from the
+// moment it mounts (used for the Chronicler, which has no shared start time).
+function Elapsed({ startedAt }: { startedAt: number | null }) {
+  const [secs, setSecs] = useState(0)
+  useEffect(() => {
+    const start = startedAt ?? Date.now()
+    const tick = () => setSecs(Math.floor((Date.now() - start) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  return <>{secs > 0 ? ` ${secs}s` : ''}</>
 }
 
 function ThinkingIndicator({ startedAt, isSummarizing }: { startedAt: number | null; isSummarizing: boolean }) {

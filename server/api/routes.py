@@ -2715,6 +2715,7 @@ def _stream_agent_response(
         scene: dict = {}
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
+        tool_failures: list[str] = []
 
         try:
             async for ev in run_narrator_agent(
@@ -2729,12 +2730,13 @@ def _stream_agent_response(
                 elif etype == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
                 elif etype == "tool":
-                    yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result']})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result'], 'ok': ev.get('ok', True)})}\n\n"
                 elif etype == "final":
                     final_content = ev["content"]
                     scene = ev["scene"]
                     inv_deltas = ev["inv_deltas"]
                     equip_changes = ev["equip_changes"]
+                    tool_failures = ev.get("tool_failures", [])
         except Exception as e:
             log.exception("Agent loop failed")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -2797,6 +2799,8 @@ def _stream_agent_response(
             done_payload['appliedInventoryDeltas'] = inv_deltas
         if equip_changes:
             done_payload['appliedEquipmentChanges'] = equip_changes
+        if tool_failures:
+            done_payload['toolFailures'] = tool_failures
         yield f"data: {json.dumps(done_payload)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")

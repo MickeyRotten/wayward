@@ -69,6 +69,7 @@ interface ChatState {
   streamingContent: string
   thinkingStartedAt: number | null
   toolStatus: string | null
+  toolFailures: string[]
   error: string | null
   contextTokens: number | null
   maxContextTokens: number | null
@@ -86,6 +87,7 @@ interface ChatState {
   setPlanningMode: (v: boolean) => void
   applyPendingDeletes: () => Promise<void>
   dismissPendingDeletes: () => void
+  clearToolFailures: () => void
 }
 
 let nextOptimisticId = -1
@@ -102,6 +104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingContent: '',
   thinkingStartedAt: null,
   toolStatus: null,
+  toolFailures: [],
   error: null,
   contextTokens: null,
   maxContextTokens: null,
@@ -230,6 +233,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   dismissPendingDeletes: () => set({ pendingDeletes: [] }),
+  clearToolFailures: () => set({ toolFailures: [] }),
 }))
 
 /** Refresh every panel a planner turn may have changed. */
@@ -244,6 +248,7 @@ function refreshWorldPanels() {
 async function _handleStream(url: string, body: object) {
   const { set, get } = { set: useChatStore.setState, get: useChatStore.getState }
   _aborted = false
+  set({ toolFailures: [] })  // clear any prior turn's failure notices
   useActionSuggestionsStore.getState().clear()
 
   try {
@@ -314,6 +319,11 @@ async function _handleStream(url: string, body: object) {
             // Planner turn: surface any queued deletions for confirmation.
             if (Array.isArray(event.pendingDeletes) && event.pendingDeletes.length > 0) {
               set({ pendingDeletes: event.pendingDeletes })
+            }
+            // A tool the narrator called failed (bad args / missing item) —
+            // surface a graceful "the world stayed safe" notice in chat.
+            if (Array.isArray(event.toolFailures) && event.toolFailures.length > 0) {
+              set({ toolFailures: event.toolFailures })
             }
           } else if (event.type === 'error') {
             set({ error: event.content })

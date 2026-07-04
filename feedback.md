@@ -585,23 +585,23 @@ Expected behaviour: Narrator receives the name and description of each equipped 
 Done (commit a57e41d): `tool_get_character` (the narrator's get_character tool) was resolving each equipment slot value as a LorebookEntry id — but slots hold ItemInstance ids, so the lookup missed and it fell back to printing the raw instance id. Now it resolves instance → catalog item and returns `{name, description}` per slot (with a legacy fallback to treating the value as a catalog id). It also now returns the character's species/description and a party member's fieldSkill, so the narrator gets useful context. Verified with a smoke test against a fresh Fantasy campaign — every equipped slot shows the item name + description for both Hero and Varena.
 
 ---
-[ ] Iteration: Chronicler (and Editor) needs more rigid rules for different lore types.
+[x] Iteration: Chronicler (and Editor) needs more rigid rules for different lore types.
 
 - If an Item, keep the description generic and just about the item, not about who has it. Also fill out its other fields, e.g. Type.
 - If World, keep it also generic and nothing about the Party.
 - etc.
 
-Done: added per-category "timeless world fact" rules to BOTH agents. Chronicler (worldbuilder.py): guidance now spells out per-category rules (items = describe the item itself generically, never who holds it, and ALWAYS set itemType/slot/rarity; world = generic place, nothing about the party; monsters/spells/NPCs likewise). Its create_lore tool gained itemType/slot/rarity params, the create proposal carries them, and apply_proposal now sets item_type/slot/rarity/max_stack on Chronicler-made items (previously they had no Type). Editor (planner.py): added a "TIMELESS ENTRIES" rule with the same per-category guidance. Verified with a smoke test — a Chronicler item proposal applies with type=Equipment, slot=Hands, rarity=r.
+Done (commit 856d102): added per-category "timeless world fact" rules to BOTH agents. Chronicler (worldbuilder.py): guidance now spells out per-category rules (items = describe the item itself generically, never who holds it, and ALWAYS set itemType/slot/rarity; world = generic place, nothing about the party; monsters/spells/NPCs likewise). Its create_lore tool gained itemType/slot/rarity params, the create proposal carries them, and apply_proposal now sets item_type/slot/rarity/max_stack on Chronicler-made items (previously they had no Type). Editor (planner.py): added a "TIMELESS ENTRIES" rule with the same per-category guidance. Verified with a smoke test — a Chronicler item proposal applies with type=Equipment, slot=Hands, rarity=r.
 
 ---
 [x] Iteration: Inventory AND Lore>Items should have filtering tabs for Types: All, Equipment, Tool, Consumable, Key Item, Artifact, Other. The filter dropdown should still exist, but we can remove by type from it.
 
-Done: added a shared <ItemTypeTabs> chip row (All / Equipment / Tool / Consumable / Key Item / Artifact / Other — "Other" catches any type not in that list) plus a matcher in lib/itemTypes.ts. It sits above the Sorting row in both the Inventory panel and Lore → Items (shown only for the Items category). Filtering runs before sorting; the Inventory empty state now distinguishes "No items in inventory" vs "No matching items". Removed the "By type" option from the shared sort dropdown (a no-op for non-item lore, now redundant given the tabs); 'type' stays a valid internal SortKey so nothing else breaks.
+Done (commit 9e17823): added a shared <ItemTypeTabs> chip row (All / Equipment / Tool / Consumable / Key Item / Artifact / Other — "Other" catches any type not in that list) plus a matcher in lib/itemTypes.ts. It sits above the Sorting row in both the Inventory panel and Lore → Items (shown only for the Items category). Filtering runs before sorting; the Inventory empty state now distinguishes "No items in inventory" vs "No matching items". Removed the "By type" option from the shared sort dropdown (a no-op for non-item lore, now redundant given the tabs); 'type' stays a valid internal SortKey so nothing else breaks.
 
 ---
 [x] Iteration: In Inventory > Inspector, the equip / unequip button should just read "Equip" or "Unequip".
 
-Done: in the item Inspector's per-copy (Inventory) view the buttons now read simply "Equip" and "Unequip" (were "+ EQUIP TO…" and "UNEQUIP THIS COPY").
+Done (commit 9e17823): in the item Inspector's per-copy (Inventory) view the buttons now read simply "Equip" and "Unequip" (were "+ EQUIP TO…" and "UNEQUIP THIS COPY").
 
 ---
 [x] Iteration: Improved operation transparency.
@@ -611,7 +611,7 @@ Done: in the item Inspector's per-copy (Inventory) view the buttons now read sim
 - **Graceful fallback when tools fail**: If the model calls a tool with invalid arguments, show a small **system message** in chat: “(The narrator tried to equip a non‑existent item, but the world stayed safe.)” This prevents silent corruption and confusion.
 - As for Narrator, show a seconds passed counter for Agents
 
-Done:
+Done (commit b26cdd4):
 - Streaming / which-agent (already largely in place, kept): the generating indicator shows the working agent — THINKING (Narrator), THE EDITOR IS WORKING, THE CHRONICLER IS RECORDING — plus a friendly per-tool status label (e.g. "Equipping gear", "Writing lore") while tool rounds run.
 - Graceful tool-fail notice (NEW): ToolEffect gained an `ok` flag, set False on every mutating narrator tool that can't do what was asked (missing item/character, invalid slot, empty slot, bad count). The agent loop turns those into a spoiler-safe note ("The narrator tried to equip a nonexistent item (X) onto Y, but the world stayed safe."), threads them through the SSE done event, and the chat renders them as dismissible italic system notices — so a bad tool call is visible instead of silently doing nothing. Verified with a smoke test (bad equip/grant/unequip → ok=False + correct note; real equip and read-only tools stay ok).
 - Seconds counter (NEW): extracted a reusable <Elapsed> "Ns" counter and added it to the Editor and Chronicler indicators and the tool-status line (the Narrator's THINKING already had one), so every agent shows elapsed time.

@@ -617,3 +617,44 @@ Done (commit b26cdd4):
 - Seconds counter (NEW): extracted a reusable <Elapsed> "Ns" counter and added it to the Editor and Chronicler indicators and the tool-status line (the Narrator's THINKING already had one), so every agent shows elapsed time.
 
 ---
+[ ] Iteration: Items in Lorebook should have the same rules as other entries, e.g. keyword, enabled, permanent, + item specific fields. an instance of an item does not need the same fields, at least not shown in the UI.
+
+---
+[ ] Bug: Automatic equipping doesn't work. The item did not appear in the Party Member's equipment, nor does the item show itself as equipped.
+
+I asked the Party Member (Tifa) to equip an item. Narrator replied, and showed the relevant information in chat. But when I checked the Party Member afterwards, and the item, they were not equipped. Exerpt from terminal log:
+
+15:34:51 INFO wayward.narrator_agent | AGENT TOOL turn=4 equip({'characterName': 'Tifa', 'slot': 'accessory1', 'itemName': 'Glowing Butt Plug'}) -> Tifa equipped Glowing Butt Plug in accessory1.
+15:35:00 INFO wayward.chat | LLM AGENT RESPONSE turn=4 variant=0 (473 chars) | scene={} | inv_deltas=[] | equip_changes=[{'characterId': '5e054f84-9022-47da-9401-c2d1ade8d967', 'slot': 'accessory1', 'previousItemId': None, 'newItemId': 'dc0fbc3c-ea04-4b9c-9b5e-ed02d9a1c8c9'}]
+
+---
+[ ] Iteration: AI-suggested actions should always start with "I...", as the player writes from the first person perspective.
+
+---
+[ ] Iteration: If I regenerate a post that has a pending Lore suggestion, the Lore suggestions generated during that turn should be removed and re-generated (if needed). The same with automatically accepted and manually accepted entries.
+
+---
+[ ] Iteration: Action Suggestions agent probably needs a bit more context for the suggestions, rather than just the current turn.
+
+---
+
+[ ] Bug: When I give an item to an NPC, the Narrator has a hard time figuring out what to do. It tends to add that item into my inventory first, then remove it, resulting in a +-0 situation. Expert from terminal log:
+
+  ── [user] ──
+Give Miri the Charged Butt Plug
+INFO:     127.0.0.1:57148 - "POST /api/chat/turn HTTP/1.1" 200 OK
+16:22:08 INFO wayward.narrator_agent | AGENT TOOL turn=10 lookup_item({'name': 'Charged Butt Plug'}) -> {"name": "Charged Butt Plug", "type": "Equipment", "slot": "Accessory", "rarity": "c", "description": "A thick, potato-sized anal plug with an embedded gemstone that pulses with a soft, steady light. Faint protective magic hums from it, offering some kind of warding effect to its wearer."}
+16:22:14 INFO wayward.narrator_agent | AGENT TOOL turn=10 grant_item({'itemName': 'Charged Butt Plug'}) -> Added 1× Charged Butt Plug to the party inventory.
+16:22:21 INFO wayward.narrator_agent | AGENT TOOL turn=10 remove_item({'itemName': 'Charged Butt Plug'}) -> Removed 1× Charged Butt Plug from the party inventory.
+16:22:31 INFO wayward.chat | LLM AGENT RESPONSE turn=10 variant=0 (1059 chars) | scene={} | inv_deltas=[{'itemId': '73e2dfad-7f9b-44e5-bd95-d266847abb11', 'delta': 1, 'source': 'narrator_grant'}, {'itemId': '73e2dfad-7f9b-44e5-bd95-d266847abb11', 'delta': -1, 'source': 'narrator_grant'}] | equip_changes=[]
+INFO:     127.0.0.1:57163 - "GET /api/chat/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57161 - "GET /api/inventory HTTP/1.1" 200 OK
+16:22:31 INFO wayward.action_suggester | ACTION-SUGGEST REQUEST turn=10 | model=deepseek/deepseek-v4-pro
+16:22:31 INFO wayward.worldbuilder | CHRONICLER REQUEST turn=10 | model=deepseek/deepseek-v4-pro | mode=confirmation
+INFO:     127.0.0.1:57167 - "POST /api/action-suggestions/run HTTP/1.1" 200 OK
+16:22:50 INFO wayward.worldbuilder | CHRONICLER PROPOSAL turn=10 Update lore: Jeweled Butt Plug [pending]
+16:22:50 INFO wayward.worldbuilder | CHRONICLER PROPOSAL turn=10 Update lore: Charged Butt Plug [pending]
+INFO:     127.0.0.1:57166 - "POST /api/worldbuild/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57175 - "GET /api/worldbuild/proposals?status=pending HTTP/1.1" 200 OK
+
+---

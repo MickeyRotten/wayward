@@ -12,23 +12,31 @@ from server.db.models import (
 )
 
 
-def _format_equipment(equip: dict, catalog_lookup: dict[str, tuple[str, str]]) -> str:
+def _format_equipment(
+    equip: dict,
+    catalog_lookup: dict[str, tuple[str, str]],
+    instance_lookup: dict[str, str] | None = None,
+) -> str:
     """Format an equipment dict into a prompt string including item descriptions.
 
-    Each equipped slot renders as ``slot: Name — description`` so the Narrator
-    knows what each worn item actually is. Falls back to the raw id for any
-    value not found in the catalog. Returns "nothing equipped" when empty.
+    Equipment slots hold an ItemInstance id; ``instance_lookup`` maps that to the
+    catalog item id (with a fallback to treating the value as a catalog id
+    directly, for legacy/unmigrated data). Each equipped slot renders as
+    ``slot: Name — description`` so the Narrator knows what each worn item
+    actually is. Returns "nothing equipped" when empty.
     """
+    instance_lookup = instance_lookup or {}
     parts: list[str] = []
-    for slot, item_id in equip.items():
-        if not item_id:
+    for slot, value in equip.items():
+        if not value:
             continue
+        item_id = instance_lookup.get(value, value)  # instance id → catalog id
         entry = catalog_lookup.get(item_id)
         if entry:
             name, desc = entry
             parts.append(f"{slot}: {name} — {desc}" if desc else f"{slot}: {name}")
         else:
-            parts.append(f"{slot}: {item_id}")
+            parts.append(f"{slot}: (unknown item)")
     return "; ".join(parts) if parts else "nothing equipped"
 
 

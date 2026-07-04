@@ -110,7 +110,7 @@ export type WorldbuildingMode = 'disabled' | 'confirmation' | 'auto'
 export interface WorldbuildProposal {
   id: string
   turnNumber: number
-  kind: 'lore' | 'quest' | 'quest_objective' | 'member'
+  kind: 'lore' | 'task' | 'member'
   operation: 'create' | 'update'
   targetId: string | null
   payload: Record<string, unknown>
@@ -177,7 +177,7 @@ export interface Adventure {
 }
 
 export interface PlannerDelete {
-  kind: 'lore' | 'quest' | 'quest_objective' | 'member'
+  kind: 'lore' | 'task' | 'member'
   targetId: string
   label: string
 }
@@ -189,20 +189,13 @@ export interface SpotlightSignal {
   turnsSinceLastSpoke: number
 }
 
-export interface QuestObjective {
+export type TaskStatus = 'active' | 'completed' | 'failed'
+
+export interface Task {
   id: string
   text: string
-  done: boolean
-}
-
-export interface Quest {
-  id: string
-  title: string
-  status: 'active' | 'completed' | 'failed'
-  desc: string
-  objectives: QuestObjective[]
+  status: TaskStatus
   notes: string
-  relatedLore: string[]
 }
 
 export type LoreCategory = 'world' | 'characters' | 'items' | 'monsters' | 'spells'

@@ -6,7 +6,7 @@ import { useNarratorStore } from './narratorStore'
 import { useChatStore } from './chatStore'
 import { useSettingsStore } from './settingsStore'
 import { useItemsStore } from './itemsStore'
-import { useQuestsStore } from './questsStore'
+import { useTasksStore } from './tasksStore'
 import { useLoreStore } from './loreStore'
 import { useScenarioStore } from './scenarioStore'
 import { useWorldbuildStore } from './worldbuildStore'
@@ -35,7 +35,7 @@ export async function reloadAll() {
     useSettingsStore.getState().fetchSettings(),
     useItemsStore.getState().fetchCatalog(),
     useItemsStore.getState().fetchInventory(),
-    useQuestsStore.getState().fetchQuests(),
+    useTasksStore.getState().fetchTasks(),
     useLoreStore.getState().fetchEntries(),
     useLoreStore.getState().fetchConfig(),
     useScenarioStore.getState().fetchScenario(),

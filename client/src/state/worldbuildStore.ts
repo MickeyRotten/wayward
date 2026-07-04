@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { WorldbuildProposal } from '@shared/types/models'
 import { api } from '../lib/api'
 import { useLoreStore } from './loreStore'
-import { useQuestsStore } from './questsStore'
+import { useTasksStore } from './tasksStore'
 import { usePartyStore } from './partyStore'
 import { useItemsStore } from './itemsStore'
 import { useSettingsStore } from './settingsStore'
@@ -24,7 +24,7 @@ interface WorldbuildState {
 /** Refresh the panels a world-building change may have touched. */
 function refreshWorld() {
   useLoreStore.getState().fetchEntries()
-  useQuestsStore.getState().fetchQuests()
+  useTasksStore.getState().fetchTasks()
   usePartyStore.getState().fetchAll()
   useItemsStore.getState().fetchCatalog()
 }
@@ -47,7 +47,7 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
     try {
       const result = await api.post<WorldbuildProposal[]>('/worldbuild/run', { turn })
       await get().fetchProposals()
-      // Auto-mode may have applied lore/quests already — reflect them + surface
+      // Auto-mode may have applied lore/tasks already — reflect them + surface
       // a transient notice of what was just recorded.
       if (mode === 'auto') {
         refreshWorld()

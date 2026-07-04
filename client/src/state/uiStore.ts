@@ -1,12 +1,12 @@
 import { create } from 'zustand'
 
-export type TabId = 'home' | 'items' | 'quests' | 'lore' | 'suggestions' | 'saves' | 'config'
+export type TabId = 'home' | 'items' | 'tasks' | 'lore' | 'suggestions' | 'saves' | 'config'
 
 export type SelectionKind =
   | { kind: 'player' }
   | { kind: 'member'; id: string }
   | { kind: 'item'; id: string; instanceId?: string }  // instanceId: a specific owned copy
-  | { kind: 'quest'; id: string }
+  | { kind: 'task'; id: string }
   | { kind: 'lore'; id: string }
   | null
 

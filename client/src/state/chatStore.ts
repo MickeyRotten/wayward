@@ -6,7 +6,7 @@ import { usePartyStore } from './partyStore'
 import { useWorldbuildStore } from './worldbuildStore'
 import { useActionSuggestionsStore } from './actionSuggestionsStore'
 import { useLoreStore } from './loreStore'
-import { useQuestsStore } from './questsStore'
+import { useTasksStore } from './tasksStore'
 import { useNarratorStore } from './narratorStore'
 
 const PLANNING_KEY = 'wayward.planningMode'
@@ -30,12 +30,10 @@ const TOOL_STATUS: Record<string, string> = {
   delete_lore: 'Removing lore',
   create_item: 'Forging an item',
   update_item: 'Editing an item',
-  create_quest: 'Adding a quest',
-  update_quest: 'Editing a quest',
-  delete_quest: 'Removing a quest',
-  add_objective: 'Adding an objective',
-  update_objective: 'Editing an objective',
-  delete_objective: 'Removing an objective',
+  create_task: 'Adding a task',
+  update_task: 'Editing a task',
+  delete_task: 'Removing a task',
+  update_task_status: 'Updating a task',
   create_member: 'Adding a party member',
   update_member: 'Editing a party member',
   delete_member: 'Removing a party member',
@@ -239,7 +237,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 /** Refresh every panel a planner turn may have changed. */
 function refreshWorldPanels() {
   useLoreStore.getState().fetchEntries()
-  useQuestsStore.getState().fetchQuests()
+  useTasksStore.getState().fetchTasks()
   usePartyStore.getState().fetchAll()
   useItemsStore.getState().fetchCatalog()
   useNarratorStore.getState().fetchConfig()

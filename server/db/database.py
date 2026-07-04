@@ -171,6 +171,7 @@ async def init_db() -> None:
     # non-stacking item instances. Idempotent — safe on already-migrated data.
     if source in ("legacy", "fresh"):
         await migrate_to_item_instances()
+        await migrate_quests_to_tasks()
 
 
 async def _run_app_migrations() -> None:
@@ -206,6 +207,7 @@ async def _run_scope_migrations() -> None:
             if column not in cols:
                 await conn.execute(text(ddl))
     await migrate_to_item_instances()
+    await migrate_quests_to_tasks()
 
 
 async def migrate_to_item_instances() -> None:
@@ -278,5 +280,60 @@ async def migrate_to_item_instances() -> None:
                 # else: dangling reference — leave as-is
             if changed:
                 ch.equipment = equipment
+
+        await s.commit()
+
+
+async def migrate_quests_to_tasks() -> None:
+    """One-time, idempotent flatten from the legacy Quest + QuestObjective tables
+    to the flat ``Task`` list.
+
+    Each quest becomes a task (text = title, notes = desc, keeping its status);
+    each of its objectives becomes its own task (status completed if it was done,
+    else active). Consumed quests/objectives are deleted so re-running is a no-op.
+    Skipped entirely once any task already exists.
+    """
+    if async_session is None or _active_adventure_path is None:
+        return
+
+    async with engine.begin() as conn:
+        res = await conn.execute(text("PRAGMA adventure.table_info(tasks)"))
+        if not res.fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.tasks "
+                "(id VARCHAR NOT NULL PRIMARY KEY, text TEXT DEFAULT '', "
+                "status VARCHAR DEFAULT 'active', notes TEXT DEFAULT '', "
+                "sort_order INTEGER DEFAULT 0)"
+            ))
+        # Legacy tables may not exist on a brand-new file — nothing to migrate.
+        q_exists = bool((await conn.execute(text("PRAGMA adventure.table_info(quests)"))).fetchall())
+
+    from server.db.models import Quest, QuestObjective, Task
+
+    async with async_session() as s:
+        existing = (await s.execute(select(Task))).scalars().first()
+        if existing is not None:
+            return  # already migrated (or new-style data present)
+        if not q_exists:
+            return
+
+        quests = (await s.execute(select(Quest))).scalars().all()
+        objectives = (await s.execute(select(QuestObjective).order_by(QuestObjective.sort_order))).scalars().all()
+        obj_by_quest: dict[str, list] = {}
+        for o in objectives:
+            obj_by_quest.setdefault(o.quest_id, []).append(o)
+
+        order = 0
+        for q in quests:
+            s.add(Task(id=str(uuid.uuid4()), text=q.title or "", status=q.status or "active",
+                       notes=q.desc or "", sort_order=order))
+            order += 1
+            for o in obj_by_quest.get(q.id, []):
+                s.add(Task(id=str(uuid.uuid4()), text=o.text or "",
+                           status="completed" if o.done else "active", sort_order=order))
+                order += 1
+            await s.delete(q)
+        for o in objectives:
+            await s.delete(o)
 
         await s.commit()

@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from server.ai.openrouter import chat_completion_agent_turn
 from server.db.database import new_session
-from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, PartyMember, Quest
+from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, PartyMember, Task
 
 log = logging.getLogger("wayward.action_suggester")
 
@@ -148,10 +148,10 @@ async def _build_context(session, turn_number: int) -> str:
     ).scalars().all()
     member_names = [m.basic_info.get("name", "") for m in members if m.basic_info.get("name")]
 
-    quests = (
-        await session.execute(select(Quest).where(Quest.status == "active"))
+    tasks = (
+        await session.execute(select(Task).where(Task.status == "active"))
     ).scalars().all()
-    quest_titles = [q.title for q in quests if q.title]
+    task_texts = [t.text for t in tasks if t.text]
 
     lines = ["CURRENT SCENE:"]
     if scene["location"]:
@@ -162,8 +162,8 @@ async def _build_context(session, turn_number: int) -> str:
         lines.append(f"  Weather: {scene['weather']}")
     if member_names:
         lines.append(f"  Party: {', '.join(member_names)}")
-    if quest_titles:
-        lines.append(f"  Active quests: {', '.join(quest_titles)}")
+    if task_texts:
+        lines.append(f"  Active tasks: {', '.join(task_texts)}")
     lines.append("")
     lines.append("RECENT EXCHANGES (oldest first; suggest what fits the latest beat):")
     lines.extend(await _recent_exchanges(session, turn_number))

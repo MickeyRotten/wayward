@@ -299,48 +299,25 @@ class InventoryRemoveRequest(BaseModel):
     count: int = 1
 
 
-# --- Quest ---
+# --- Task (flat successor to Quests) ---
 
-class QuestObjectiveSchema(BaseModel):
+class TaskSchema(BaseModel):
     id: str
     text: str
-    done: bool
-
-
-class QuestSchema(BaseModel):
-    id: str
-    title: str
-    status: str = "active"
-    desc: str = ""
-    objectives: list[QuestObjectiveSchema] = []
+    status: str = "active"  # active | completed | failed
     notes: str = ""
-    relatedLore: list[str] = []
 
 
-class QuestCreate(BaseModel):
-    title: str
-    status: str = "active"
-    desc: str = ""
-    notes: str = ""
-    relatedLore: list[str] = []
-
-
-class QuestUpdate(BaseModel):
-    title: str | None = None
-    status: str | None = None
-    desc: str | None = None
-    notes: str | None = None
-    relatedLore: list[str] | None = None
-
-
-class QuestObjectiveCreate(BaseModel):
+class TaskCreate(BaseModel):
     text: str
-    done: bool = False
+    status: str = "active"
+    notes: str = ""
 
 
-class QuestObjectiveUpdate(BaseModel):
+class TaskUpdate(BaseModel):
     text: str | None = None
-    done: bool | None = None
+    status: str | None = None
+    notes: str | None = None
 
 
 # --- Lorebook ---

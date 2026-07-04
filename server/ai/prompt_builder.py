@@ -7,8 +7,7 @@ from server.db.models import (
     NarratorConfig,
     PartyMember,
     PlayerCharacter,
-    Quest,
-    QuestObjective,
+    Task,
 )
 
 
@@ -49,8 +48,7 @@ def build_prompt(
     spotlight_block: str | None = None,
     story_summary: str | None = None,
     item_catalog: list[LorebookEntry] | None = None,
-    quests: list[Quest] | None = None,
-    quest_objectives: list[QuestObjective] | None = None,
+    tasks: list[Task] | None = None,
     lore_entries: list[LorebookEntry] | None = None,
     lore_config: LorebookConfig | None = None,
     max_context_tokens: int = 128000,
@@ -116,24 +114,14 @@ def build_prompt(
             roster_lines.append("\n".join(lines))
         messages.append({"role": "system", "content": "\n".join(roster_lines)})
 
-    # 5–6. Active quest summary
-    if quests:
-        # Group objectives by quest_id
-        obj_by_quest: dict[str, list[QuestObjective]] = {}
-        if quest_objectives:
-            for o in quest_objectives:
-                obj_by_quest.setdefault(o.quest_id, []).append(o)
-
-        active_quests = [q for q in quests if q.status == "active"]
-        if active_quests:
-            quest_lines = ["ACTIVE QUESTS:"]
-            for q in active_quests:
-                quest_lines.append(f"  {q.title}")
-                objs = sorted(obj_by_quest.get(q.id, []), key=lambda o: o.sort_order)
-                for o in objs:
-                    mark = "x" if o.done else " "
-                    quest_lines.append(f"    [{mark}] {o.text}")
-            messages.append({"role": "system", "content": "\n".join(quest_lines)})
+    # 5–6. Active task list (the party's open to-dos)
+    if tasks:
+        active_tasks = [t for t in tasks if t.status == "active"]
+        if active_tasks:
+            task_lines = ["ACTIVE TASKS:"]
+            for t in active_tasks:
+                task_lines.append(f"  [ ] {t.text}")
+            messages.append({"role": "system", "content": "\n".join(task_lines)})
 
     # Story summary
     if story_summary:

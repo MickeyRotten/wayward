@@ -30,7 +30,7 @@ from server.ai.narrator_actions import (
 from server.ai.openrouter import chat_completion_agent_turn
 from server.ai.prompt_builder import _estimate_tokens, _trim_to_budget
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
-from server.ai.worldbuilder import LORE_CATS, QUEST_STATUSES, _resolve_lore, _resolve_quest
+from server.ai.worldbuilder import LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
 from server.db.models import (
     ChatMessage,
@@ -39,8 +39,7 @@ from server.db.models import (
     OpenRouterSettings,
     PartyMember,
     PlayerCharacter,
-    Quest,
-    QuestObjective,
+    Task,
 )
 
 log = logging.getLogger("wayward.planner")
@@ -54,10 +53,10 @@ EQUIP_SLOTS = [
 ]
 
 
-PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, monsters, spells, quests, the party, the player character, the Scenario, and even the Narrator's instructions.
+PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, monsters, spells, tasks, the party, the player character, the Scenario, and even the Narrator's instructions.
 
 How you work:
-- Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a quest, or a character's full set of gear.
+- Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a task, or a character's full set of gear.
 - Prefer updating an existing entry over creating a duplicate; you are given the current world state.
 - Pick the right lore category for lore (world, characters, monsters, spells). For NPCs use 'characters'.
 - WHO is being referred to: the player will usually name someone without saying what they are. Use the current world state to resolve the name. There are three distinct kinds, and only the first two have equipment:
@@ -69,7 +68,7 @@ How you work:
 - TIMELESS ENTRIES: write every lore/item entry as a permanent world fact, not a note about the current scene or party. Items — describe the item itself, generically (what it is/does), never who currently holds or wears it, and always give it a proper type (and slot for Equipment). World/places — describe the place generically; nothing about the party or what they're doing there. Monsters — the creature in general. Spells — the effect and its limits. Characters (NPCs) — who they are, not the party's momentary interaction with them.
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
 - CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
-- READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, quest, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
+- READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, task, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
 - SENSITIVE OVERWRITES: set_narrator_instructions and set_first_message REPLACE the whole existing text and take effect immediately — only do them when the player clearly asks. set_scenario is a PARTIAL update instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario first if you need to see the current fields before editing one. Always tell the player explicitly in your reply what you changed.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
@@ -131,21 +130,14 @@ TOOL_SCHEMAS: list[dict] = [
     _fn("unequip", "Remove whatever is in a character's equipment slot; it returns to inventory.",
         {"characterName": {"type": "string"}, "slot": {"type": "string", "enum": EQUIP_SLOTS}},
         ["characterName", "slot"]),
-    _fn("create_quest", "Create a quest with optional objectives.",
-        {"title": {"type": "string"}, "desc": {"type": "string"},
-         "objectives": {"type": "array", "items": {"type": "string"}}}, ["title"]),
-    _fn("update_quest", "Edit a quest's description or status, by exact title.",
-        {"title": {"type": "string"}, "desc": {"type": "string"},
-         "status": {"type": "string", "enum": sorted(QUEST_STATUSES)}}, ["title"]),
-    _fn("delete_quest", "Remove a quest (queued for confirmation), by exact title.",
-        {"title": {"type": "string"}}, ["title"]),
-    _fn("add_objective", "Add an objective to a quest, by quest title.",
-        {"questTitle": {"type": "string"}, "text": {"type": "string"}}, ["questTitle", "text"]),
-    _fn("update_objective", "Edit/complete an objective, matched by quest title + objective text.",
-        {"questTitle": {"type": "string"}, "objectiveText": {"type": "string"},
-         "done": {"type": "boolean"}, "newText": {"type": "string"}}, ["questTitle", "objectiveText"]),
-    _fn("delete_objective", "Remove an objective (queued for confirmation), by quest title + text.",
-        {"questTitle": {"type": "string"}, "objectiveText": {"type": "string"}}, ["questTitle", "objectiveText"]),
+    _fn("create_task", "Create a task (a single goal/to-do — big or small).",
+        {"text": {"type": "string"}}, ["text"]),
+    _fn("update_task", "Edit a task's text or status, matched by its exact current text.",
+        {"text": {"type": "string", "description": "The task's current text (to find it)."},
+         "newText": {"type": "string", "description": "New text, to reword the task."},
+         "status": {"type": "string", "enum": sorted(TASK_STATUSES)}}, ["text"]),
+    _fn("delete_task", "Remove a task (queued for confirmation), by exact text.",
+        {"text": {"type": "string"}}, ["text"]),
     _fn("create_member", "Add a party member.",
         {"name": {"type": "string"}, "species": {"type": "string"}, "gender": {"type": "string"},
          "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
@@ -189,8 +181,8 @@ TOOL_SCHEMAS: list[dict] = [
     _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
     _fn("set_first_message", "Set the opening narration shown before the player's first turn (the campaign's First Message).",
         {"content": {"type": "string"}}, ["content"]),
-    _fn("list_world", "List the current world: lore by category, quests, party members, and the PC.", {}, []),
-    _fn("get_entry", "Read the full content of a lore entry, quest, or member by name.",
+    _fn("list_world", "List the current world: lore by category, tasks, party members, and the PC.", {}, []),
+    _fn("get_entry", "Read the full content of a lore entry, task, or member by name.",
         {"name": {"type": "string"}}, ["name"]),
 ]
 
@@ -212,7 +204,7 @@ async def _build_planner_context(session) -> str:
     by_cat: dict[str, list[str]] = {}
     for e in lore:
         by_cat.setdefault(e.cat, []).append(e.title + (" [locked]" if e.locked else ""))
-    quests = (await session.execute(select(Quest))).scalars().all()
+    tasks = (await session.execute(select(Task))).scalars().all()
     members = (await session.execute(select(PartyMember))).scalars().all()
     pc = (await session.execute(select(PlayerCharacter))).scalars().first()
 
@@ -220,10 +212,10 @@ async def _build_planner_context(session) -> str:
     for cat in ("world", "characters", "items", "monsters", "spells"):
         titles = by_cat.get(cat, [])
         lines.append(f"  {cat}: {', '.join(titles) if titles else '(none)'}")
-    if quests:
-        lines.append("  quests: " + ", ".join(f"{q.title} [{q.status}]" for q in quests))
+    if tasks:
+        lines.append("  tasks: " + ", ".join(f"{t.text} [{t.status}]" for t in tasks))
     else:
-        lines.append("  quests: (none)")
+        lines.append("  tasks: (none)")
     if members:
         lines.append("  party members: " + ", ".join(
             f"{m.basic_info.get('name', '?')}{'' if m.in_party else ' (benched)'}" for m in members
@@ -348,63 +340,32 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         effect = await tool_unequip(args, session)
         return effect.result, None
 
-    # ---- Quests ----
-    if name == "create_quest":
-        title = (args.get("title") or "").strip()
-        if not title or await _resolve_quest(session, title):
-            return f"Quest '{title}' is empty or already exists.", None
-        quest = Quest(title=title, desc=args.get("desc", ""), status="active")
-        session.add(quest)
-        await session.flush()
-        for i, text in enumerate(args.get("objectives", []) or []):
-            session.add(QuestObjective(quest_id=quest.id, text=text, sort_order=i))
-        return f"Created quest: {title}.", None
+    # ---- Tasks ----
+    if name == "create_task":
+        text = (args.get("text") or "").strip()
+        if not text or await _resolve_task(session, text):
+            return f"Task '{text}' is empty or already exists.", None
+        max_order = (await session.execute(
+            select(func.coalesce(func.max(Task.sort_order), -1)))).scalar()
+        session.add(Task(text=text, status="active", sort_order=(max_order or 0) + 1))
+        return f"Created task: {text}.", None
 
-    if name == "update_quest":
-        quest = await _resolve_quest(session, (args.get("title") or "").strip())
-        if not quest:
-            return f"No quest named '{args.get('title', '')}'.", None
-        if args.get("desc") is not None:
-            quest.desc = args["desc"]
-        if args.get("status") in QUEST_STATUSES:
-            quest.status = args["status"]
-        return f"Updated quest: {quest.title}.", None
+    if name == "update_task":
+        task = await _resolve_task(session, (args.get("text") or "").strip())
+        if not task:
+            return f"No task matching '{args.get('text', '')}'.", None
+        if args.get("newText"):
+            task.text = args["newText"]
+        if args.get("status") in TASK_STATUSES:
+            task.status = args["status"]
+        return f"Updated task: {task.text}.", None
 
-    if name == "delete_quest":
-        quest = await _resolve_quest(session, (args.get("title") or "").strip())
-        if not quest:
-            return f"No quest named '{args.get('title', '')}'.", None
-        return f"Queued deletion of quest '{quest.title}' for confirmation.", \
-            {"kind": "quest", "targetId": quest.id, "label": quest.title}
-
-    if name in ("add_objective", "update_objective", "delete_objective"):
-        quest = await _resolve_quest(session, (args.get("questTitle") or "").strip())
-        if not quest:
-            return f"No quest named '{args.get('questTitle', '')}'.", None
-        if name == "add_objective":
-            text = (args.get("text") or "").strip()
-            if not text:
-                return "Objective text is empty.", None
-            max_order = (await session.execute(
-                select(func.coalesce(func.max(QuestObjective.sort_order), -1))
-                .where(QuestObjective.quest_id == quest.id))).scalar()
-            session.add(QuestObjective(quest_id=quest.id, text=text, sort_order=(max_order or 0) + 1))
-            return f"Added objective to {quest.title}.", None
-        # find the objective by text
-        objs = (await session.execute(
-            select(QuestObjective).where(QuestObjective.quest_id == quest.id))).scalars().all()
-        target = (args.get("objectiveText") or "").strip().lower()
-        match = next((o for o in objs if o.text.lower() == target), None)
-        if not match:
-            return f"No objective matching '{args.get('objectiveText', '')}' on {quest.title}.", None
-        if name == "update_objective":
-            if args.get("done") is not None:
-                match.done = bool(args["done"])
-            if args.get("newText"):
-                match.text = args["newText"]
-            return f"Updated objective on {quest.title}.", None
-        return f"Queued deletion of an objective on '{quest.title}' for confirmation.", \
-            {"kind": "quest_objective", "targetId": match.id, "label": f"{quest.title}: {match.text[:40]}"}
+    if name == "delete_task":
+        task = await _resolve_task(session, (args.get("text") or "").strip())
+        if not task:
+            return f"No task matching '{args.get('text', '')}'.", None
+        return f"Queued deletion of task '{task.text}' for confirmation.", \
+            {"kind": "task", "targetId": task.id, "label": task.text[:40]}
 
     # ---- Members ----
     if name == "create_member":
@@ -523,12 +484,10 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         entry = await _resolve_lore(session, q)
         if entry:
             return json.dumps({"title": entry.title, "cat": entry.cat, "content": entry.content}, ensure_ascii=False), None
-        quest = await _resolve_quest(session, q)
-        if quest:
-            objs = (await session.execute(
-                select(QuestObjective).where(QuestObjective.quest_id == quest.id))).scalars().all()
-            return json.dumps({"quest": quest.title, "status": quest.status, "desc": quest.desc,
-                               "objectives": [o.text for o in objs]}, ensure_ascii=False), None
+        task = await _resolve_task(session, q)
+        if task:
+            return json.dumps({"task": task.text, "status": task.status, "notes": task.notes},
+                              ensure_ascii=False), None
         character, _ = await _resolve_character(session, q)
         if character is not None:
             equipped = {}
@@ -646,7 +605,7 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
             else:
                 final_content = (
                     "I didn't make any changes that turn. Tell me what you'd like me to "
-                    "build or edit — a place, character, item, quest, or party member."
+                    "build or edit — a place, character, item, task, or party member."
                 )
             yield {"type": "content", "text": final_content}
 

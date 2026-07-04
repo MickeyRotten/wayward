@@ -3,7 +3,7 @@ import { AppShell } from './components/Layout/AppShell'
 import { IconRail } from './components/IconRail/IconRail'
 import { HomeView } from './components/Home/HomeView'
 import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
-import { QuestsPanel } from './components/QuestsPanel/QuestsPanel'
+import { TasksPanel } from './components/TasksPanel/TasksPanel'
 import { LorePanel } from './components/LorePanel/LorePanel'
 import { SuggestionsPanel } from './components/Suggestions/SuggestionsPanel'
 import { SaveLoadView } from './components/SaveLoad/SaveLoadView'
@@ -15,7 +15,7 @@ import { useNarratorStore } from './state/narratorStore'
 import { useChatStore } from './state/chatStore'
 import { useSettingsStore } from './state/settingsStore'
 import { useItemsStore } from './state/itemsStore'
-import { useQuestsStore } from './state/questsStore'
+import { useTasksStore } from './state/tasksStore'
 import { useLoreStore } from './state/loreStore'
 import { useScenarioStore } from './state/scenarioStore'
 import { useWorldbuildStore } from './state/worldbuildStore'
@@ -62,7 +62,7 @@ function App() {
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
   const fetchCatalog = useItemsStore((s) => s.fetchCatalog)
   const fetchInventory = useItemsStore((s) => s.fetchInventory)
-  const fetchQuests = useQuestsStore((s) => s.fetchQuests)
+  const fetchTasks = useTasksStore((s) => s.fetchTasks)
   const fetchLoreEntries = useLoreStore((s) => s.fetchEntries)
   const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
   const fetchScenario = useScenarioStore((s) => s.fetchScenario)
@@ -79,13 +79,13 @@ function App() {
     fetchSettings()
     fetchCatalog()
     fetchInventory()
-    fetchQuests()
+    fetchTasks()
     fetchLoreEntries()
     fetchLoreConfig()
     fetchScenario()
     fetchProposals()
     fetchAdventures()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchQuests, fetchLoreEntries, fetchLoreConfig, fetchScenario, fetchProposals, fetchAdventures, fetchCampaigns])
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchTasks, fetchLoreEntries, fetchLoreConfig, fetchScenario, fetchProposals, fetchAdventures, fetchCampaigns])
 
   const handleTabChange = (tab: TabId) => {
     prevTabRef.current = tab
@@ -98,8 +98,8 @@ function App() {
         return <HomeView />
       case 'items':
         return <ItemsPanel />
-      case 'quests':
-        return <QuestsPanel />
+      case 'tasks':
+        return <TasksPanel />
       case 'lore':
         return <LorePanel />
       case 'suggestions':

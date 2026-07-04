@@ -3,8 +3,7 @@ import type { WorldbuildProposal } from '@shared/types/models'
 
 const KIND_LABELS: Record<WorldbuildProposal['kind'], string> = {
   lore: 'Lore',
-  quest: 'Quest',
-  quest_objective: 'Objective',
+  task: 'Task',
   member: 'Party Member',
 }
 
@@ -68,7 +67,7 @@ export function SuggestionsPanel() {
 
         {!running && pending.length === 0 && (
           <p className="text-[12px] text-textdim font-body px-4 py-6 text-center">
-            No suggestions right now. As you play, the Chronicler proposes new lore, quests, and companions here.
+            No suggestions right now. As you play, the Chronicler proposes new lore, tasks, and companions here.
           </p>
         )}
 

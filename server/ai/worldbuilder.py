@@ -29,15 +29,14 @@ from server.db.models import (
     OpenRouterSettings,
     PartyMember,
     PlayerCharacter,
-    Quest,
-    QuestObjective,
+    Task,
     WorldbuildingProposal,
 )
 
 log = logging.getLogger("wayward.worldbuilder")
 
 LORE_CATS = {"world", "characters", "items", "monsters", "spells"}
-QUEST_STATUSES = {"active", "completed", "failed"}
+TASK_STATUSES = {"active", "completed", "failed"}
 
 # Tool-emitting call — doesn't need the full narration budget.
 _CHRONICLER_MAX_TOKENS = 1024
@@ -120,7 +119,7 @@ CHRONICLER_GUIDANCE = """You are the Chronicler: a quiet archivist who keeps the
 
 Use your tools to:
 - create_lore / update_lore — record new places, characters (NPCs), items, monsters, or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
-- create_quest / add_objective / update_objective / update_quest_status — capture goals the party has taken on and their progress.
+- create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). update_task_status — mark an existing task completed or failed when the fiction resolves it.
 - create_member — ONLY when a character has clearly and deliberately joined the party as a travelling companion.
 
 Rules (strict — follow them exactly):
@@ -181,62 +180,29 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "create_quest",
-            "description": "Record a new goal the party has taken on.",
+            "name": "create_task",
+            "description": "Record a new goal/to-do the party has clearly taken on. Can be big ('Reach the Sunken Chapel') or small ('Find someone who knows about the sigil').",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string"},
-                    "desc": {"type": "string"},
-                    "objectives": {"type": "array", "items": {"type": "string"}},
+                    "text": {"type": "string", "description": "The task, phrased as a goal."},
                 },
-                "required": ["title"],
+                "required": ["text"],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "add_objective",
-            "description": "Add an objective to an existing quest, by the quest's exact title.",
+            "name": "update_task_status",
+            "description": "Set an existing task's status (active/completed/failed), matched by its exact text.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "questTitle": {"type": "string"},
-                    "text": {"type": "string"},
+                    "taskText": {"type": "string"},
+                    "status": {"type": "string", "enum": sorted(TASK_STATUSES)},
                 },
-                "required": ["questTitle", "text"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_objective",
-            "description": "Mark an existing objective done/undone, matched by quest title + objective text.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "questTitle": {"type": "string"},
-                    "objectiveText": {"type": "string"},
-                    "done": {"type": "boolean"},
-                },
-                "required": ["questTitle", "objectiveText", "done"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_quest_status",
-            "description": "Set a quest's status (active/completed/failed), by its exact title.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "questTitle": {"type": "string"},
-                    "status": {"type": "string", "enum": sorted(QUEST_STATUSES)},
-                },
-                "required": ["questTitle", "status"],
+                "required": ["taskText", "status"],
             },
         },
     },
@@ -282,12 +248,12 @@ async def _resolve_lore(session: AsyncSession, title: str) -> LorebookEntry | No
     ).scalars().first()
 
 
-async def _resolve_quest(session: AsyncSession, title: str) -> Quest | None:
-    if not title:
+async def _resolve_task(session: AsyncSession, text: str) -> Task | None:
+    if not text:
         return None
     return (
         await session.execute(
-            select(Quest).where(func.lower(Quest.title) == title.lower())
+            select(Task).where(func.lower(Task.text) == text.lower())
         )
     ).scalars().first()
 
@@ -315,17 +281,17 @@ async def _build_world_state(session: AsyncSession) -> str:
     by_cat: dict[str, list[str]] = {}
     for e in lore:
         by_cat.setdefault(e.cat, []).append(e.title)
-    quests = (await session.execute(select(Quest))).scalars().all()
+    tasks = (await session.execute(select(Task))).scalars().all()
     members = (await session.execute(select(PartyMember).where(PartyMember.in_party == True))).scalars().all()  # noqa: E712
 
     lines = ["CURRENT WORLD STATE (reuse these exact names; update rather than duplicate):"]
     for cat in ("world", "characters", "items", "monsters", "spells"):
         titles = by_cat.get(cat, [])
         lines.append(f"  {cat}: {', '.join(titles) if titles else '(none)'}")
-    if quests:
-        lines.append("  quests: " + ", ".join(f"{q.title} [{q.status}]" for q in quests))
+    if tasks:
+        lines.append("  tasks: " + ", ".join(f"{t.text} [{t.status}]" for t in tasks))
     else:
-        lines.append("  quests: (none)")
+        lines.append("  tasks: (none)")
     member_names = [m.basic_info.get("name", "?") for m in members]
     lines.append(f"  party members: {', '.join(member_names) if member_names else '(none)'}")
     return "\n".join(lines)
@@ -347,13 +313,13 @@ def _clip(text: str, limit: int) -> str:
 
 
 async def _known_name_tokens(session: AsyncSession) -> set[str]:
-    """Lowercased word tokens of every known proper name (lore/quest titles, party
-    members, PC) — so the pre-filter doesn't re-trigger on names already recorded."""
+    """Lowercased word tokens of every known proper name (lore titles, party
+    members, PC) — so the pre-filter doesn't re-trigger on names already recorded.
+    Tasks are free-text goals, not proper names, so they're intentionally excluded."""
     lore = (await session.execute(select(LorebookEntry))).scalars().all()
-    quests = (await session.execute(select(Quest))).scalars().all()
     members = (await session.execute(select(PartyMember))).scalars().all()
     pc = (await session.execute(select(PlayerCharacter))).scalars().first()
-    names = [e.title for e in lore] + [q.title for q in quests]
+    names = [e.title for e in lore]
     names += [m.basic_info.get("name", "") for m in members]
     if pc:
         names.append(pc.basic_info.get("name", ""))
@@ -393,14 +359,10 @@ def _summary(kind: str, operation: str, payload: dict, target_title: str | None 
     if kind == "lore":
         verb = "Add lore" if operation == "create" else "Update lore"
         return f"{verb}: {payload.get('title') or target_title or '?'}"
-    if kind == "quest":
+    if kind == "task":
         if operation == "create":
-            return f"New quest: {payload.get('title', '?')}"
-        return f"Quest {payload.get('status', 'update')}: {target_title or '?'}"
-    if kind == "quest_objective":
-        if operation == "create":
-            return f"Objective on {target_title or '?'}: {payload.get('text', '')[:40]}"
-        return f"Objective {'done' if payload.get('done') else 'reopened'} on {target_title or '?'}"
+            return f"New task: {payload.get('text', '?')[:48]}"
+        return f"Task {payload.get('status', 'update')}: {target_title or '?'}"
     if kind == "member":
         return f"Recruit member: {payload.get('name', '?')}"
     return f"{kind} {operation}"
@@ -465,56 +427,26 @@ async def _proposal_from_call(
             summary=_summary("lore", "update", payload, existing.title),
         )
 
-    if name == "create_quest":
-        title = (args.get("title") or "").strip()
-        if not title or await _resolve_quest(session, title):
-            return None
-        payload = {"title": title, "desc": args.get("desc", ""), "objectives": args.get("objectives", [])}
-        return WorldbuildingProposal(
-            turn_number=turn_number, kind="quest", operation="create",
-            payload=payload, summary=_summary("quest", "create", payload),
-        )
-
-    if name == "add_objective":
-        quest = await _resolve_quest(session, (args.get("questTitle") or "").strip())
+    if name == "create_task":
         text = (args.get("text") or "").strip()
-        if not quest or not text:
+        if not text or await _resolve_task(session, text):
             return None
         payload = {"text": text}
         return WorldbuildingProposal(
-            turn_number=turn_number, kind="quest_objective", operation="create",
-            target_id=quest.id, payload=payload,
-            summary=_summary("quest_objective", "create", payload, quest.title),
+            turn_number=turn_number, kind="task", operation="create",
+            payload=payload, summary=_summary("task", "create", payload),
         )
 
-    if name == "update_objective":
-        quest = await _resolve_quest(session, (args.get("questTitle") or "").strip())
-        if not quest:
-            return None
-        obj_text = (args.get("objectiveText") or "").strip().lower()
-        objs = (
-            await session.execute(select(QuestObjective).where(QuestObjective.quest_id == quest.id))
-        ).scalars().all()
-        match = next((o for o in objs if o.text.lower() == obj_text), None)
-        if not match:
-            return None
-        payload = {"done": bool(args.get("done"))}
-        return WorldbuildingProposal(
-            turn_number=turn_number, kind="quest_objective", operation="update",
-            target_id=match.id, payload=payload,
-            summary=_summary("quest_objective", "update", payload, quest.title),
-        )
-
-    if name == "update_quest_status":
-        quest = await _resolve_quest(session, (args.get("questTitle") or "").strip())
+    if name == "update_task_status":
+        task = await _resolve_task(session, (args.get("taskText") or "").strip())
         status = args.get("status")
-        if not quest or status not in QUEST_STATUSES:
+        if not task or status not in TASK_STATUSES:
             return None
         payload = {"status": status}
         return WorldbuildingProposal(
-            turn_number=turn_number, kind="quest", operation="update",
-            target_id=quest.id, payload=payload,
-            summary=_summary("quest", "update", payload, quest.title),
+            turn_number=turn_number, kind="task", operation="update",
+            target_id=task.id, payload=payload,
+            summary=_summary("task", "update", payload, task.text),
         )
 
     if name == "create_member":
@@ -580,46 +512,23 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
             entry.keywords = p["keywords"]
         return True, None
 
-    if kind == "quest" and op == "create":
-        quest = Quest(title=p.get("title", ""), desc=p.get("desc", ""), status="active")
-        session.add(quest)
-        await session.flush()
-        for i, text in enumerate(p.get("objectives", []) or []):
-            session.add(QuestObjective(quest_id=quest.id, text=text, sort_order=i))
-        proposal.target_id = quest.id  # tie the created quest to this proposal/turn
-        return True, None
-
-    if kind == "quest" and op == "update":
-        quest = await session.get(Quest, proposal.target_id)
-        if not quest:
-            return False, "Quest no longer exists."
-        _snapshot_prev(proposal, {"status": quest.status, "desc": quest.desc})
-        if p.get("status"):
-            quest.status = p["status"]
-        if p.get("desc") is not None:
-            quest.desc = p["desc"]
-        return True, None
-
-    if kind == "quest_objective" and op == "create":
-        quest = await session.get(Quest, proposal.target_id)
-        if not quest:
-            return False, "Quest no longer exists."
+    if kind == "task" and op == "create":
         max_order = (await session.execute(
-            select(func.coalesce(func.max(QuestObjective.sort_order), -1))
-            .where(QuestObjective.quest_id == quest.id)
+            select(func.coalesce(func.max(Task.sort_order), -1))
         )).scalar()
-        session.add(QuestObjective(quest_id=quest.id, text=p.get("text", ""), sort_order=(max_order or 0) + 1))
+        task = Task(text=p.get("text", ""), status="active", sort_order=(max_order or 0) + 1)
+        session.add(task)
+        await session.flush()
+        proposal.target_id = task.id  # tie the created task to this proposal/turn
         return True, None
 
-    if kind == "quest_objective" and op == "update":
-        obj = await session.get(QuestObjective, proposal.target_id)
-        if not obj:
-            return False, "Objective no longer exists."
-        _snapshot_prev(proposal, {"done": obj.done, "text": obj.text})
-        if p.get("done") is not None:
-            obj.done = bool(p["done"])
-        if p.get("text") is not None:
-            obj.text = p["text"]
+    if kind == "task" and op == "update":
+        task = await session.get(Task, proposal.target_id)
+        if not task:
+            return False, "Task no longer exists."
+        _snapshot_prev(proposal, {"status": task.status})
+        if p.get("status"):
+            task.status = p["status"]
         return True, None
 
     if kind == "member" and op == "create":
@@ -676,42 +585,17 @@ async def _reverse_accepted_proposal(p: WorldbuildingProposal, session: AsyncSes
             return True
         return False
 
-    if kind == "quest" and op == "create":
-        quest = await session.get(Quest, p.target_id) if p.target_id else None
-        if quest is not None:
-            objs = (await session.execute(
-                select(QuestObjective).where(QuestObjective.quest_id == quest.id)
-            )).scalars().all()
-            for o in objs:
-                await session.delete(o)
-            await session.delete(quest)
+    if kind == "task" and op == "create":
+        task = await session.get(Task, p.target_id) if p.target_id else None
+        if task is not None:
+            await session.delete(task)
             return True
         return False
 
-    if kind == "quest" and op == "update":
-        quest = await session.get(Quest, p.target_id) if p.target_id else None
-        if quest is not None and prev:
-            if "status" in prev:
-                quest.status = prev["status"]
-            if "desc" in prev:
-                quest.desc = prev["desc"]
-            return True
-        return False
-
-    if kind == "quest_objective" and op == "create":
-        obj = await session.get(QuestObjective, p.target_id) if p.target_id else None
-        if obj is not None:
-            await session.delete(obj)
-            return True
-        return False
-
-    if kind == "quest_objective" and op == "update":
-        obj = await session.get(QuestObjective, p.target_id) if p.target_id else None
-        if obj is not None and prev:
-            if "done" in prev:
-                obj.done = bool(prev["done"])
-            if "text" in prev:
-                obj.text = prev["text"]
+    if kind == "task" and op == "update":
+        task = await session.get(Task, p.target_id) if p.target_id else None
+        if task is not None and prev and "status" in prev:
+            task.status = prev["status"]
             return True
         return False
 
@@ -853,7 +737,7 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
             if proposal is None:
                 continue
 
-            # Apply policy: auto applies lore/quest now; members always pending.
+            # Apply policy: auto applies lore/task now; members always pending.
             if mode == "auto" and proposal.kind != "member":
                 ok, note = await apply_proposal(proposal, session)
                 proposal.status = "accepted" if ok else "failed"

@@ -684,3 +684,23 @@ Done: the equipment slot control (`EquipSlotField`, duplicated in CharacterSheet
 Follow-up (user request): the equipped-by badge on ItemCard is a rounded rectangle (rounded-[4px]), not a circle.
 
 ---
+[ ] Currency should be its own special type of container in the Inventory, rather than a type of item. It should always be at the top of the list, too.
+
+---
+[x] Quests is a bit too complex of a system. We could simplify it into Tasks, which can be singular objectives. An objective can be big ("Save the World"), or small ("Figure out how to get inside the house", "Find someone who knows about X"). This should be a mostly dynamic list of tasks to do and complete.
+
+Done: replaced the whole Quest + QuestObjective system with a flat **Task** model (chosen: full replacement; states to-do/done/failed). A Task is one goal — big or small — with `text`, `status` (active/completed/failed), `notes`, `sort_order`; no nesting. Server: new `Task` model + `/tasks` CRUD (replacing all `/quests` + objective routes); prompt_builder injects an "ACTIVE TASKS" list; the Chronicler's four quest tools collapsed to `create_task`/`update_task_status` (proposals, apply, and the regenerate/delete reversal all task-aware); the Editor's quest/objective tools collapsed to `create_task`/`update_task`/`delete_task`; the action-suggester and export/import/reset now use tasks (old-zip "quests" are flattened on import); seed creates a flat task list. A one-time idempotent `migrate_quests_to_tasks` (runs on scope load) flattens any existing user quests+objectives into tasks (quest title → task; each objective → its own task; done→completed) and consumes the legacy rows (kept as classes only for the migration). Client: new `tasksStore` + `TasksPanel` (checkable to-do list with a Completed/Failed section) + `TaskInspector` (text/status/notes, quick Mark Done / Re-open / Failed); rail tab, `uiStore` selection kind, and all peripheral stores/prose renamed Quests→Tasks. Verified end-to-end: server boots and `/tasks` CRUD works; migration test (quests+objectives → 4 tasks, legacy consumed, idempotent); Chronicler create/apply/reverse + Editor create/update/delete task tools; client tsc + full build clean. CLAUDE.md updated.
+
+---
+[ ] Party Member dialogue card in the chat can get cut mid-paragraph. E.g. "Varena: "Murkwood's thick with deer this time of year. A few good kills, and we eat well — sell the pelts in the next village. Or," she adds, glancing sidelong at you, "there's always goblins. They hoard whatever they steal from travelers. Dangerous, but dangerous pays."" -- in this example, the dialogue card ends after 'Or,", as that's when the quote ends, but the paragraph clearly continues. Could this be improved?
+
+---
+[ ] For fun, add the following Ascii art to the launcher:
+ __      __                                         .___
+/  \    /  \_____  ___.__.__  _  _______ _______  __| _/
+\   \/\/   /\__  \<   |  |\ \/ \/ /\__  \\_  __ \/ __ | 
+ \        /  / __ \\___  | \     /  / __ \|  | \/ /_/ | 
+  \__/\  /  (____  / ____|  \/\_/  (____  /__|  \____ | 
+       \/        \/\/                   \/           \/ 
+
+---

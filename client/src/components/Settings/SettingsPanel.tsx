@@ -292,7 +292,7 @@ export function SettingsPanel() {
         {/* Agents & Tools */}
         <Section title="Agents &amp; Tools" onReset={resetAgents}>
           <p className="text-[10px] text-textdim font-body leading-relaxed">
-            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story. The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/quests/companions after each turn.
+            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story. The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/tasks/companions after each turn.
           </p>
 
           <SubSection title="Narrator Tools">
@@ -332,7 +332,7 @@ export function SettingsPanel() {
                 <option value="auto">Auto — apply changes automatically</option>
               </select>
               <span className="text-[10px] text-textdim font-body">
-                The Chronicler reviews each turn and records new lore, quests, and companions. New party members always need your approval, even in Auto.
+                The Chronicler reviews each turn and records new lore, tasks, and companions. New party members always need your approval, even in Auto.
               </span>
             </label>
             <label className="block">

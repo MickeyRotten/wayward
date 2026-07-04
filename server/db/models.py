@@ -228,6 +228,24 @@ class ItemInstance(Base):
     count: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class Task(Base):
+    """A single to-do the party has taken on — the flat successor to the old
+    Quest+QuestObjective system. A task can be big ("Save the World") or small
+    ("Find someone who knows about the sigil"); there's no nesting. ``status`` is
+    active | completed | failed; ``sort_order`` gives the dynamic list its order.
+    """
+    __tablename__ = "tasks"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    text: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String, default="active")  # active | completed | failed
+    notes: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# Legacy — retained only so the one-time quests→tasks migration and old-zip
+# imports can read prior data. The app no longer writes these tables.
 class Quest(Base):
     __tablename__ = "quests"
     __table_args__ = ADVENTURE

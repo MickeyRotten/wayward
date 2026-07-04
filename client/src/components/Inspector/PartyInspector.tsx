@@ -201,7 +201,7 @@ const RARITY_TEXT_COLORS: Record<Rarity, string> = {
   l: 'text-rarity-l',
 }
 
-const ITEM_TYPES: ItemType[] = ['Equipment', 'Tool', 'Consumable', 'Key Item', 'Artifact', 'Other']
+const ITEM_TYPES: ItemType[] = ['Equipment', 'Tool', 'Consumable', 'Key Item', 'Artifact', 'Currency', 'Other']
 // Coarse body-slot categories (match the server's slot compatibility map).
 const SLOT_OPTIONS = ['Head', 'Neck', 'Torso', 'Hands', 'Waist', 'Legs', 'Feet', 'Accessory']
 const RARITY_OPTIONS: { value: Rarity; label: string }[] = [

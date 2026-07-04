@@ -18,6 +18,8 @@ export function ItemTypeIcon({ type, className, title }: { type?: string; classN
       return <svg {...common}>{tip}<circle cx="8.5" cy="8.5" r="4.5" /><path d="M11.8 11.8 20 20M16.5 16.5l2-2" /></svg>
     case 'Artifact': // gem
       return <svg {...common}>{tip}<path d="M12 3l8 7-8 11L4 10z" /><path d="M4 10h16M9 4l-2 6 5 11 5-11-2-6" /></svg>
+    case 'Currency': // coin
+      return <svg {...common}>{tip}<circle cx="12" cy="12" r="8" /><path d="M12 8v8M9.5 9.5h3.5a1.5 1.5 0 0 1 0 3h-2a1.5 1.5 0 0 0 0 3h3.5" /></svg>
     default: // box
       return <svg {...common}>{tip}<rect x="4" y="4" width="16" height="16" rx="1" /></svg>
   }

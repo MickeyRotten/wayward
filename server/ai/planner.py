@@ -44,7 +44,7 @@ from server.db.models import (
 
 log = logging.getLogger("wayward.planner")
 
-ITEM_TYPES = ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Other"]
+ITEM_TYPES = ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Currency", "Other"]
 RARITIES = ["c", "u", "r", "e", "l"]
 SLOT_CATEGORIES = list(SLOT_COMPATIBILITY.keys())  # Head, Neck, Torso, Hands, Waist, Legs, Feet, Accessory
 EQUIP_SLOTS = [

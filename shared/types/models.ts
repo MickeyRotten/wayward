@@ -13,7 +13,7 @@ export interface Equipment {
   accessory2: string | null
 }
 
-export type ItemType = 'Equipment' | 'Tool' | 'Consumable' | 'Key Item' | 'Artifact' | 'Other'
+export type ItemType = 'Equipment' | 'Tool' | 'Consumable' | 'Key Item' | 'Artifact' | 'Currency' | 'Other'
 export type Rarity = 'c' | 'u' | 'r' | 'e' | 'l'
 
 export interface ItemCatalogEntry {

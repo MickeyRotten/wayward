@@ -153,7 +153,7 @@ TOOL_SCHEMAS: list[dict] = [
                     "title": {"type": "string", "description": "Short name, e.g. 'Sunken Chapel'."},
                     "content": {"type": "string", "description": "A concise descriptive paragraph. For items, describe the item itself — not who holds it."},
                     "keywords": {"type": "array", "items": {"type": "string"}},
-                    "itemType": {"type": "string", "enum": ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Other"], "description": "Items only. The kind of item."},
+                    "itemType": {"type": "string", "enum": ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Currency", "Other"], "description": "Items only. The kind of item."},
                     "slot": {"type": "string", "enum": ["Head", "Neck", "Torso", "Hands", "Waist", "Legs", "Feet", "Accessory"], "description": "Equipment items only. The body slot it's worn in."},
                     "rarity": {"type": "string", "enum": ["c", "u", "r", "e", "l"], "description": "Items only. c=common u=uncommon r=rare e=epic l=legendary."},
                 },

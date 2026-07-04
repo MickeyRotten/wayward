@@ -684,7 +684,9 @@ Done: the equipment slot control (`EquipSlotField`, duplicated in CharacterSheet
 Follow-up (user request): the equipped-by badge on ItemCard is a rounded rectangle (rounded-[4px]), not a circle.
 
 ---
-[ ] Currency should be its own special type of container in the Inventory, rather than a type of item. It should always be at the top of the list, too.
+[x] Currency should be its own special type of container in the Inventory, rather than a type of item. It should always be at the top of the list, too.
+
+Done: "Currency" is now a first-class item type (added to the ItemType union, the item-editor type dropdown, the Editor/Chronicler tool enums, and given a coin icon in ItemTypeIcon). In the Inventory panel, currency no longer appears as an ordinary item card or under the type tabs — instead the party's currencies are pulled out and aggregated by catalog item into a dedicated **Currency container**: a gold-tinted bar pinned at the top (above the type tabs, so it's always visible regardless of tab/sort), each currency shown as coin-icon + amount (thousands-separated) + name, clickable to open its inspector. Non-currency items keep the tabbed/sorted list below; the header count and empty-state now exclude currency. The Fantasy template's Gold (type Currency, x10) flows straight into the container. Verified: client tsc + full build clean; a Currency item round-trips through /items and /inventory with its type intact.
 
 ---
 [x] Quests is a bit too complex of a system. We could simplify it into Tasks, which can be singular objectives. An objective can be big ("Save the World"), or small ("Figure out how to get inside the house", "Find someone who knows about X"). This should be a mostly dynamic list of tasks to do and complete.

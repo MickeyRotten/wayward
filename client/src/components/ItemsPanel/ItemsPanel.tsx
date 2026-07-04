@@ -4,6 +4,7 @@ import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
+import { ItemTypeIcon } from '../ItemTypeIcon'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { type SortKey, SORT_OPTIONS, RARITY_ORDER, sortList } from '../../lib/sortEntries'
 import { type ItemTypeTab, matchesTypeTab } from '../../lib/itemTypes'
@@ -24,9 +25,22 @@ export function ItemsPanel() {
   const [sortAsc, setSortAsc] = useState(false)
   const [typeTab, setTypeTab] = useState<ItemTypeTab>('All')
 
+  // Currency is its own special container (see CurrencyBar), never a normal item
+  // card — pull it out of the tabbed/sorted list and aggregate it by catalog item.
+  const currencies = useMemo(() => {
+    const map = new Map<string, { itemId: string; instanceId: string; name: string; rarity: Rarity; total: number }>()
+    for (const s of inventory) {
+      if (s.item?.type !== 'Currency') continue
+      const cur = map.get(s.itemId)
+      if (cur) cur.total += s.count
+      else map.set(s.itemId, { itemId: s.itemId, instanceId: s.instanceId, name: s.item.name, rarity: s.item.rarity, total: s.count })
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [inventory])
+
   const sortedInventory = useMemo(
     () => sortList(
-      inventory.filter((s) => matchesTypeTab(s.item?.type, typeTab)),
+      inventory.filter((s) => s.item?.type !== 'Currency' && matchesTypeTab(s.item?.type, typeTab)),
       sortKey, sortAsc,
       {
         name: (s) => s.item?.name ?? '',
@@ -38,8 +52,9 @@ export function ItemsPanel() {
   )
 
   // The inventory now lists every owned instance (stowed + equipped). The
-  // header count shows how many copies are stowed in the pack (worn gear aside).
-  const stowedCount = inventory.filter((s) => !s.equippedBy).length
+  // header count shows how many copies are stowed in the pack (worn gear +
+  // currency aside — currency lives in its own container).
+  const stowedCount = inventory.filter((s) => !s.equippedBy && s.item?.type !== 'Currency').length
 
   // Select a *specific copy*: a given instance highlights (and inspects) only
   // that row, so two copies of the same item are independently selectable.
@@ -85,6 +100,12 @@ export function ItemsPanel() {
         </div>
       </div>
 
+      {/* Currency — its own container, always pinned to the top. */}
+      <CurrencyBar
+        currencies={currencies}
+        onSelect={(c) => select({ kind: 'item', id: c.itemId, instanceId: c.instanceId })}
+      />
+
       {/* Type filter tabs */}
       <div className="px-4 pb-2">
         <ItemTypeTabs value={typeTab} onChange={setTypeTab} />
@@ -119,7 +140,7 @@ export function ItemsPanel() {
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
         {sortedInventory.length === 0 && (
           <p className="text-[12px] text-textdim font-body px-2 py-4 text-center">
-            {inventory.length === 0 ? 'No items in inventory' : 'No matching items'}
+            {inventory.filter((s) => s.item?.type !== 'Currency').length === 0 ? 'No items in inventory' : 'No matching items'}
           </p>
         )}
         {sortedInventory.map((stack) => {
@@ -199,6 +220,34 @@ export function ItemsPanel() {
           onCancel={() => setConfirmRemove(false)}
         />
       )}
+    </div>
+  )
+}
+
+type CurrencyEntry = { itemId: string; instanceId: string; name: string; rarity: Rarity; total: number }
+
+/** The Currency container — a compact bar of the party's currencies (each: coin
+    icon + amount + name), pinned above the item list. Empty → renders nothing. */
+function CurrencyBar({ currencies, onSelect }: {
+  currencies: CurrencyEntry[]
+  onSelect: (c: CurrencyEntry) => void
+}) {
+  if (currencies.length === 0) return null
+  return (
+    <div className="mx-4 mb-3 rounded-md border border-gold/30 bg-gold/[0.06] px-3 py-2 flex items-center gap-x-5 gap-y-1.5 flex-wrap">
+      {currencies.map((c) => (
+        <button
+          key={c.itemId}
+          type="button"
+          className="flex items-center gap-1.5 group"
+          onClick={() => onSelect(c)}
+          title={`View ${c.name}`}
+        >
+          <ItemTypeIcon type="Currency" className="text-gold2 shrink-0" />
+          <span className="font-body text-sm text-gold2 tabular-nums">{c.total.toLocaleString()}</span>
+          <span className="font-ui text-[10px] text-textdim tracking-wider uppercase group-hover:text-textsec transition-colors">{c.name}</span>
+        </button>
+      ))}
     </div>
   )
 }

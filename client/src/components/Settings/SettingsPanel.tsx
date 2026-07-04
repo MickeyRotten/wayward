@@ -558,7 +558,7 @@ function CampaignSection() {
   const rename = useCampaignsStore((s) => s.rename)
   const remove = useCampaignsStore((s) => s.remove)
 
-  const [newName, setNewName] = useState('')
+  const [newModalOpen, setNewModalOpen] = useState(false)
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -613,23 +613,14 @@ function CampaignSection() {
         </label>
       )}
 
-      <div className="flex gap-2 items-end pt-1">
-        <label className="flex-1 block">
-          <span className="text-[11px] text-textdim font-body">New campaign</span>
-          <input
-            className={inputCls}
-            placeholder="Name…"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
-        </label>
+      <div className="pt-1">
         <button
           type="button"
           disabled={busy}
-          className="font-ui text-[10px] tracking-wider bg-golddeep text-bg0 px-3 py-1.5 hover:bg-gold transition-colors disabled:opacity-40"
-          onClick={() => { create(newName.trim() || undefined); setNewName('') }}
+          className="w-full font-ui text-[10px] tracking-wider bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors disabled:opacity-40"
+          onClick={() => setNewModalOpen(true)}
         >
-          CREATE
+          + NEW CAMPAIGN
         </button>
       </div>
 
@@ -688,6 +679,101 @@ function CampaignSection() {
           onCancel={() => setConfirmDelete(false)}
         />
       )}
+      {newModalOpen && (
+        <NewCampaignModal
+          busy={busy}
+          onCreate={(name, template) => { setNewModalOpen(false); create(name || undefined, template) }}
+          onCancel={() => setNewModalOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+interface CampaignTemplate { id: string; name: string; description: string }
+
+function NewCampaignModal({ busy, onCreate, onCancel }: {
+  busy: boolean
+  onCreate: (name: string, template: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [templates, setTemplates] = useState<CampaignTemplate[]>([])
+  const [templateId, setTemplateId] = useState('empty')
+
+  useEffect(() => {
+    api.get<{ templates: CampaignTemplate[] }>('/campaigns/templates')
+      .then((r) => {
+        setTemplates(r.templates)
+        if (r.templates.length && !r.templates.some((t) => t.id === 'empty')) {
+          setTemplateId(r.templates[0].id)
+        }
+      })
+      .catch(() => setTemplates([]))
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  const chosen = templates.find((t) => t.id === templateId)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCancel}>
+      <div
+        className="w-full max-w-sm border border-line2 bg-bg1 rounded-md p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-disp text-[18px] pt-[2px] leading-none text-text">NEW CAMPAIGN</h3>
+
+        <label className="block space-y-1">
+          <span className="text-[11px] text-textdim font-body">Name</span>
+          <input
+            autoFocus
+            className="w-full border border-line2 bg-bg0 px-2 py-1.5 text-sm font-body text-text outline-none focus:bg-bg2"
+            placeholder="My Campaign"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !busy) onCreate(name.trim(), templateId) }}
+          />
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-[11px] text-textdim font-body">Template</span>
+          <select
+            className="w-full border border-line2 bg-bg0 px-2 py-1.5 text-sm font-body text-text outline-none"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+          >
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          {chosen?.description && (
+            <span className="block text-[10px] text-textdim font-body leading-relaxed pt-0.5">{chosen.description}</span>
+          )}
+        </label>
+
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            className="font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
+            onClick={onCancel}
+          >
+            CANCEL
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            className="font-ui text-[10px] tracking-wider bg-golddeep text-bg0 px-4 py-1.5 hover:bg-gold transition-colors disabled:opacity-40"
+            onClick={() => onCreate(name.trim(), templateId)}
+          >
+            CREATE
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -542,10 +542,10 @@ Add a small **“Reset to defaults”** link next to each section, except Campai
 
 Move First Message into the Scenario tab, but don't make it a part of Scenario.
 
-Done: Config is regrouped into the four named top-level collapsible sections (plus Appearance) — **Campaign** (campaign switcher/create/delete + a Party sub-section for max party size), **AI & Model** (API & Model + Sampling sub-sections), **Agents & Tools** (Narrator Tools, Chronicler, Summarisation, Action Suggestions sub-sections), **World** (Narrator Instructions, Spotlight Rule, Post-History, Editor Instructions, Lorebook Injection sub-sections). Each sub-section is itself a nested collapsible (a new <SubSection>, open by default). A small "Reset to defaults" link sits in each section header except Campaign (AI & Model → sampling defaults; Agents & Tools → agent/tool defaults; World → blank instruction fields that fall back to built-ins; Appearance → medium font); the reset link stops propagation so it doesn't toggle the section. First Message moved out of Config into the Scenario tab (below the 6 scenario fields, clearly labelled "Not part of the Scenario", saved on the NarratorConfig not the scenario). Verified: full client build clean.
+Done (commit 74d9a64): Config is regrouped into the four named top-level collapsible sections (plus Appearance) — **Campaign** (campaign switcher/create/delete + a Party sub-section for max party size), **AI & Model** (API & Model + Sampling sub-sections), **Agents & Tools** (Narrator Tools, Chronicler, Summarisation, Action Suggestions sub-sections), **World** (Narrator Instructions, Spotlight Rule, Post-History, Editor Instructions, Lorebook Injection sub-sections). Each sub-section is itself a nested collapsible (a new <SubSection>, open by default). A small "Reset to defaults" link sits in each section header except Campaign (AI & Model → sampling defaults; Agents & Tools → agent/tool defaults; World → blank instruction fields that fall back to built-ins; Appearance → medium font); the reset link stops propagation so it doesn't toggle the section. First Message moved out of Config into the Scenario tab (below the 6 scenario fields, clearly labelled "Not part of the Scenario", saved on the NarratorConfig not the scenario). Verified: full client build clean.
 
 ---
-[ ] Iteration: New Campaign:
+[x] Iteration: New Campaign:
 
 - In Config there should be a button for Create a New Campaign.
   - Pressing it opens a modal with settings for the new campaign.
@@ -553,12 +553,16 @@ Done: Config is regrouped into the four named top-level collapsible sections (pl
 - For now, the templates are Empty (nothing filled out), and Fantasy.
 - Templates should be separate JSONs in a folder called templates.
 
----
-[ ] Universal defaults:
-- Ensure that Narration instructions, Spotlight rule, and Editor instructions are not empty when creating a new Campaign.
+Done: Config → Campaign now has a "+ NEW CAMPAIGN" button that opens a modal (name field + Template dropdown + the template's description + Create/Cancel; Esc/backdrop cancels). Templates are plain JSON files in a new server/templates/ folder — empty.json and fantasy.json. A GET /campaigns/templates endpoint lists them ({id,name,description}, Empty first); POST /campaigns takes a `template` and applies it. server/db/templates.py (list_templates + apply_template) reads the JSON and populates the fresh campaign/adventure: keyed catalog items, freeform lore, the locked Scenario (from structured fields), narrator config, PC, party, and inventory — written as catalog-id equipment + InventoryStack, then converted to item instances (mirrors the demo seed path). Verified end-to-end with a temp-dir smoke test.
 
 ---
-[ ] Defaults for a new Fantasy campaign.
+[x] Universal defaults:
+- Ensure that Narration instructions, Spotlight rule, and Editor instructions are not empty when creating a new Campaign.
+
+Done: apply_template ALWAYS stores non-empty Narrator Instructions, Spotlight Rule, and Editor (planner) Instructions — a template may override them, otherwise the built-in defaults are used (DEFAULT_NARRATOR_INSTRUCTIONS, DEFAULT_SPOTLIGHT_RULE, PLANNER_GUIDANCE). This holds for the Empty template too. Verified in the smoke test (Empty campaign → all three non-empty).
+
+---
+[x] Defaults for a new Fantasy campaign.
 
 - Set something brief as default for all the Scenario fields, a generic high-fantasy setting
 - Default PC: Name - Hero, Species - Human, Gender - Male, Age - 22, very generic description.
@@ -570,5 +574,7 @@ Done: Config is regrouped into the four named top-level collapsible sections (pl
 - 1 World Entry: Some generic forest, e.g. Murkwood.
 - 1 Monster Entry: Goblin
 - Default first message: PC standing at the entrance of the generic forest.
+
+Done (server/templates/fantasy.json): brief high-fantasy Scenario (all 6 fields); PC Hero (Human/Male/22) equipped with Sword, Adventurer's Tunic, Tattered Pants, Ratty Boxer Shorts, Worn Boots; party member Varena (Elf/Female/120, suitably over-the-top description + Elven Marksmanship field skill) equipped with Longbow, Elvish Tunic (light and revealing), Thigh High Boots, Choker, Quill (Accessory); 13 catalog items (the equipment + Health Potion, Rations, Gold [Currency]); starting inventory Health Potion x3, Rations x2, Gold x10 (the worn equipment also shows in inventory as equipped, so it isn't duplicated as extra stowed copies); a Murkwood World entry; a Goblin Monster entry; and a first message with the party at the entrance of Murkwood. Verified in the smoke test (PC/Varena, 13 items, worn gear, Murkwood/Goblin, non-empty narrator/first-message).
 
 ---

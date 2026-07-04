@@ -250,19 +250,30 @@ async def list_campaigns_route(session: AsyncSession = Depends(get_session)):
     return {"activeId": cid, "campaigns": storage.list_campaigns()}
 
 
+@router.get("/campaigns/templates")
+async def list_campaign_templates_route():
+    from server.db import templates as tpl
+    return {"templates": tpl.list_templates()}
+
+
 @router.post("/campaigns")
 async def create_campaign_route(
     data: dict = Body(default={}),
     session: AsyncSession = Depends(get_session),
 ):
     name = (data.get("name") or "New Campaign").strip() or "New Campaign"
+    template = (data.get("template") or "empty").strip() or "empty"
     await storage.refresh_active_adventure_meta()
     cid = await storage.create_campaign(name)
     aid = await storage.create_adventure(cid, "Adventure 1")
     await switch_active(storage.campaign_db_path(cid), storage.adventure_db_path(cid, aid))
     await _set_active(cid, aid)
+
+    from server.db import templates as tpl
+    created_pc = await tpl.apply_template(template)
+
     async with new_session() as s:
-        if not (await s.execute(select(PlayerCharacter))).scalars().first():
+        if not created_pc and not (await s.execute(select(PlayerCharacter))).scalars().first():
             s.add(PlayerCharacter())
         # Structured Editor starter shown in Edit Mode for the new campaign.
         s.add(ChatMessage(

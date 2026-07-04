@@ -1,0 +1,9 @@
+{
+  "name": "Empty",
+  "description": "A blank world. Nothing filled out — build it yourself in Edit Mode.",
+  "scenario": {},
+  "items": [],
+  "lore": [],
+  "partyMembers": [],
+  "inventory": []
+}

@@ -9,7 +9,7 @@ interface CampaignsState {
   activeId: string | null
   busy: boolean
   fetch: () => Promise<void>
-  create: (name?: string) => Promise<void>
+  create: (name?: string, template?: string) => Promise<void>
   load: (id: string) => Promise<void>
   rename: (id: string, name: string) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -31,10 +31,10 @@ export const useCampaignsStore = create<CampaignsState>((set, get) => ({
     set({ campaigns: res.campaigns, activeId: res.activeId })
   },
 
-  create: async (name) => {
+  create: async (name, template) => {
     set({ busy: true })
     try {
-      await api.post('/campaigns', { name: name ?? 'New Campaign' })
+      await api.post('/campaigns', { name: name ?? 'New Campaign', template: template ?? 'empty' })
       await afterSwitch()
       // A new campaign opens in Edit Mode with a structured starter message.
       useChatStore.getState().setPlanningMode(true)

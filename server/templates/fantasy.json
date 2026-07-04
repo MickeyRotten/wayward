@@ -1,0 +1,83 @@
+{
+  "name": "Fantasy",
+  "description": "A generic high-fantasy starter — a human hero, an elven companion, and a dark forest to explore.",
+  "narrator": {
+    "firstMessage": "The road ends where the trees begin. Before you rises Murkwood — a wall of ancient oaks whose canopy swallows the afternoon light, so that the path ahead fades quickly into green-black shadow. Somewhere within, birds have gone quiet. The air smells of wet bark and something older. Varena steps up beside you, bow already in hand, and says nothing. Whatever waits under those branches, it is time to go in."
+  },
+  "scenario": {
+    "setting": "A classic high-fantasy realm of kingdoms, guilds, and untamed wilds. Adventurers earn their name delving ruins, clearing monster-haunted forests, and chasing rumors of old treasure.",
+    "historyBrief": "An age of relative peace after the fall of the old empire. Its ruins still dot the land, and the monsters that crept in during the collapse have never fully been driven back.",
+    "species": "Humans are the most numerous. Elves are long-lived and aloof; dwarves keep to the mountains; goblins and worse things lair in the deep woods.",
+    "geography": "Rolling farmland and walled towns give way, at the frontier, to dark forests like Murkwood and the broken hills beyond.",
+    "techAndMagic": "Medieval technology — steel, timber, and horse. Magic is real but uncommon: hedge-witches, guild mages, and the occasional enchanted relic from the old empire.",
+    "other": "Coin is gold. A sword, a full pack, and a reliable companion are worth more than any prophecy."
+  },
+  "items": [
+    { "key": "sword", "name": "Sword", "type": "Equipment", "slot": "Hands", "rarity": "c", "desc": "A plain, well-balanced arming sword. Nothing special, but it holds an edge." },
+    { "key": "adventurers_tunic", "name": "Adventurer's Tunic", "type": "Equipment", "slot": "Torso", "rarity": "c", "desc": "A hard-wearing traveler's tunic of undyed wool and leather trim." },
+    { "key": "tattered_pants", "name": "Tattered Pants", "type": "Equipment", "slot": "Legs", "rarity": "c", "desc": "Patched and road-worn breeches. They've seen better roads." },
+    { "key": "worn_boots", "name": "Worn Boots", "type": "Equipment", "slot": "Feet", "rarity": "c", "desc": "Scuffed leather boots, soles worn thin but still walking." },
+    { "key": "ratty_boxers", "name": "Ratty Boxer Shorts", "type": "Equipment", "slot": "Legs", "rarity": "c", "desc": "Threadbare undershorts. A hero's dignity, barely preserved." },
+    { "key": "longbow", "name": "Longbow", "type": "Equipment", "slot": "Hands", "rarity": "u", "desc": "A tall yew longbow, elegant and deadly in practiced hands." },
+    { "key": "elvish_tunic", "name": "Elvish Tunic", "type": "Equipment", "slot": "Torso", "rarity": "u", "desc": "A light and revealing elven tunic of silvered cloth — more for grace than protection." },
+    { "key": "thigh_high_boots", "name": "Thigh High Boots", "type": "Equipment", "slot": "Feet", "rarity": "u", "desc": "Supple leather boots that rise to the thigh. Quiet on the forest floor." },
+    { "key": "choker", "name": "Choker", "type": "Equipment", "slot": "Neck", "rarity": "c", "desc": "A thin black band worn close at the throat, set with a single small stone." },
+    { "key": "quill", "name": "Quill", "type": "Equipment", "slot": "Accessory", "rarity": "c", "desc": "A fine feather quill, ink-stained at the tip. Varena is never without it." },
+    { "key": "health_potion", "name": "Health Potion", "type": "Consumable", "maxStack": 10, "uses": 1, "rarity": "c", "desc": "A red draught that knits wounds and dulls pain. Tastes of iron and berries." },
+    { "key": "rations", "name": "Rations", "type": "Consumable", "maxStack": 20, "uses": 1, "rarity": "c", "desc": "Dried meat, hard bread, and a little cheese. A day's food on the road." },
+    { "key": "gold", "name": "Gold", "type": "Currency", "maxStack": 9999, "rarity": "c", "desc": "Stamped gold coins, the common currency of the realm." }
+  ],
+  "lore": [
+    { "cat": "world", "title": "Murkwood", "content": "A vast, ancient forest at the edge of settled land. Its canopy is so dense that noon feels like dusk beneath the boughs. Travelers keep to the old paths, for the deep wood is home to goblins, worse beasts, and the mossed-over ruins of the old empire. Locals say the forest takes those who stray, and gives nothing back.", "keywords": ["murkwood", "forest", "woods", "trees"] },
+    { "cat": "monsters", "title": "Goblin", "content": "A small, wiry, green-skinned creature with sharp teeth and sharper cunning. Goblins are cowards alone but vicious in packs, lairing in caves and ruins throughout Murkwood. They favor ambush, crude blades, and stolen trinkets, and they scatter the moment a fight turns against them.", "keywords": ["goblin", "goblins", "green-skin"] }
+  ],
+  "playerCharacter": {
+    "basicInfo": {
+      "name": "Hero",
+      "gender": "Male",
+      "species": "Human",
+      "age": 22,
+      "heightCm": 178,
+      "weightKg": 74,
+      "description": "A young adventurer setting out to make a name. Brown hair, an honest face, and more courage than experience. Whatever they lack in skill, they make up for in stubbornness."
+    },
+    "equipment": {
+      "rightHand": "sword",
+      "torsoOver": "adventurers_tunic",
+      "legsOver": "tattered_pants",
+      "legsUnder": "ratty_boxers",
+      "feet": "worn_boots"
+    }
+  },
+  "partyMembers": [
+    {
+      "basicInfo": {
+        "name": "Varena",
+        "gender": "Female",
+        "species": "Elf",
+        "age": 120,
+        "heightCm": 172,
+        "weightKg": 54,
+        "description": "A breathtakingly beautiful elven ranger with flowing silver hair, luminous violet eyes, and the ageless grace of someone born a century before you drew breath. Aloof and effortlessly capable, she carries herself as though the mortal world is a charming inconvenience — though her aim with a bow is anything but.",
+        "likes": "Moonlight, fine wine, poetry, being right",
+        "dislikes": "Cities, mud, human impatience"
+      },
+      "fieldSkill": {
+        "name": "Elven Marksmanship",
+        "description": "Looses arrows with uncanny precision — able to thread a shot through branches to strike a distant eye. Still a bow: no help at grappling range, against heavy armor, or with nothing to shoot at."
+      },
+      "equipment": {
+        "rightHand": "longbow",
+        "torsoOver": "elvish_tunic",
+        "feet": "thigh_high_boots",
+        "neck": "choker",
+        "accessory1": "quill"
+      }
+    }
+  ],
+  "inventory": [
+    { "key": "health_potion", "count": 3 },
+    { "key": "rations", "count": 2 },
+    { "key": "gold", "count": 10 }
+  ]
+}

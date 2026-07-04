@@ -178,7 +178,7 @@ The item tools operate on **instances**: `grant`/`equip` reuse a stowed instance
 
 **Persistence/reversal is unchanged in shape.** Tools mutate the DB during the loop; the accumulated inventory deltas, equipment changes, and scene state are recorded on the `ChatMessage`, so swipe/regenerate/delete reversal (`_reverse_message_effects`) works identically — now threading instance ids.
 
-**Model support & fallback.** Tool calling needs a tool-capable model. The model picker (`supportsTools` from OpenRouter's `supported_parameters`) defaults to tool-capable models. When `use_tools` is off **or** the selected model lacks tool support, the narrator falls back to the legacy `<<<ACTIONS>>>` text-block path — `parse_action_block`/`execute_actions`/`ACTION_INSTRUCTION` are retained for exactly this reason. Both `use_tools` and `max_tool_rounds` live on `OpenRouterSettings`, editable in Config → API & Model.
+**Model support & fallback.** Tool calling needs a tool-capable model. The model picker (`supportsTools` from OpenRouter's `supported_parameters`) defaults to tool-capable models. When `use_tools` is off **or** the selected model lacks tool support, the narrator falls back to the legacy `<<<ACTIONS>>>` text-block path — `parse_action_block`/`execute_actions`/`ACTION_INSTRUCTION` are retained for exactly this reason. Both `use_tools` and `max_tool_rounds` live on `OpenRouterSettings`, editable in Config → Agents & Tools.
 
 ---
 
@@ -214,7 +214,7 @@ Two surfaces in Play mode: always-available fixed buttons in a row above the cha
 
 - **Fixed buttons** (no LLM cost, always shown, above the input): Look Around, Talk to Party, Rest, and Use an Item (opens an inline popover listing current inventory via `ItemCard`; picking an item sends `"I use the <item>."` and relies on the narrator's existing `consume_item`/`equip` tools to apply the effect).
 - **AI-contextual suggestions**: 3-4 short, scene-specific phrases (e.g. "Ask Tifa about the ruins") from a lightweight one-shot agent ([`server/ai/action_suggester.py`](server/ai/action_suggester.py)) modeled on the Chronicler but much smaller — one tool call (`suggest_actions`), no DB persistence, no accept/reject; a transient list regenerated every turn and lost on refresh. Rendered as elegant choice buttons at the bottom of the chat (only when idle), not above the input.
-- Gated by `NarratorConfig.action_suggestions_enabled` (**per-campaign**, default off — an extra LLM call per turn when on) with an optional model override `OpenRouterSettings.action_suggestions_model_id` (blank → main model), both editable in Config → Agents.
+- Gated by `NarratorConfig.action_suggestions_enabled` (**per-campaign**, default off — an extra LLM call per turn when on) with an optional model override `OpenRouterSettings.action_suggestions_model_id` (blank → main model), both editable in Config → Agents & Tools.
 - Fire-and-forget from `chatStore` after each narrator turn completes (`POST /action-suggestions/run`) — the same pattern as the Chronicler's `worldbuildStore.runForTurn`, so it never blocks the chat UI. Fixed buttons and AI suggestions alike just call the existing `sendTurn` with canned text — no special submission path.
 
 ---

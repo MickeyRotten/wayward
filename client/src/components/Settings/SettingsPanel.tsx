@@ -50,7 +50,6 @@ export function SettingsPanel() {
   const [summaryModelId, setSummaryModelId] = useState(settings.summaryModelId)
   const [showAllModels, setShowAllModels] = useState(false)
   const [instructions, setInstructions] = useState(narrator.instructions)
-  const [firstMessage, setFirstMessage] = useState(narrator.firstMessage)
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
   const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
   const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
@@ -79,12 +78,11 @@ export function SettingsPanel() {
 
   useEffect(() => {
     setInstructions(narrator.instructions)
-    setFirstMessage(narrator.firstMessage)
     setSpotlightRule(narrator.spotlightRule)
     setPostHistory(narrator.postHistoryInstructions)
     setPlannerInstructions(narrator.plannerInstructions)
     setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
-  }, [narrator.instructions, narrator.firstMessage, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled])
+  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -118,10 +116,29 @@ export function SettingsPanel() {
       summaryThreshold,
       summaryModelId,
     })
-    await narrator.save({ instructions, firstMessage, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled })
+    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled })
     setApiKey('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
+  }
+
+  // Reset-to-defaults handlers (local edits; persisted on SAVE). Blank text
+  // fields fall back to the built-in defaults server-side.
+  const resetAiModel = () => {
+    setTemperature(0.7); setTopP(1); setMinP(0); setTopK(0)
+    setFreqPen(0); setPresPen(0); setRepPen(1); setMaxTokens(1000)
+  }
+  const resetAgents = () => {
+    setUseTools(true); setMaxToolRounds(6)
+    setWbMode('confirmation'); setWbModelId('')
+    setSummaryThreshold(0.7); setSummaryModelId('')
+    setActionSuggestionsEnabled(false); setActionSuggestionsModelId('')
+  }
+  const resetWorld = () => {
+    setInstructions(''); setSpotlightRule(''); setPostHistory(''); setPlannerInstructions('')
+  }
+  const resetAppearance = () => {
+    useAppearanceStore.getState().setChatFontSize('medium')
   }
 
   return (
@@ -132,127 +149,153 @@ export function SettingsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-        {/* Active Campaign */}
+        {/* Campaign */}
         <Section title="Campaign" defaultOpen>
           <CampaignSection />
+          <SubSection title="Party">
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Max Party Size</span>
+              <input
+                type="number"
+                min={1}
+                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                value={maxPartySize}
+                onChange={(e) => setMaxPartySize(Math.max(1, Number(e.target.value) || 3))}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Active party members (excluding the player character).
+              </span>
+            </label>
+          </SubSection>
         </Section>
 
-        {/* API & Model */}
-        <Section title="API & Model">
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">
-              OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
-            </span>
-            <input
-              type="password"
-              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
-              placeholder={settings.apiKeySet ? '••••••••' : 'Enter your OpenRouter API key'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </label>
-          {settings.availableModels.length === 0 && (
-            <button
-              type="button"
-              className="font-ui text-[10px] text-textsec border border-line px-3 py-1 hover:border-line2"
-              onClick={() => settings.fetchModels()}
-            >
-              LOAD MODELS
-            </button>
-          )}
-          <label className="block">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-textdim font-body">Model</span>
-              {settings.availableModels.length > 0 && (
-                <label className="flex items-center gap-1 text-[10px] text-textdim font-body cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showAllModels}
-                    onChange={(e) => setShowAllModels(e.target.checked)}
-                  />
-                  Show all models
-                </label>
-              )}
-            </div>
-            {settings.availableModels.length > 0 ? (
-              <select
-                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
-                value={modelId}
-                onChange={(e) => {
-                  setModelId(e.target.value)
-                  const model = settings.availableModels.find((m) => m.id === e.target.value)
-                  if (model) {
-                    settings.saveSettings({ modelId: e.target.value, maxContextTokens: model.contextLength })
-                  }
-                }}
-              >
-                <option value="">Select a model...</option>
-                {(showAllModels
-                  ? settings.availableModels
-                  : settings.availableModels.filter((m) => m.supportsTools)
-                ).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}{m.supportsTools ? '' : ' (no tools)'}
-                  </option>
-                ))}
-              </select>
-            ) : (
+        {/* AI & Model */}
+        <Section title="AI &amp; Model" onReset={resetAiModel}>
+          <SubSection title="API &amp; Model">
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">
+                OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
+              </span>
               <input
+                type="password"
                 className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
-                placeholder="e.g. anthropic/claude-sonnet-4.6"
-                value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
+                placeholder={settings.apiKeySet ? '••••••••' : 'Enter your OpenRouter API key'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
               />
+            </label>
+            {settings.availableModels.length === 0 && (
+              <button
+                type="button"
+                className="font-ui text-[10px] text-textsec border border-line px-3 py-1 hover:border-line2"
+                onClick={() => settings.fetchModels()}
+              >
+                LOAD MODELS
+              </button>
             )}
-          </label>
-
-          {(() => {
-            const selected = settings.availableModels.find((m) => m.id === modelId)
-            const legacyByModel = useTools && selected && !selected.supportsTools
-            const legacyByToggle = !useTools
-            if (!legacyByModel && !legacyByToggle) return null
-            return (
-              <p className="text-[10px] text-gold font-body border border-line bg-bg0 px-2 py-1">
-                {legacyByToggle
-                  ? 'Tools are off — the narrator uses the legacy text-block action protocol.'
-                  : 'This model does not support tool calling — the narrator will fall back to the legacy text-block action protocol.'}
-              </p>
-            )
-          })()}
-
-          <div className="grid grid-cols-2 gap-3">
-            <Slider label="Temperature" value={temperature} min={0} max={2} step={0.05} onChange={setTemperature} />
-            <Slider label="Top P" value={topP} min={0} max={1} step={0.05} onChange={setTopP} />
-            <Slider label="Min P" value={minP} min={0} max={1} step={0.05} onChange={setMinP} />
             <label className="block">
-              <span className="text-[11px] text-textdim font-body">Top K ({topK})</span>
-              <input
-                type="number"
-                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
-                value={topK}
-                min={0}
-                onChange={(e) => setTopK(Math.max(0, Number(e.target.value) || 0))}
-              />
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-textdim font-body">Model</span>
+                {settings.availableModels.length > 0 && (
+                  <label className="flex items-center gap-1 text-[10px] text-textdim font-body cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showAllModels}
+                      onChange={(e) => setShowAllModels(e.target.checked)}
+                    />
+                    Show all models
+                  </label>
+                )}
+              </div>
+              {settings.availableModels.length > 0 ? (
+                <select
+                  className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+                  value={modelId}
+                  onChange={(e) => {
+                    setModelId(e.target.value)
+                    const model = settings.availableModels.find((m) => m.id === e.target.value)
+                    if (model) {
+                      settings.saveSettings({ modelId: e.target.value, maxContextTokens: model.contextLength })
+                    }
+                  }}
+                >
+                  <option value="">Select a model...</option>
+                  {(showAllModels
+                    ? settings.availableModels
+                    : settings.availableModels.filter((m) => m.supportsTools)
+                  ).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}{m.supportsTools ? '' : ' (no tools)'}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                  placeholder="e.g. anthropic/claude-sonnet-4.6"
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                />
+              )}
             </label>
-            <Slider label="Frequency Penalty" value={freqPen} min={-2} max={2} step={0.05} onChange={setFreqPen} />
-            <Slider label="Presence Penalty" value={presPen} min={-2} max={2} step={0.05} onChange={setPresPen} />
-            <Slider label="Repetition Penalty" value={repPen} min={0.5} max={2} step={0.05} onChange={setRepPen} />
-            <label className="block">
-              <span className="text-[11px] text-textdim font-body">Max Tokens</span>
-              <input
-                type="number"
-                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(Number(e.target.value) || 1000)}
-              />
-            </label>
-          </div>
 
-          <p className="text-[10px] text-textdim font-body">
-            Max context: {settings.maxContextTokens.toLocaleString()} tokens
+            {(() => {
+              const selected = settings.availableModels.find((m) => m.id === modelId)
+              const legacyByModel = useTools && selected && !selected.supportsTools
+              const legacyByToggle = !useTools
+              if (!legacyByModel && !legacyByToggle) return null
+              return (
+                <p className="text-[10px] text-gold font-body border border-line bg-bg0 px-2 py-1">
+                  {legacyByToggle
+                    ? 'Tools are off — the narrator uses the legacy text-block action protocol.'
+                    : 'This model does not support tool calling — the narrator will fall back to the legacy text-block action protocol.'}
+                </p>
+              )
+            })()}
+
+            <p className="text-[10px] text-textdim font-body">
+              Max context: {settings.maxContextTokens.toLocaleString()} tokens
+            </p>
+          </SubSection>
+
+          <SubSection title="Sampling">
+            <div className="grid grid-cols-2 gap-3">
+              <Slider label="Temperature" value={temperature} min={0} max={2} step={0.05} onChange={setTemperature} />
+              <Slider label="Top P" value={topP} min={0} max={1} step={0.05} onChange={setTopP} />
+              <Slider label="Min P" value={minP} min={0} max={1} step={0.05} onChange={setMinP} />
+              <label className="block">
+                <span className="text-[11px] text-textdim font-body">Top K ({topK})</span>
+                <input
+                  type="number"
+                  className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                  value={topK}
+                  min={0}
+                  onChange={(e) => setTopK(Math.max(0, Number(e.target.value) || 0))}
+                />
+              </label>
+              <Slider label="Frequency Penalty" value={freqPen} min={-2} max={2} step={0.05} onChange={setFreqPen} />
+              <Slider label="Presence Penalty" value={presPen} min={-2} max={2} step={0.05} onChange={setPresPen} />
+              <Slider label="Repetition Penalty" value={repPen} min={0.5} max={2} step={0.05} onChange={setRepPen} />
+              <label className="block">
+                <span className="text-[11px] text-textdim font-body">Max Tokens</span>
+                <input
+                  type="number"
+                  className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(Number(e.target.value) || 1000)}
+                />
+              </label>
+            </div>
+          </SubSection>
+        </Section>
+
+        {/* Agents & Tools */}
+        <Section title="Agents &amp; Tools" onReset={resetAgents}>
+          <p className="text-[10px] text-textdim font-body leading-relaxed">
+            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story. The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/quests/companions after each turn.
           </p>
 
-          <div className="grid grid-cols-2 gap-3 pt-1">
+          <SubSection title="Narrator Tools">
             <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
               <input
                 type="checkbox"
@@ -271,21 +314,102 @@ export function SettingsPanel() {
                 onChange={(e) => setMaxToolRounds(Math.max(1, Number(e.target.value) || 6))}
               />
             </label>
-          </div>
-          <p className="text-[10px] text-textdim font-body">
-            When on, the narrator calls tools (grant/equip/scene/etc.) over up to this many round-trips per turn. When off, it uses the legacy text-block protocol.
-          </p>
+            <p className="text-[10px] text-textdim font-body">
+              When on, the narrator calls tools (grant/equip/scene/etc.) over up to this many round-trips per turn. When off, it uses the legacy text-block protocol.
+            </p>
+          </SubSection>
+
+          <SubSection title="Chronicler">
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Mode</span>
+              <select
+                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+                value={wbMode}
+                onChange={(e) => setWbMode(e.target.value as typeof wbMode)}
+              >
+                <option value="disabled">Disabled — never creates or changes anything</option>
+                <option value="confirmation">Confirmation — suggest, you approve</option>
+                <option value="auto">Auto — apply changes automatically</option>
+              </select>
+              <span className="text-[10px] text-textdim font-body">
+                The Chronicler reviews each turn and records new lore, quests, and companions. New party members always need your approval, even in Auto.
+              </span>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Chronicler Model</span>
+              <ModelPicker
+                value={wbModelId}
+                onChange={setWbModelId}
+                models={settings.availableModels}
+                showAll={showAllModels}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Optional. Leave as "Use main model", or pick a cheaper/faster tool-capable model for bookkeeping.
+              </span>
+            </label>
+          </SubSection>
+
+          <SubSection title="Summarisation">
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Summarise at {Math.round(summaryThreshold * 100)}% of context</span>
+              <input
+                type="range"
+                min={0.3}
+                max={0.95}
+                step={0.05}
+                value={summaryThreshold}
+                onChange={(e) => setSummaryThreshold(Number(e.target.value))}
+                className="w-full accent-gold"
+              />
+              <span className="text-[10px] text-textdim font-body">
+                When the prompt reaches this fraction of the context budget, the oldest turns are compressed into a running "story so far" so the Narrator/Editor keep full history without overflowing.
+              </span>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Summarisation Model</span>
+              <ModelPicker
+                value={summaryModelId}
+                onChange={setSummaryModelId}
+                models={settings.availableModels}
+                showAll={showAllModels}
+                toolsOnly={false}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Optional. A cheap/fast model is a good choice for summarising.
+              </span>
+            </label>
+          </SubSection>
+
+          <SubSection title="Action Suggestions">
+            <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+              <input
+                type="checkbox"
+                checked={actionSuggestionsEnabled}
+                onChange={(e) => setActionSuggestionsEnabled(e.target.checked)}
+              />
+              Show AI-suggested actions in the chat
+            </label>
+            <span className="text-[10px] text-textdim font-body">
+              After each narration, generates a few short scene-specific action buttons (e.g. "Push open the heavy door"), shown as choices under the latest beat. Off by default — an extra small LLM call per turn when enabled. Fixed buttons (Look Around, Rest, Use an Item, Talk to Party) always show regardless of this setting.
+            </span>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Action Suggestions Model</span>
+              <ModelPicker
+                value={actionSuggestionsModelId}
+                onChange={setActionSuggestionsModelId}
+                models={settings.availableModels}
+                showAll={showAllModels}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Optional. Leave as "Use main model", or pick a cheap/fast tool-capable model.
+              </span>
+            </label>
+          </SubSection>
         </Section>
 
-        {/* Appearance */}
-        <Section title="Appearance">
-          <AppearanceSection />
-        </Section>
-
-        {/* Narration */}
-        <Section title="Narration">
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Narrator Instructions</span>
+        {/* World */}
+        <Section title="World" onReset={resetWorld}>
+          <SubSection title="Narrator Instructions">
             <ExpandableTextarea
               label="Narrator Instructions"
               className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
@@ -293,32 +417,9 @@ export function SettingsPanel() {
               value={instructions}
               onChange={setInstructions}
             />
-          </label>
+          </SubSection>
 
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">First Message</span>
-            <ExpandableTextarea
-              label="First Message"
-              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
-              rows={4}
-              value={firstMessage}
-              placeholder="The opening narration shown before the player's first turn."
-              onChange={setFirstMessage}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              Shown as the drop-capped opening message and included in context.
-            </span>
-          </label>
-
-          <p className="text-[10px] text-textdim font-body">
-            The scenario is now a locked entry in Lorebook → World.
-          </p>
-        </Section>
-
-        {/* Advanced */}
-        <Section title="Advanced">
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Spotlight Rule</span>
+          <SubSection title="Spotlight Rule">
             <ExpandableTextarea
               label="Spotlight Rule"
               className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
@@ -326,13 +427,10 @@ export function SettingsPanel() {
               value={spotlightRule}
               onChange={setSpotlightRule}
             />
-            <span className="text-[10px] text-textdim font-body">
-              Governs when party members speak.
-            </span>
-          </label>
+            <span className="text-[10px] text-textdim font-body">Governs when party members speak.</span>
+          </SubSection>
 
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Post-History Instructions</span>
+          <SubSection title="Post-History Instructions">
             <ExpandableTextarea
               label="Post-History Instructions"
               className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
@@ -341,13 +439,10 @@ export function SettingsPanel() {
               placeholder="Added to the very end of the prompt, right before your message. Empty by default."
               onChange={setPostHistory}
             />
-            <span className="text-[10px] text-textdim font-body">
-              Always injected last, immediately before your input.
-            </span>
-          </label>
+            <span className="text-[10px] text-textdim font-body">Always injected last, immediately before your input.</span>
+          </SubSection>
 
-          <label className="block space-y-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Editor Instructions</span>
+          <SubSection title="Editor Instructions">
             <ExpandableTextarea
               label="Editor Instructions"
               className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
@@ -355,132 +450,21 @@ export function SettingsPanel() {
               value={plannerInstructions}
               onChange={setPlannerInstructions}
             />
-            <span className="text-[10px] text-textdim font-body">
-              Core instructions for the Editor persona (Edit Mode in chat). Advanced.
-            </span>
-          </label>
-        </Section>
+            <span className="text-[10px] text-textdim font-body">Core instructions for the Editor persona (Edit Mode in chat).</span>
+          </SubSection>
 
-        {/* Agents */}
-        <Section title="Agents">
-          <p className="text-[10px] text-textdim font-body leading-relaxed">
-            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story (its tool loop + main model live in API &amp; Model). The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/quests/companions after each turn — its settings are below, along with history summarisation.
+          <SubSection title="Lorebook Injection">
+            <LorebookInjectionConfig />
+          </SubSection>
+
+          <p className="text-[10px] text-textdim font-body">
+            The Scenario and First Message are edited in the Scenario tab (Lore).
           </p>
-
-          <div className="pt-1">
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Chronicler</span>
-          </div>
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Mode</span>
-            <select
-              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
-              value={wbMode}
-              onChange={(e) => setWbMode(e.target.value as typeof wbMode)}
-            >
-              <option value="disabled">Disabled — never creates or changes anything</option>
-              <option value="confirmation">Confirmation — suggest, you approve</option>
-              <option value="auto">Auto — apply changes automatically</option>
-            </select>
-            <span className="text-[10px] text-textdim font-body">
-              The Chronicler reviews each turn and records new lore, quests, and companions. New party members always need your approval, even in Auto.
-            </span>
-          </label>
-
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Chronicler Model</span>
-            <ModelPicker
-              value={wbModelId}
-              onChange={setWbModelId}
-              models={settings.availableModels}
-              showAll={showAllModels}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              Optional. Leave as "Use main model", or pick a cheaper/faster tool-capable model for bookkeeping.
-            </span>
-          </label>
-
-          <div className="border-t border-line my-1" />
-          <div>
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Summarisation</span>
-          </div>
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Summarise at {Math.round(summaryThreshold * 100)}% of context</span>
-            <input
-              type="range"
-              min={0.3}
-              max={0.95}
-              step={0.05}
-              value={summaryThreshold}
-              onChange={(e) => setSummaryThreshold(Number(e.target.value))}
-              className="w-full accent-gold"
-            />
-            <span className="text-[10px] text-textdim font-body">
-              When the prompt reaches this fraction of the context budget, the oldest turns are compressed into a running "story so far" so the Narrator/Editor keep full history without overflowing.
-            </span>
-          </label>
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Summarisation Model</span>
-            <ModelPicker
-              value={summaryModelId}
-              onChange={setSummaryModelId}
-              models={settings.availableModels}
-              showAll={showAllModels}
-              toolsOnly={false}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              Optional. A cheap/fast model is a good choice for summarising.
-            </span>
-          </label>
-
-          <div className="border-t border-line my-1" />
-          <div>
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Action Suggestions</span>
-          </div>
-          <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
-            <input
-              type="checkbox"
-              checked={actionSuggestionsEnabled}
-              onChange={(e) => setActionSuggestionsEnabled(e.target.checked)}
-            />
-            Show AI-suggested actions above the input
-          </label>
-          <span className="text-[10px] text-textdim font-body">
-            After each narration, generates a few short scene-specific action buttons (e.g. "Push open the heavy door"). Off by default — an extra small LLM call per turn when enabled. Fixed buttons (Look Around, Rest, Use an Item, Talk to Party) always show regardless of this setting.
-          </span>
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Action Suggestions Model</span>
-            <ModelPicker
-              value={actionSuggestionsModelId}
-              onChange={setActionSuggestionsModelId}
-              models={settings.availableModels}
-              showAll={showAllModels}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              Optional. Leave as "Use main model", or pick a cheap/fast tool-capable model.
-            </span>
-          </label>
         </Section>
 
-        {/* Adventure Settings (inventory + party) */}
-        <Section title="Adventure Settings">
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body">Max Party Size</span>
-            <input
-              type="number"
-              min={1}
-              className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
-              value={maxPartySize}
-              onChange={(e) => setMaxPartySize(Math.max(1, Number(e.target.value) || 3))}
-            />
-            <span className="text-[10px] text-textdim font-body">
-              Active party members (excluding the player character).
-            </span>
-          </label>
-        </Section>
-
-        {/* Lorebook Injection */}
-        <Section title="Lorebook Injection">
-          <LorebookInjectionConfig />
+        {/* Appearance */}
+        <Section title="Appearance" onReset={resetAppearance}>
+          <AppearanceSection />
         </Section>
 
         <div className="flex items-center gap-3 pt-2">
@@ -792,6 +776,57 @@ function FragmentRow({
 function Section({
   title,
   defaultOpen = false,
+  onReset,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  onReset?: () => void
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="border border-line rounded-md">
+      <div className="w-full flex items-center justify-between px-3 py-2 hover:bg-bg2 transition-colors">
+        <button
+          type="button"
+          className="flex-1 flex items-center gap-2 text-left"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">{title}</span>
+        </button>
+        <div className="flex items-center gap-3">
+          {onReset && (
+            <button
+              type="button"
+              className="font-ui text-[9px] tracking-wider text-textdim hover:text-gold uppercase transition-colors"
+              onClick={(e) => { e.stopPropagation(); onReset() }}
+              title="Reset this section to defaults"
+            >
+              Reset to defaults
+            </button>
+          )}
+          <button
+            type="button"
+            className="font-ui text-[10px] text-textdim"
+            aria-label={open ? 'Collapse' : 'Expand'}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? '−' : '+'}
+          </button>
+        </div>
+      </div>
+      {open && <div className="px-3 pb-3 pt-1 space-y-2">{children}</div>}
+    </section>
+  )
+}
+
+// A lighter, nested collapsible used to differentiate sub-sections within a
+// top-level Section. Open by default so the group's contents are visible.
+function SubSection({
+  title,
+  defaultOpen = true,
   children,
 }: {
   title: string
@@ -800,18 +835,18 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="border border-line rounded-md">
+    <div className="border-l-2 border-line pl-2.5">
       <button
         type="button"
-        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-bg2 transition-colors"
+        className="w-full flex items-center justify-between py-1 text-left"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">{title}</span>
-        <span className="font-ui text-[10px] text-textdim">{open ? '−' : '+'}</span>
+        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase">{title}</span>
+        <span className="font-ui text-[9px] text-textdim">{open ? '−' : '+'}</span>
       </button>
-      {open && <div className="px-3 pb-3 pt-1 space-y-2">{children}</div>}
-    </section>
+      {open && <div className="pt-1 pb-1 space-y-2">{children}</div>}
+    </div>
   )
 }
 

@@ -526,10 +526,10 @@ Done (commit f738510): extracted the Lorebook's sort logic into a shared client/
 
 - **Reactive action suggestions**: The AI‑generated suggestions are great, but they appear above the input, which looks a bit bad. Instead of this, surface them as **interactive choices in the chat itself** (like a modern visual novel) after a narration turn, styled as elegant buttons. This reduces the distance between reading and acting.
 
-Done: the AI-generated suggestions moved out of the quick-actions row (above the input) and into the chat itself, rendered under the latest narration beat as a vertical stack of elegant VN-style choice buttons (left-aligned, gold "›" marker, hover-gold). They only show when idle (not while the narrator/Chronicler is working) and clicking one sends it via the existing sendTurn. The fixed buttons (Look Around / Talk to Party / Rest / Use an Item) stay above the input. No backend change — same transient per-turn suggestions list.
+Done (commit a2cd075): the AI-generated suggestions moved out of the quick-actions row (above the input) and into the chat itself, rendered under the latest narration beat as a vertical stack of elegant VN-style choice buttons (left-aligned, gold "›" marker, hover-gold). They only show when idle (not while the narrator/Chronicler is working) and clicking one sends it via the existing sendTurn. The fixed buttons (Look Around / Talk to Party / Rest / Use an Item) stay above the input. No backend change — same transient per-turn suggestions list.
 
 ---
-[ ] Iteration: The Config panel has many settings (model, tokens, worldbuilding mode, suggestions toggle, etc.). Group them into logical tabs or collapsible sections with clear descriptions:
+[x] Iteration: The Config panel has many settings (model, tokens, worldbuilding mode, suggestions toggle, etc.). Group them into logical tabs or collapsible sections with clear descriptions:
 
 - **Campaign** (current campaign, delete campaign, new campaign)
 - **AI & Model** (model picker, temperature, max tokens)
@@ -541,6 +541,8 @@ Within each section, clearly differentiate each sub-section, e.g. by making them
 Add a small **“Reset to defaults”** link next to each section, except Campaign.
 
 Move First Message into the Scenario tab, but don't make it a part of Scenario.
+
+Done: Config is regrouped into the four named top-level collapsible sections (plus Appearance) — **Campaign** (campaign switcher/create/delete + a Party sub-section for max party size), **AI & Model** (API & Model + Sampling sub-sections), **Agents & Tools** (Narrator Tools, Chronicler, Summarisation, Action Suggestions sub-sections), **World** (Narrator Instructions, Spotlight Rule, Post-History, Editor Instructions, Lorebook Injection sub-sections). Each sub-section is itself a nested collapsible (a new <SubSection>, open by default). A small "Reset to defaults" link sits in each section header except Campaign (AI & Model → sampling defaults; Agents & Tools → agent/tool defaults; World → blank instruction fields that fall back to built-ins; Appearance → medium font); the reset link stops propagation so it doesn't toggle the section. First Message moved out of Config into the Scenario tab (below the 6 scenario fields, clearly labelled "Not part of the Scenario", saved on the NarratorConfig not the scenario). Verified: full client build clean.
 
 ---
 [ ] Iteration: New Campaign:

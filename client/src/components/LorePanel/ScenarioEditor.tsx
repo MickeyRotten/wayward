@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useScenarioStore } from '../../state/scenarioStore'
+import { useNarratorStore } from '../../state/narratorStore'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import type { ScenarioFields } from '@shared/types/models'
 
@@ -51,6 +52,7 @@ export function ScenarioEditor() {
             </p>
           </div>
         ))}
+        <FirstMessageField editable={false} />
       </div>
     )
   }
@@ -70,6 +72,43 @@ export function ScenarioEditor() {
           />
         </label>
       ))}
+      <FirstMessageField editable />
+    </div>
+  )
+}
+
+// The opening narration. It lives on the NarratorConfig (not the Scenario), but
+// it's edited here on the Scenario tab as a convenience — clearly separated.
+function FirstMessageField({ editable }: { editable: boolean }) {
+  const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const save = useNarratorStore((s) => s.save)
+  const [value, setValue] = useState(firstMessage)
+
+  useEffect(() => { setValue(firstMessage) }, [firstMessage])
+
+  const commit = (v: string) => { if (v !== firstMessage) save({ firstMessage: v }) }
+
+  return (
+    <div className="pt-4 mt-2 border-t border-line space-y-1">
+      <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">First Message</span>
+      {editable ? (
+        <ExpandableTextarea
+          label="First Message"
+          className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
+          rows={4}
+          value={value}
+          placeholder="The opening narration shown before the player's first turn."
+          onChange={setValue}
+          onBlur={commit}
+        />
+      ) : (
+        <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap mt-1">
+          {firstMessage || <span className="text-textdim">(empty)</span>}
+        </p>
+      )}
+      <span className="block text-[10px] text-textdim font-body">
+        The drop-capped opening message, included in context. Not part of the Scenario.
+      </span>
     </div>
   )
 }

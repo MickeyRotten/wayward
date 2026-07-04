@@ -50,16 +50,20 @@ const DIALOGUE_RE = /^\s*([A-Za-z][A-Za-z0-9 '’\-]{0,30}?)\s*[:—]\s+(.+)$/
 const QUOTE_PAIRS: Record<string, string> = { '"': '"', '“': '”', '«': '»', "'": "'", '‘': '’' }
 
 /**
- * If a dialogue line's text starts with a quote, return just the quoted span as
- * the spoken line and everything after the closing quote as trailing narration.
- * Lines without a leading quote are returned whole (no reliable split point).
+ * If a dialogue line's text starts with a quote, return the spoken span as
+ * everything up to the LAST closing quote, and any prose after it as trailing
+ * narration. Using the last quote (not the first) keeps multi-span dialogue with
+ * interleaved attribution whole in the box — e.g.
+ *   "…deer this time of year. Or," she adds, "there's always goblins."
+ * stays one dialogue beat, while a pure tag like  "We should move." she said.
+ * still splits the tag out. Lines without a leading quote are returned whole.
  */
 function splitSpokenLine(text: string): { spoken: string; trailing: string } {
   const open = text[0]
   const close = QUOTE_PAIRS[open]
   if (!close) return { spoken: text, trailing: '' }
-  const end = text.indexOf(close, 1)
-  if (end === -1) return { spoken: text, trailing: '' } // unterminated → keep whole
+  const end = text.lastIndexOf(close)
+  if (end <= 0) return { spoken: text, trailing: '' } // unterminated → keep whole
   return { spoken: text.slice(0, end + 1), trailing: text.slice(end + 1).trim() }
 }
 

@@ -694,7 +694,9 @@ Done: "Currency" is now a first-class item type (added to the ItemType union, th
 Done: replaced the whole Quest + QuestObjective system with a flat **Task** model (chosen: full replacement; states to-do/done/failed). A Task is one goal — big or small — with `text`, `status` (active/completed/failed), `notes`, `sort_order`; no nesting. Server: new `Task` model + `/tasks` CRUD (replacing all `/quests` + objective routes); prompt_builder injects an "ACTIVE TASKS" list; the Chronicler's four quest tools collapsed to `create_task`/`update_task_status` (proposals, apply, and the regenerate/delete reversal all task-aware); the Editor's quest/objective tools collapsed to `create_task`/`update_task`/`delete_task`; the action-suggester and export/import/reset now use tasks (old-zip "quests" are flattened on import); seed creates a flat task list. A one-time idempotent `migrate_quests_to_tasks` (runs on scope load) flattens any existing user quests+objectives into tasks (quest title → task; each objective → its own task; done→completed) and consumes the legacy rows (kept as classes only for the migration). Client: new `tasksStore` + `TasksPanel` (checkable to-do list with a Completed/Failed section) + `TaskInspector` (text/status/notes, quick Mark Done / Re-open / Failed); rail tab, `uiStore` selection kind, and all peripheral stores/prose renamed Quests→Tasks. Verified end-to-end: server boots and `/tasks` CRUD works; migration test (quests+objectives → 4 tasks, legacy consumed, idempotent); Chronicler create/apply/reverse + Editor create/update/delete task tools; client tsc + full build clean. CLAUDE.md updated.
 
 ---
-[ ] Party Member dialogue card in the chat can get cut mid-paragraph. E.g. "Varena: "Murkwood's thick with deer this time of year. A few good kills, and we eat well — sell the pelts in the next village. Or," she adds, glancing sidelong at you, "there's always goblins. They hoard whatever they steal from travelers. Dangerous, but dangerous pays."" -- in this example, the dialogue card ends after 'Or,", as that's when the quote ends, but the paragraph clearly continues. Could this be improved?
+[x] Party Member dialogue card in the chat can get cut mid-paragraph. E.g. "Varena: "Murkwood's thick with deer this time of year. A few good kills, and we eat well — sell the pelts in the next village. Or," she adds, glancing sidelong at you, "there's always goblins. They hoard whatever they steal from travelers. Dangerous, but dangerous pays."" -- in this example, the dialogue card ends after 'Or,", as that's when the quote ends, but the paragraph clearly continues. Could this be improved?
+
+Done (client/src/lib/narration.ts): the client segmenter's `splitSpokenLine` split the dialogue line at the FIRST closing quote, so a line with interleaved attribution (…Or," she adds, "…pays.") got cut after "Or," and the rest fell out of the card as narration. Changed it to split at the LAST closing quote instead: the whole multi-span line (both quoted spans + the "she adds, glancing sidelong at you," attribution between them) now stays as one dialogue beat, while a pure trailing tag like `"We should move." she said.` still splits the tag out of the box. Verified against the reported example plus edge cases (single span, two spans, trailing tag, unterminated quote) — all segment as intended; client tsc clean.
 
 ---
 [ ] For fun, add the following Ascii art to the launcher:
@@ -704,5 +706,9 @@ Done: replaced the whole Quest + QuestObjective system with a flat **Task** mode
  \        /  / __ \\___  | \     /  / __ \|  | \/ /_/ | 
   \__/\  /  (____  / ____|  \/\_/  (____  /__|  \____ | 
        \/        \/\/                   \/           \/ 
+
+---
+[ ] PLAN MODE TASK:
+- Party Members (characters) and Player Characters (personas) as .jsons in their own folders, easily reusable across adventures / campaigns, and easy to share (bit like character cards in SillyTavern).
 
 ---

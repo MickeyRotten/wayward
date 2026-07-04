@@ -620,12 +620,14 @@ Done (commit b26cdd4):
 [ ] Iteration: Items in Lorebook should have the same rules as other entries, e.g. keyword, enabled, permanent, + item specific fields. an instance of an item does not need the same fields, at least not shown in the UI.
 
 ---
-[ ] Bug: Automatic equipping doesn't work. The item did not appear in the Party Member's equipment, nor does the item show itself as equipped.
+[x] Bug: Automatic equipping doesn't work. The item did not appear in the Party Member's equipment, nor does the item show itself as equipped.
 
 I asked the Party Member (Tifa) to equip an item. Narrator replied, and showed the relevant information in chat. But when I checked the Party Member afterwards, and the item, they were not equipped. Exerpt from terminal log:
 
 15:34:51 INFO wayward.narrator_agent | AGENT TOOL turn=4 equip({'characterName': 'Tifa', 'slot': 'accessory1', 'itemName': 'Glowing Butt Plug'}) -> Tifa equipped Glowing Butt Plug in accessory1.
 15:35:00 INFO wayward.chat | LLM AGENT RESPONSE turn=4 variant=0 (473 chars) | scene={} | inv_deltas=[] | equip_changes=[{'characterId': '5e054f84-9022-47da-9401-c2d1ade8d967', 'slot': 'accessory1', 'previousItemId': None, 'newItemId': 'dc0fbc3c-ea04-4b9c-9b5e-ed02d9a1c8c9'}]
+
+Done: root cause — the narrator's item/equip tools were never migrated to the item-instance model. `tool_equip` wrote the **catalog** id into the equipment slot (`equipment[slot] = item.id`), but slots must hold an **ItemInstance** id (that's how `/inventory` derives "equipped"). So the slot pointed at a nonexistent instance → nothing showed equipped and the real copy stayed stowed. The whole narrator toolset (`equip`/`unequip`/`grant`/`remove`/`consume`/`list_inventory`) plus the legacy `execute_actions` text-block path were still on `InventoryStack`, which the migration empties — so those writes were invisible to the UI too. Fixes: all of those now go through the shared instance helpers (`server/db/inventory.py`): equip reuses a stowed copy or mints one and writes the instance id to the slot; unequip just clears the slot (the instance derives as stowed — no `InventoryStack`); grant/remove/consume mint/decrement instances; list_inventory reports stowed instances. Also made the shared `apply_inventory_deltas`/`reverse_inventory_deltas` (used by player item-use and all swipe/regenerate/delete reversal) instance-aware — honoring a per-delta `instanceId` so reversal deletes/restores the exact minted copy, and stackable deltas bump/decrement a stowed instance. Verified with a smoke test through the real `tool_equip`/`tool_grant_item`: the slot holds a valid instance, `equipped_map`/`/inventory` show it equipped, reversing restores the prior occupant and deletes the minted instance, and stackable grant/reverse nets to zero; app boots and `/inventory` shows 7 derived-equipped instances.
 
 ---
 [ ] Iteration: AI-suggested actions should always start with "I...", as the player writes from the first person perspective.

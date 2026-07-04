@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.db import inventory as inv_ops
 from server.db.models import (
-    InventoryStack,
     ItemInstance,
     LorebookEntry,
     PartyMember,
@@ -113,23 +113,8 @@ async def execute_actions(
             log.info("Narrator addItems: unresolved item name '%s', skipping", item_name)
             continue
 
-        # Check if already in inventory
-        existing = (
-            await session.execute(
-                select(InventoryStack).where(InventoryStack.item_id == item.id)
-            )
-        ).scalars().first()
-
-        if existing:
-            existing.count += count
-        else:
-            session.add(InventoryStack(item_id=item.id, count=count))
-
-        inv_deltas.append({
-            "itemId": item.id,
-            "delta": count,
-            "source": "narrator_grant",
-        })
+        _msg, deltas = await inv_ops.grant_items(session, item, count, "narrator_grant")
+        inv_deltas.extend(deltas)
 
     # --- equip ---
     for eq in actions.get("equip", []):
@@ -179,20 +164,13 @@ async def execute_actions(
             )
             continue
 
-        # Get current equipment and record previous value
-        equipment = dict(character.equipment) if character.equipment else {}
-        previous_item_id = equipment.get(slot)
-
-        # Set the new item
-        equipment[slot] = item.id
-        character.equipment = equipment
-
-        equip_changes.append({
-            "characterId": char_id,
-            "slot": slot,
-            "previousItemId": previous_item_id,
-            "newItemId": item.id,
-        })
+        # Equip an ItemInstance (slots hold instance ids, not catalog ids): reuse
+        # a stowed copy or mint one.
+        _msg, changes, deltas = await inv_ops.equip_instance(
+            session, character, char_id, slot, item
+        )
+        equip_changes.extend(changes)
+        inv_deltas.extend(deltas)
 
     # --- unequip ---
     for ueq in actions.get("unequip", []):
@@ -211,42 +189,22 @@ async def execute_actions(
             continue
 
         equipment = dict(character.equipment) if character.equipment else {}
-        previous_item_id = equipment.get(slot)
+        previous_instance_id = equipment.get(slot)
 
-        if not previous_item_id:
+        if not previous_instance_id:
             log.info("Narrator unequip: slot '%s' already empty for '%s', skipping", slot, char_name)
             continue
 
-        # Unequip: clear the slot
+        # Clear the slot; the instance is now unreferenced → derived as stowed.
+        # No InventoryStack / delta needed.
         equipment[slot] = None
         character.equipment = equipment
-
-        # Return the item to inventory
-        # Per CLAUDE.md: allow overflow by one rather than blocking the unequip
-        existing_stack = (
-            await session.execute(
-                select(InventoryStack).where(InventoryStack.item_id == previous_item_id)
-            )
-        ).scalars().first()
-
-        if existing_stack:
-            existing_stack.count += 1
-        else:
-            # Create a new stack -- allow overflow by one if inventory is full
-            session.add(InventoryStack(item_id=previous_item_id, count=1))
 
         equip_changes.append({
             "characterId": char_id,
             "slot": slot,
-            "previousItemId": previous_item_id,
+            "previousItemId": previous_instance_id,
             "newItemId": None,
-        })
-
-        # Also record the inventory addition from the returned item
-        inv_deltas.append({
-            "itemId": previous_item_id,
-            "delta": 1,
-            "source": "narrator_grant",
         })
 
     return inv_deltas, equip_changes
@@ -381,38 +339,23 @@ async def tool_set_scene(args: dict, session: AsyncSession) -> ToolEffect:
 async def _change_inventory(
     session: AsyncSession, item_name: str, count: int, source: str
 ) -> ToolEffect:
-    """Shared add/remove for grant_item / remove_item / consume_item."""
+    """Shared add/remove for grant_item / remove_item / consume_item.
+
+    Operates on ``ItemInstance`` rows via the shared inventory helpers (Equipment
+    → one instance per copy; stackables → a single counted instance), so the
+    party's owned copies stay consistent with the manual routes and the derived
+    equipped/stowed view."""
     item = await _resolve_item(session, item_name)
     if not item:
         return ToolEffect(result=f"No item named '{item_name}' exists in the world. Use lookup_item or search_items first.", ok=False)
 
-    existing = (
-        await session.execute(
-            select(InventoryStack).where(InventoryStack.item_id == item.id)
-        )
-    ).scalars().first()
-
     if count > 0:
-        if existing:
-            existing.count += count
-        else:
-            session.add(InventoryStack(item_id=item.id, count=count))
-        return ToolEffect(
-            result=f"Added {count}× {item.title} to the party inventory.",
-            inv_deltas=[{"itemId": item.id, "delta": count, "source": source}],
-        )
+        msg, deltas = await inv_ops.grant_items(session, item, count, source)
+        return ToolEffect(result=msg, inv_deltas=deltas)
 
-    # Removal (count < 0)
-    if not existing:
-        return ToolEffect(result=f"'{item.title}' is not in the inventory; nothing removed.", ok=False)
-    removed = min(existing.count, -count)
-    existing.count -= removed
-    if existing.count <= 0:
-        await session.delete(existing)
-    return ToolEffect(
-        result=f"Removed {removed}× {item.title} from the party inventory.",
-        inv_deltas=[{"itemId": item.id, "delta": -removed, "source": source}],
-    )
+    # Removal (count < 0) — stowed copies only.
+    msg, deltas = await inv_ops.remove_items(session, item, -count, source)
+    return ToolEffect(result=msg, inv_deltas=deltas, ok=bool(deltas))
 
 
 async def tool_grant_item(args: dict, session: AsyncSession) -> ToolEffect:
@@ -457,16 +400,16 @@ async def tool_equip(args: dict, session: AsyncSession) -> ToolEffect:
     if item.slot and not _is_slot_compatible(item.slot, slot):
         return ToolEffect(result=f"'{item.title}' ({item.slot}) cannot go in slot '{slot}'.", ok=False)
 
-    equipment = dict(character.equipment) if character.equipment else {}
-    previous_item_id = equipment.get(slot)
-    equipment[slot] = item.id
-    character.equipment = equipment
+    # Equipment slots reference an ItemInstance id (not the catalog id): reuse a
+    # stowed copy or mint one. This keeps the derived equipped/stowed view — and
+    # so the party sheet + Inventory panel — in sync.
+    msg, equip_changes, inv_deltas = await inv_ops.equip_instance(
+        session, character, char_id, slot, item
+    )
     return ToolEffect(
-        result=f"{char_name} equipped {item.title} in {slot}.",
-        equip_changes=[{
-            "characterId": char_id, "slot": slot,
-            "previousItemId": previous_item_id, "newItemId": item.id,
-        }],
+        result=f"{char_name} {msg}",
+        equip_changes=equip_changes,
+        inv_deltas=inv_deltas,
     )
 
 
@@ -483,29 +426,20 @@ async def tool_unequip(args: dict, session: AsyncSession) -> ToolEffect:
         return ToolEffect(result=f"No character named '{char_name}'.", ok=False)
 
     equipment = dict(character.equipment) if character.equipment else {}
-    previous_item_id = equipment.get(slot)
-    if not previous_item_id:
+    previous_instance_id = equipment.get(slot)
+    if not previous_instance_id:
         return ToolEffect(result=f"{char_name}'s {slot} slot is already empty.", ok=False)
     equipment[slot] = None
     character.equipment = equipment
 
-    existing_stack = (
-        await session.execute(
-            select(InventoryStack).where(InventoryStack.item_id == previous_item_id)
-        )
-    ).scalars().first()
-    if existing_stack:
-        existing_stack.count += 1
-    else:
-        session.add(InventoryStack(item_id=previous_item_id, count=1))
-
+    # Clearing the slot is all that's needed: the instance is now unreferenced,
+    # so it's *derived* as stowed in the pack. No InventoryStack / delta.
     return ToolEffect(
-        result=f"{char_name} unequipped {slot}; the item returned to inventory.",
+        result=f"{char_name} unequipped {slot}; the item returned to the pack.",
         equip_changes=[{
             "characterId": char_id, "slot": slot,
-            "previousItemId": previous_item_id, "newItemId": None,
+            "previousItemId": previous_instance_id, "newItemId": None,
         }],
-        inv_deltas=[{"itemId": previous_item_id, "delta": 1, "source": "narrator_grant"}],
     )
 
 
@@ -534,14 +468,22 @@ async def tool_search_items(args: dict, session: AsyncSession) -> ToolEffect:
 
 
 async def tool_list_inventory(args: dict, session: AsyncSession) -> ToolEffect:
-    stacks = (await session.execute(select(InventoryStack))).scalars().all()
-    if not stacks:
+    # List STOWED copies (unequipped instances), aggregated by catalog item, so
+    # the narrator sees what's actually in the pack — not gear that's worn.
+    equipped = set((await inv_ops.equipped_map(session)).keys())
+    instances = (await session.execute(select(ItemInstance))).scalars().all()
+    counts: dict[str, int] = {}
+    for inst in instances:
+        if inst.id in equipped:
+            continue
+        counts[inst.item_id] = counts.get(inst.item_id, 0) + (inst.count or 1)
+    if not counts:
         return ToolEffect(result="The party inventory is empty.")
     lines = []
-    for s in stacks:
-        item = await session.get(LorebookEntry, s.item_id)
-        name = item.title if item else s.item_id
-        lines.append(f"{name} ×{s.count}")
+    for item_id, n in counts.items():
+        item = await session.get(LorebookEntry, item_id)
+        name = item.title if item else item_id
+        lines.append(f"{name} ×{n}")
     return ToolEffect(result="Inventory: " + "; ".join(lines))
 
 

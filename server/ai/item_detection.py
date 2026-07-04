@@ -20,10 +20,10 @@ See CLAUDE.md and Task 6.2 of the alpha overhaul plan.
 
 import logging
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.db.models import InventoryStack
+from server.db import inventory as inv_ops
+from server.db.models import ItemInstance
 
 log = logging.getLogger("wayward.item_detection")
 
@@ -89,11 +89,14 @@ async def apply_inventory_deltas(
     deltas: list[dict],
     session: AsyncSession,
 ) -> None:
-    """Apply a list of inventory deltas to the DB.
+    """Apply a list of inventory deltas to the DB, operating on ``ItemInstance``
+    rows (the source of truth for owned copies).
 
-    Positive delta increments (creating a stack if needed); negative delta
-    decrements, deleting the stack when its count reaches zero. Mirrors the
-    logic in the /inventory/add and /inventory/remove routes.
+    A delta may carry an ``instanceId`` (equipment / minted copies) — then that
+    exact instance is created or deleted, so reversal restores the precise copy
+    an equip/grant used. Without one (stackables) a stowed instance is bumped or
+    decremented, created/deleted at the boundaries. Positive delta adds, negative
+    removes.
 
     Capacity is intentionally not enforced here — these deltas reflect events
     that already happened in the fiction (player used an item, narrator granted
@@ -102,31 +105,37 @@ async def apply_inventory_deltas(
     for d in deltas:
         item_id = d.get("itemId")
         delta = d.get("delta", 0)
+        instance_id = d.get("instanceId")
         if not item_id or not delta:
             continue
 
-        existing = (
-            await session.execute(
-                select(InventoryStack).where(InventoryStack.item_id == item_id)
-            )
-        ).scalars().first()
-
-        if delta > 0:
-            if existing:
-                existing.count += delta
+        # Instance-targeted delta: create / delete that exact copy.
+        if instance_id:
+            existing = await session.get(ItemInstance, instance_id)
+            if delta > 0:
+                if existing is None:
+                    session.add(ItemInstance(id=instance_id, item_id=item_id, count=1))
             else:
-                session.add(InventoryStack(item_id=item_id, count=delta))
+                if existing is not None:
+                    await session.delete(existing)
+                else:
+                    log.info("apply_inventory_deltas: instance '%s' already gone, skipping", instance_id)
+            continue
+
+        # Stackable delta: bump / decrement a stowed instance.
+        stowed = await inv_ops.find_stowed_instance(session, item_id)
+        if delta > 0:
+            if stowed is not None:
+                stowed.count += delta
+            else:
+                inv_ops.create_instance(session, item_id, delta)
         else:  # delta < 0
-            if not existing:
-                # Nothing to remove — item already gone. Skip gracefully.
-                log.info(
-                    "apply_inventory_deltas: no stack for '%s' to decrement, skipping",
-                    item_id,
-                )
+            if stowed is None:
+                log.info("apply_inventory_deltas: nothing stowed for '%s' to decrement, skipping", item_id)
                 continue
-            existing.count += delta  # delta is negative
-            if existing.count <= 0:
-                await session.delete(existing)
+            stowed.count += delta  # delta is negative
+            if stowed.count <= 0:
+                await session.delete(stowed)
 
 
 async def reverse_inventory_deltas(
@@ -144,6 +153,7 @@ async def reverse_inventory_deltas(
             "itemId": d.get("itemId"),
             "delta": -d.get("delta", 0),
             "source": d.get("source", "reversal"),
+            "instanceId": d.get("instanceId"),
         }
         for d in deltas
     ]

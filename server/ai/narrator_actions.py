@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import (
     InventoryStack,
+    ItemInstance,
     LorebookEntry,
     PartyMember,
     PlayerCharacter,
@@ -546,13 +547,29 @@ async def tool_get_character(args: dict, session: AsyncSession) -> ToolEffect:
         return ToolEffect(result=f"No character named '{args.get('name', '')}'.")
     equipment = character.equipment or {}
     equipped = {}
-    for slot, item_id in equipment.items():
-        if not item_id:
+    for slot, value in equipment.items():
+        if not value:
             continue
-        item = await session.get(LorebookEntry, item_id)
-        equipped[slot] = item.title if item else item_id
-    name = character.basic_info.get("name", "Unknown")
-    return ToolEffect(result=json.dumps({"name": name, "equipped": equipped}, ensure_ascii=False))
+        # Equipment slots hold an ItemInstance id → resolve to the catalog entry
+        # for the item's name + description. Fall back to treating the value as a
+        # catalog id directly (legacy/unmigrated data).
+        instance = await session.get(ItemInstance, value)
+        item = await session.get(LorebookEntry, instance.item_id) if instance else await session.get(LorebookEntry, value)
+        if item is not None:
+            equipped[slot] = {"name": item.title, "description": item.content or ""}
+        else:
+            equipped[slot] = {"name": "Unknown item", "description": ""}
+    info = character.basic_info or {}
+    payload = {
+        "name": info.get("name", "Unknown"),
+        "species": info.get("species", ""),
+        "description": info.get("description", ""),
+        "equipped": equipped,
+    }
+    field_skill = getattr(character, "field_skill", None)
+    if field_skill:
+        payload["fieldSkill"] = field_skill
+    return ToolEffect(result=json.dumps(payload, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------

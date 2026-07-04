@@ -578,3 +578,23 @@ Done (commit b8b72c1): apply_template ALWAYS stores non-empty Narrator Instructi
 Done (commit b8b72c1, server/templates/fantasy.json): brief high-fantasy Scenario (all 6 fields); PC Hero (Human/Male/22) equipped with Sword, Adventurer's Tunic, Tattered Pants, Ratty Boxer Shorts, Worn Boots; party member Varena (Elf/Female/120, suitably over-the-top description + Elven Marksmanship field skill) equipped with Longbow, Elvish Tunic (light and revealing), Thigh High Boots, Choker, Quill (Accessory); 13 catalog items (the equipment + Health Potion, Rations, Gold [Currency]); starting inventory Health Potion x3, Rations x2, Gold x10 (the worn equipment also shows in inventory as equipped, so it isn't duplicated as extra stowed copies); a Murkwood World entry; a Goblin Monster entry; and a first message with the party at the entrance of Murkwood. Verified in the smoke test (PC/Varena, 13 items, worn gear, Murkwood/Goblin, non-empty narrator/first-message).
 
 ---
+[x] Bug: When the Narrator fetches information about a Party Member, it just lists the instance IDs of the equipment they're wearing.
+
+Expected behaviour: Narrator receives the name and description of each equipped item for PC and Party Members.
+
+Done: `tool_get_character` (the narrator's get_character tool) was resolving each equipment slot value as a LorebookEntry id — but slots hold ItemInstance ids, so the lookup missed and it fell back to printing the raw instance id. Now it resolves instance → catalog item and returns `{name, description}` per slot (with a legacy fallback to treating the value as a catalog id). It also now returns the character's species/description and a party member's fieldSkill, so the narrator gets useful context. Verified with a smoke test against a fresh Fantasy campaign — every equipped slot shows the item name + description for both Hero and Varena.
+
+---
+[ ] Iteration: Chronicler (and Editor) needs more rigid rules for different lore types.
+
+- If an Item, keep the description generic and just about the item, not about who has it. Also fill out its other fields, e.g. Type.
+- If World, keep it also generic and nothing about the Party.
+- etc.
+
+---
+[ ] Iteration: Inventory AND Lore>Items should have filtering tabs for Types: All, Equipment, Tool, Consumable, Key Item, Artifact, Other. The filter dropdown should still exist, but we can remove by type from it.
+
+---
+[ ] Iteration: In Inventory > Inspector, the equip / unequip button should just read "Equip" or "Unequip".
+
+---

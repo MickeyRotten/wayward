@@ -6,6 +6,8 @@ import { useChatStore } from '../../state/chatStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { type SortKey, SORT_OPTIONS, RARITY_ORDER, sortList } from '../../lib/sortEntries'
+import { type ItemTypeTab, matchesTypeTab } from '../../lib/itemTypes'
+import { ItemTypeTabs } from '../ItemTypeTabs'
 import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 
 export function ItemsPanel() {
@@ -20,10 +22,11 @@ export function ItemsPanel() {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('newest')
   const [sortAsc, setSortAsc] = useState(false)
+  const [typeTab, setTypeTab] = useState<ItemTypeTab>('All')
 
   const sortedInventory = useMemo(
     () => sortList(
-      inventory,
+      inventory.filter((s) => matchesTypeTab(s.item?.type, typeTab)),
       sortKey, sortAsc,
       {
         name: (s) => s.item?.name ?? '',
@@ -31,7 +34,7 @@ export function ItemsPanel() {
         rarity: (s) => RARITY_ORDER[s.item?.rarity as Rarity] ?? 0,
       },
     ),
-    [inventory, sortKey, sortAsc],
+    [inventory, typeTab, sortKey, sortAsc],
   )
 
   // The inventory now lists every owned instance (stowed + equipped). The
@@ -82,6 +85,11 @@ export function ItemsPanel() {
         </div>
       </div>
 
+      {/* Type filter tabs */}
+      <div className="px-4 pb-2">
+        <ItemTypeTabs value={typeTab} onChange={setTypeTab} />
+      </div>
+
       {/* Sorting (mirrors the Lorebook) */}
       <div className="px-4 pb-3 flex items-center gap-2">
         <span className="font-ui text-[9px] tracking-wider text-textdim uppercase shrink-0">Sorting:</span>
@@ -109,9 +117,9 @@ export function ItemsPanel() {
 
       {/* Inventory list — every owned instance; worn gear is flagged "Equipped". */}
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
-        {inventory.length === 0 && (
+        {sortedInventory.length === 0 && (
           <p className="text-[12px] text-textdim font-body px-2 py-4 text-center">
-            No items in inventory
+            {inventory.length === 0 ? 'No items in inventory' : 'No matching items'}
           </p>
         )}
         {sortedInventory.map((stack) => {

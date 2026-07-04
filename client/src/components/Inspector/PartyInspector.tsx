@@ -366,7 +366,7 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
                       className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
                       onClick={() => unequipFrom(thisInstance.equippedBy as string, thisInstance.slot as string)}
                     >
-                      UNEQUIP THIS COPY
+                      Unequip
                     </button>
                   ) : (pickerOpen ? (
                     <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
@@ -376,7 +376,7 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
                       className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
                       onClick={() => setPickerOpen(true)}
                     >
-                      + EQUIP TO…
+                      Equip
                     </button>
                   ))}
                 </div>

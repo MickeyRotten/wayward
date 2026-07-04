@@ -582,7 +582,7 @@ Done (commit b8b72c1, server/templates/fantasy.json): brief high-fantasy Scenari
 
 Expected behaviour: Narrator receives the name and description of each equipped item for PC and Party Members.
 
-Done: `tool_get_character` (the narrator's get_character tool) was resolving each equipment slot value as a LorebookEntry id — but slots hold ItemInstance ids, so the lookup missed and it fell back to printing the raw instance id. Now it resolves instance → catalog item and returns `{name, description}` per slot (with a legacy fallback to treating the value as a catalog id). It also now returns the character's species/description and a party member's fieldSkill, so the narrator gets useful context. Verified with a smoke test against a fresh Fantasy campaign — every equipped slot shows the item name + description for both Hero and Varena.
+Done (commit a57e41d): `tool_get_character` (the narrator's get_character tool) was resolving each equipment slot value as a LorebookEntry id — but slots hold ItemInstance ids, so the lookup missed and it fell back to printing the raw instance id. Now it resolves instance → catalog item and returns `{name, description}` per slot (with a legacy fallback to treating the value as a catalog id). It also now returns the character's species/description and a party member's fieldSkill, so the narrator gets useful context. Verified with a smoke test against a fresh Fantasy campaign — every equipped slot shows the item name + description for both Hero and Varena.
 
 ---
 [ ] Iteration: Chronicler (and Editor) needs more rigid rules for different lore types.
@@ -592,9 +592,18 @@ Done: `tool_get_character` (the narrator's get_character tool) was resolving eac
 - etc.
 
 ---
-[ ] Iteration: Inventory AND Lore>Items should have filtering tabs for Types: All, Equipment, Tool, Consumable, Key Item, Artifact, Other. The filter dropdown should still exist, but we can remove by type from it.
+[x] Iteration: Inventory AND Lore>Items should have filtering tabs for Types: All, Equipment, Tool, Consumable, Key Item, Artifact, Other. The filter dropdown should still exist, but we can remove by type from it.
+
+Done: added a shared <ItemTypeTabs> chip row (All / Equipment / Tool / Consumable / Key Item / Artifact / Other — "Other" catches any type not in that list) plus a matcher in lib/itemTypes.ts. It sits above the Sorting row in both the Inventory panel and Lore → Items (shown only for the Items category). Filtering runs before sorting; the Inventory empty state now distinguishes "No items in inventory" vs "No matching items". Removed the "By type" option from the shared sort dropdown (a no-op for non-item lore, now redundant given the tabs); 'type' stays a valid internal SortKey so nothing else breaks.
 
 ---
-[ ] Iteration: In Inventory > Inspector, the equip / unequip button should just read "Equip" or "Unequip".
+[x] Iteration: In Inventory > Inspector, the equip / unequip button should just read "Equip" or "Unequip".
+
+Done: in the item Inspector's per-copy (Inventory) view the buttons now read simply "Equip" and "Unequip" (were "+ EQUIP TO…" and "UNEQUIP THIS COPY").
 
 ---
+[ ] Iteration: Improved operation transparency.
+
+- **Streaming improvements**: Already in place, but ensure that during long narrator tool loops, the UI shows a **“Working…” spinner** or “The narrator is thinking…” state so the player doesn’t think it’s frozen.
+- **Transparent agents**: Always show which Agent is currently working, and what they're (roughly) doing.
+- **Graceful fallback when tools fail**: If the model calls a tool with invalid arguments, show a small **system message** in chat: “(The narrator tried to equip a non‑existent item, but the world stayed safe.)” This prevents silent corruption and confusion.

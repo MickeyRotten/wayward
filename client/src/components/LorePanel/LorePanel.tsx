@@ -10,6 +10,8 @@ import { CategoryIcon } from '../CategoryIcon'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ScenarioEditor } from './ScenarioEditor'
 import { type SortKey, SORT_OPTIONS, RARITY_ORDER, sortList } from '../../lib/sortEntries'
+import { type ItemTypeTab, matchesTypeTab } from '../../lib/itemTypes'
+import { ItemTypeTabs } from '../ItemTypeTabs'
 import type { LoreCategory, LorebookEntry } from '@shared/types/models'
 
 const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
@@ -39,6 +41,7 @@ export function LorePanel() {
   const [createError, setCreateError] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('newest')
   const [sortAsc, setSortAsc] = useState(false)
+  const [typeTab, setTypeTab] = useState<ItemTypeTab>('All')
   const [removeMode, setRemoveMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmRemove, setConfirmRemove] = useState(false)
@@ -56,11 +59,13 @@ export function LorePanel() {
   // from the lorebook entries. Both filtered, then sorted.
   const itemList = useMemo(
     () => sortList(
-      catalog.filter((i) => !query || i.name.toLowerCase().includes(query)),
+      catalog
+        .filter((i) => !query || i.name.toLowerCase().includes(query))
+        .filter((i) => matchesTypeTab(i.type, typeTab)),
       sortKey, sortAsc,
       { name: (i) => i.name, type: (i) => i.type, rarity: (i) => RARITY_ORDER[i.rarity] ?? 0 },
     ),
-    [catalog, query, sortKey, sortAsc],
+    [catalog, query, typeTab, sortKey, sortAsc],
   )
   const filteredEntries = useMemo(
     () => sortList(
@@ -164,6 +169,13 @@ export function LorePanel() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+
+          {/* Type filter tabs — Items category only */}
+          {isItems && (
+            <div className="px-4 pb-2">
+              <ItemTypeTabs value={typeTab} onChange={setTypeTab} />
+            </div>
+          )}
 
           {/* Sorting (available in both modes) */}
           <div className="px-4 pb-3 flex items-center gap-2">

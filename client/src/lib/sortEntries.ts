@@ -4,10 +4,11 @@ import type { Rarity } from '@shared/types/models'
 
 export type SortKey = 'newest' | 'alpha' | 'type' | 'rarity'
 
+// Note: 'type' remains a valid SortKey (used internally) but is no longer offered
+// in the dropdown — items filter by type via the type tabs instead.
 export const SORT_OPTIONS: { id: SortKey; label: string }[] = [
   { id: 'newest', label: 'By newest' },
   { id: 'alpha', label: 'Alphabetically' },
-  { id: 'type', label: 'By type' },
   { id: 'rarity', label: 'By rarity' },
 ]
 

@@ -109,7 +109,7 @@ export function LorePanel() {
     setCreateError('')
     try {
       if (isItems) {
-        const item = await createItem({ name: '', type: 'Other', rarity: 'c', desc: '', maxStack: 1 })
+        const item = await createItem({ name: '', type: 'Other', rarity: 'c', desc: '', maxStack: 1, keywords: [], enabled: true, permanent: false })
         select({ kind: 'item', id: item.id })
       } else {
         const entry = await createEntry(activeCategory)

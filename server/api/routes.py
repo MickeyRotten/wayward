@@ -720,6 +720,10 @@ def _item_to_dict(item: LorebookEntry) -> dict:
         "uses": item.uses,
         "rarity": item.rarity,
         "desc": item.content,
+        # Items are lorebook entries and share the same entry rules.
+        "keywords": item.keywords or [],
+        "enabled": bool(item.enabled),
+        "permanent": bool(item.permanent),
     }
 
 
@@ -846,9 +850,9 @@ async def create_item(
         cat="items",
         title=data.name,
         content=data.desc,
-        keywords=[],
-        enabled=True,
-        permanent=False,
+        keywords=data.keywords or [],
+        enabled=data.enabled,
+        permanent=data.permanent,
         item_type=data.type,
         slot=data.slot,
         max_stack=data.maxStack,
@@ -884,6 +888,12 @@ async def update_item(
         item.rarity = data.rarity
     if data.desc is not None:
         item.content = data.desc
+    if data.keywords is not None:
+        item.keywords = data.keywords
+    if data.enabled is not None:
+        item.enabled = data.enabled
+    if data.permanent is not None:
+        item.permanent = data.permanent
     await session.commit()
     await session.refresh(item)
     return _item_to_dict(item)

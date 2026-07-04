@@ -26,6 +26,10 @@ export interface ItemCatalogEntry {
   uses?: number
   rarity: Rarity
   desc: string
+  // Items are lorebook entries and share the same entry rules.
+  keywords: string[]
+  enabled: boolean
+  permanent: boolean
 }
 
 // One owned physical copy of an item. Equipment is non-stacking (count 1, one

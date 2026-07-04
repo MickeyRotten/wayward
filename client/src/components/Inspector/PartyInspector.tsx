@@ -229,6 +229,7 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [removeError, setRemoveError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [newKeyword, setNewKeyword] = useState('')
 
   // The specific copy inspected (when opened from an inventory row), plus the
   // aggregate view: every character wearing a copy, and the stowed count.
@@ -283,7 +284,7 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
     timer.current = setTimeout(flush, 600)
   }, [flush])
 
-  const update = (key: string, value: string | number | null, immediate?: boolean) => {
+  const update = (key: string, value: unknown, immediate?: boolean) => {
     Object.assign(draft.current, { [key]: value })
     setEditDirty(true)
     immediate ? flush() : scheduleFlush()
@@ -323,6 +324,34 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
         {item.desc && (
           <ItemSection title="Description">
             <p className="font-body text-sm text-text2 leading-relaxed">{item.desc}</p>
+          </ItemSection>
+        )}
+
+        {/* Lorebook-entry rules — shown for the catalog item (not a single copy),
+            since items are lorebook entries with keyword injection. */}
+        {!thisInstance && (
+          <ItemSection title="Lorebook">
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <span className={`font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line ${item.enabled ? 'text-[#5a9e6f]' : 'text-textdim'}`}>
+                {item.enabled ? 'ENABLED' : 'DISABLED'}
+              </span>
+              {item.permanent && (
+                <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold">
+                  PERMANENT
+                </span>
+              )}
+            </div>
+            {(item.keywords?.length ?? 0) === 0 ? (
+              <p className="text-[12px] text-textdim font-body">No keywords</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {item.keywords.map((kw, i) => (
+                  <span key={i} className="font-ui text-[10px] text-gold border border-gold/30 bg-gold/5 px-2 py-0.5 tracking-wider">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            )}
           </ItemSection>
         )}
 
@@ -569,6 +598,77 @@ function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; ins
           onBlur={(v) => update('desc', v, true)}
           placeholder="Item description..."
         />
+      </ItemSection>
+
+      {/* Lorebook entry rules — items are lorebook entries, so they share the
+          same enabled / permanent / keyword-injection controls as other lore. */}
+      <ItemSection title="Lorebook">
+        <div className="space-y-3">
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              defaultChecked={d.enabled ?? true}
+              onChange={(e) => update('enabled', e.target.checked, true)}
+              className="accent-gold"
+            />
+            <span className="font-body text-sm text-text">Enabled</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              defaultChecked={d.permanent ?? false}
+              onChange={(e) => update('permanent', e.target.checked, true)}
+              className="accent-gold"
+            />
+            <span className="font-body text-sm text-text">Permanent</span>
+            <span className="font-ui text-[9px] text-textdim tracking-wider">(always inject)</span>
+          </label>
+        </div>
+      </ItemSection>
+
+      {/* Keywords */}
+      <ItemSection title="Keywords">
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {(d.keywords ?? []).map((kw, i) => (
+              <span
+                key={i}
+                className="font-ui text-[10px] text-gold border border-gold/30 bg-gold/5 px-2 py-0.5 tracking-wider flex items-center gap-1.5"
+              >
+                {kw}
+                <button
+                  type="button"
+                  className="text-textdim hover:text-text transition-colors text-[11px] leading-none"
+                  onClick={() => {
+                    const updated = (d.keywords ?? []).filter((_, idx) => idx !== i)
+                    update('keywords', updated, true)
+                  }}
+                  title="Remove keyword"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+          <input
+            className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
+            placeholder="Type keyword + Enter"
+            value={newKeyword}
+            onChange={(e) => setNewKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                const trimmed = newKeyword.trim()
+                if (!trimmed) return
+                const current = d.keywords ?? []
+                if (!current.includes(trimmed)) {
+                  update('keywords', [...current, trimmed], true)
+                }
+                setNewKeyword('')
+              }
+            }}
+          />
+        </div>
       </ItemSection>
     </div>
   )

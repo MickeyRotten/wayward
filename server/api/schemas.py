@@ -246,6 +246,10 @@ class ItemCatalogEntrySchema(BaseModel):
     uses: int | None = None
     rarity: str = "c"
     desc: str = ""
+    # Shared lorebook-entry rules (items are lorebook entries).
+    keywords: list[str] = []
+    enabled: bool = True
+    permanent: bool = False
 
 
 class ItemCatalogCreate(BaseModel):
@@ -256,6 +260,9 @@ class ItemCatalogCreate(BaseModel):
     uses: int | None = None
     rarity: str = "c"
     desc: str = ""
+    keywords: list[str] = []
+    enabled: bool = True
+    permanent: bool = False
 
 
 class ItemCatalogUpdate(BaseModel):
@@ -266,6 +273,9 @@ class ItemCatalogUpdate(BaseModel):
     uses: int | None = None
     rarity: str | None = None
     desc: str | None = None
+    keywords: list[str] | None = None
+    enabled: bool | None = None
+    permanent: bool | None = None
 
 
 # --- Inventory ---

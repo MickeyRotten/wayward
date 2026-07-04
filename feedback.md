@@ -617,7 +617,11 @@ Done (commit b26cdd4):
 - Seconds counter (NEW): extracted a reusable <Elapsed> "Ns" counter and added it to the Editor and Chronicler indicators and the tool-status line (the Narrator's THINKING already had one), so every agent shows elapsed time.
 
 ---
-[ ] Iteration: Items in Lorebook should have the same rules as other entries, e.g. keyword, enabled, permanent, + item specific fields. an instance of an item does not need the same fields, at least not shown in the UI.
+[x] Iteration: Items in Lorebook should have the same rules as other entries, e.g. keyword, enabled, permanent, + item specific fields. an instance of an item does not need the same fields, at least not shown in the UI.
+
+Done: catalog items (lorebook entries with cat=="items") now expose the same entry rules as other lore — keyword injection, Enabled, and Permanent — alongside the item-specific fields (type/slot/rarity/maxStack/uses). The model already carried keywords/enabled/permanent on every LorebookEntry; the gap was the item API + UI dropped them. Server: `_item_to_dict` now returns keywords/enabled/permanent, and `ItemCatalogCreate`/`ItemCatalogUpdate` + create_item/update_item persist them (create defaults enabled=true, permanent=false, keywords=[]). Shared type `ItemCatalogEntry` gained the three fields (LorePanel's new-item call passes defaults). Client item Inspector: edit mode gained a "Lorebook" section (Enabled + Permanent toggles) and a "Keywords" chip editor mirroring the lore-entry editor; view mode shows an ENABLED/DISABLED + PERMANENT badge row and the keyword chips — but ONLY for the catalog item, not when a single inventory copy (instance) is inspected, so instances stay clean. Confirmed items already flow through the keyword-injection pipeline (lore_injector.match_entries skips disabled, always-injects permanent, matches keywords) so these controls are meaningful. Verified: client tsc clean; server round-trip test creates an item with keywords/enabled/permanent, updates them, and reads them back via GET /items.
+
+---
 
 ---
 [x] Bug: Automatic equipping doesn't work. The item did not appear in the Party Member's equipment, nor does the item show itself as equipped.

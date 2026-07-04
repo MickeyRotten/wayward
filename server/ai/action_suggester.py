@@ -29,7 +29,7 @@ _MAX_SUGGESTIONS = 4
 GUIDANCE = """You suggest short, concrete actions the player could try next, based on the current scene.
 
 Call suggest_actions with 0-4 phrases. Each phrase should:
-- Be written as something the player does ("Push open the heavy door", "Ask Tifa about the ruins").
+- Be written in the FIRST PERSON, starting with "I" — the player speaking as their character ("I push open the heavy door", "I ask Tifa about the ruins").
 - Be short — under 8 words.
 - Be grounded in something specific just mentioned in the narration (an object, a person, a place, a choice) — not generic.
 - Never duplicate these already-available buttons: looking around, resting, talking to the party, or using an item. Don't suggest attacking or fighting — there is no combat system.
@@ -49,7 +49,7 @@ TOOL_SCHEMA: list[dict] = [
                         "type": "array",
                         "items": {"type": "string"},
                         "maxItems": _MAX_SUGGESTIONS,
-                        "description": "0-4 short action phrases, e.g. 'Ask Tifa about the ruins'.",
+                        "description": "0-4 short first-person action phrases starting with 'I', e.g. 'I ask Tifa about the ruins'.",
                     },
                 },
                 "required": ["actions"],
@@ -74,16 +74,22 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit].rstrip() + " …"
 
 
-async def _latest_narration(session, turn_number: int) -> str:
-    """The active narration for this turn (highest variant)."""
-    msgs = (await session.execute(
-        select(ChatMessage).where(
-            ChatMessage.turn_number == turn_number,
-            ChatMessage.role == "assistant",
-            ChatMessage.mode == "narrator",
-        )
-    )).scalars().all()
-    return max(msgs, key=lambda m: m.variant).content if msgs else ""
+def _to_first_person(phrase: str) -> str:
+    """Deterministic backstop so every suggestion reads as the player speaking:
+    ensure it starts with a first-person "I". Already-first-person phrases ("I",
+    "I'm", "I'll", "I've") are left alone; an imperative ("Push the door") becomes
+    "I push the door" (first letter lowercased so it reads naturally)."""
+    p = (phrase or "").strip()
+    if not p:
+        return p
+    # Already first-person: "I ...", "I'm ...", "I'll ...", or a bare "I".
+    if p == "I" or p[:2] in ("I ", "I'") or (p[0] == "I" and (len(p) == 1 or not p[1].isalpha())):
+        return p
+    first, rest = p[0], p[1:]
+    # Lowercase the leading letter of a normal word (keep all-caps/proper-ish
+    # openings like acronyms untouched — rare for these short phrases).
+    lead = first.lower() if first.isalpha() and not rest[:1].isupper() else first
+    return f"I {lead}{rest}"
 
 
 async def _latest_scene_fields(session, turn_number: int) -> dict:
@@ -107,10 +113,35 @@ async def _latest_scene_fields(session, turn_number: int) -> dict:
     return {"location": location, "timeOfDay": time_of_day, "weather": weather}
 
 
+async def _recent_exchanges(session, turn_number: int, prior_turns: int = 2) -> list[str]:
+    """The last few player↔narrator exchanges (a little history for continuity),
+    each clipped. Uses the active variant per turn, narrator thread only."""
+    msgs = (
+        await session.execute(
+            select(ChatMessage)
+            .where(ChatMessage.turn_number <= turn_number, ChatMessage.mode == "narrator")
+            .order_by(ChatMessage.id)
+        )
+    ).scalars().all()
+
+    lines: list[str] = []
+    for t in range(max(1, turn_number - prior_turns + 1), turn_number + 1):
+        player = next((m for m in msgs if m.turn_number == t and m.role == "user"), None)
+        variants = [m for m in msgs if m.turn_number == t and m.role == "assistant"]
+        narration = max(variants, key=lambda m: m.variant).content if variants else ""
+        # The just-played turn gets more room; older turns are summarised tighter.
+        narr_budget = 900 if t == turn_number else 300
+        if player:
+            lines.append(f"  [Player] {_clip(player.content, 300)}")
+        if narration:
+            lines.append(f"  [Narrator] {_clip(narration, narr_budget)}")
+    return lines
+
+
 async def _build_context(session, turn_number: int) -> str:
-    """A minimal scene snapshot — deliberately not a full world-state dump."""
+    """A compact scene snapshot plus a couple of recent exchanges for continuity
+    — deliberately not a full world-state dump."""
     scene = await _latest_scene_fields(session, turn_number)
-    narration = await _latest_narration(session, turn_number)
 
     members = (
         await session.execute(select(PartyMember).where(PartyMember.in_party == True))  # noqa: E712
@@ -134,8 +165,8 @@ async def _build_context(session, turn_number: int) -> str:
     if quest_titles:
         lines.append(f"  Active quests: {', '.join(quest_titles)}")
     lines.append("")
-    lines.append("MOST RECENT NARRATION:")
-    lines.append(_clip(narration, 900))
+    lines.append("RECENT EXCHANGES (oldest first; suggest what fits the latest beat):")
+    lines.extend(await _recent_exchanges(session, turn_number))
     return "\n".join(lines)
 
 
@@ -187,7 +218,7 @@ async def run_action_suggester(turn_number: int) -> list[str]:
             args = _parse_args(tc["arguments"])
             actions = args.get("actions")
             if isinstance(actions, list):
-                cleaned = [str(a).strip() for a in actions if str(a).strip()]
+                cleaned = [_to_first_person(str(a)) for a in actions if str(a).strip()]
                 return cleaned[:_MAX_SUGGESTIONS]
 
         log.info("ACTION-SUGGEST no tool call turn=%s | model=%s", turn_number, model_id)

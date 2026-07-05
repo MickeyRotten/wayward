@@ -11,7 +11,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveSceneBanner } from '../../lib/location'
 import { parseSegments, buildMemberResolver, type Segment, type MemberLite } from '../../lib/narration'
-import type { ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
+import type { ChatEvent, ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
 
 interface PromptLogMessage {
   role: string
@@ -38,11 +38,10 @@ export function ChatScene() {
   const contextTokens = useChatStore((s) => s.contextTokens)
   const maxContextTokens = useChatStore((s) => s.maxContextTokens)
   const worldbuildRunning = useWorldbuildStore((s) => s.running)
-  const lastApplied = useWorldbuildStore((s) => s.lastApplied)
-  const clearLastApplied = useWorldbuildStore((s) => s.clearLastApplied)
   // Block input until the narrator AND the post-turn Chronicler are both done.
   const busy = isLoading || worldbuildRunning
   const activeVariants = useChatStore((s) => s.activeVariants)
+  const events = useChatStore((s) => s.events)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
@@ -99,13 +98,6 @@ export function ChatScene() {
     }
   }, [messages, streamingContent, atBottom])
 
-  // Auto-dismiss the "Chronicler recorded…" notice a few seconds after it shows.
-  useEffect(() => {
-    if (lastApplied.length === 0) return
-    const t = setTimeout(clearLastApplied, 7000)
-    return () => clearTimeout(t)
-  }, [lastApplied, clearLastApplied])
-
   // Auto-grow the input: single row by default, expand with wrapped lines up
   // to a cap, then scroll.
   useEffect(() => {
@@ -157,6 +149,23 @@ export function ChatScene() {
 
   // Get variant info for each turn
   const variantCounts = getVariantCounts(threadMessages)
+
+  // Persistent in-chat toasts (Chronicler notices + player item actions), only
+  // in the story thread. Group by their anchor turn so each renders right after
+  // that turn's last visible message; toasts anchored to a turn with no visible
+  // message (turn 0, or a turn later deleted) fall through to the bottom.
+  const eventsByTurn = new Map<number, typeof events>()
+  if (!planningMode) {
+    for (const ev of events) {
+      const list = eventsByTurn.get(ev.turnNumber) ?? []
+      list.push(ev)
+      eventsByTurn.set(ev.turnNumber, list)
+    }
+  }
+  const visibleTurns = new Set(visibleMessages.map((m) => m.turnNumber))
+  const orphanEvents = planningMode
+    ? []
+    : events.filter((ev) => !visibleTurns.has(ev.turnNumber))
 
   // Determine if we should show the "What do you do?" divider
   const lastVisibleMsg = visibleMessages[visibleMessages.length - 1]
@@ -381,9 +390,14 @@ export function ChatScene() {
           </p>
         )}
 
-        {visibleMessages.map((m, idx) => (
+        {visibleMessages.map((m, idx) => {
+          const isLastOfTurn =
+            idx === visibleMessages.length - 1 ||
+            visibleMessages[idx + 1].turnNumber !== m.turnNumber
+          const turnEvents = isLastOfTurn ? eventsByTurn.get(m.turnNumber) : undefined
+          return (
+          <div key={`${m.id}-${m.variant}`}>
           <div
-            key={`${m.id}-${m.variant}`}
             id={`msg-${m.id}`}
             className={currentMatchId === m.id ? 'rounded-md ring-2 ring-gold/60 ring-offset-2 ring-offset-bg0' : undefined}
           >
@@ -415,7 +429,12 @@ export function ChatScene() {
             onEditOpened={() => setEditTargetId(null)}
           />
           </div>
-        ))}
+          {turnEvents && turnEvents.map((ev) => <EventToast key={ev.id} event={ev} />)}
+          </div>
+          )
+        })}
+
+        {orphanEvents.map((ev) => <EventToast key={ev.id} event={ev} />)}
 
         {/* "What do you do?" divider */}
         {showWhatDoYouDo && (
@@ -476,24 +495,6 @@ export function ChatScene() {
               </span>
             </div>
           </div>
-        )}
-
-        {/* Chronicler auto-recorded notice (auto mode) — fades after a moment */}
-        {!isLoading && !worldbuildRunning && lastApplied.length > 0 && (
-          <button
-            type="button"
-            onClick={clearLastApplied}
-            className="mr-auto max-w-[85%] text-left flex items-start gap-2 border border-line rounded-md bg-bg2/60 px-3 py-2 hover:border-line2 transition-colors"
-            title="Dismiss"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gold mt-[1px] flex-shrink-0">
-              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-            </svg>
-            <span className="font-ui text-[10px] text-textdim leading-relaxed">
-              <span className="text-gold/80 tracking-wider">CHRONICLER RECORDED · </span>
-              {lastApplied.map((p) => p.summary).join(' · ')}
-            </span>
-          </button>
         )}
 
         {/* Graceful tool-failure notices — a bad tool call (missing item, empty
@@ -1226,6 +1227,29 @@ function MessageBubble({
         onEdit={message.id > 0 ? () => setEditing(true) : undefined}
         copyText={message.content}
       />
+    </div>
+  )
+}
+
+// ── Persistent in-chat toasts (Chronicler notices + player item actions) ────
+
+function EventToast({ event }: { event: ChatEvent }) {
+  const isChronicler = event.kind === 'chronicler'
+  return (
+    <div className="mr-auto max-w-[85%] flex items-start gap-2 px-3 py-1.5">
+      {isChronicler ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gold/70 mt-[2px] flex-shrink-0">
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-textsec mt-[2px] flex-shrink-0">
+          <path d="M20 7h-9M14 17H5M17 3v8M7 13v8" /><circle cx="17" cy="14" r="3" /><circle cx="7" cy="10" r="3" />
+        </svg>
+      )}
+      <span className="font-ui text-[10px] text-textdim leading-relaxed">
+        {isChronicler && <span className="text-gold/70 tracking-wider">CHRONICLER · </span>}
+        {event.text}
+      </span>
     </div>
   )
 }

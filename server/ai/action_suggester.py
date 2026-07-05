@@ -13,6 +13,7 @@ See CLAUDE.md > The Chronicler (this feature follows the same one-shot
 
 import json
 import logging
+import re
 
 from sqlalchemy import select
 
@@ -23,8 +24,11 @@ from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, Ta
 
 log = logging.getLogger("wayward.action_suggester")
 
-# Tool-emitting call for a handful of short phrases — small budget by design.
-_MAX_TOKENS = 300
+# Tool-emitting call for a handful of short phrases. Kept modest, but with enough
+# head-room that the tool-call JSON is never clipped mid-array — a truncated
+# arguments blob is unparseable and used to drop the whole set (suggestions
+# "cut off" or vanishing entirely). _extract_actions also salvages a clipped tail.
+_MAX_TOKENS = 700
 _MAX_SUGGESTIONS = 4
 
 GUIDANCE = """You suggest short, concrete actions the player could try next, based on the current scene.
@@ -60,14 +64,28 @@ TOOL_SCHEMA: list[dict] = [
 ]
 
 
-def _parse_args(raw: str) -> dict:
+def _extract_actions(raw: str) -> list[str]:
+    """Best-effort list of phrases from a ``suggest_actions`` arguments blob.
+
+    The happy path is well-formed JSON. But if the tool call was clipped by the
+    token budget the JSON is truncated and unparseable — rather than lose every
+    suggestion, salvage the complete double-quoted strings from the ``actions``
+    array so the phrases that DID come through survive."""
     if not raw:
-        return {}
+        return []
     try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else {}
+        data = json.loads(raw)
+        if isinstance(data, dict) and isinstance(data.get("actions"), list):
+            return [str(a) for a in data["actions"]]
     except json.JSONDecodeError:
-        return {}
+        pass
+    # Salvage: pull complete "..."-quoted literals following the actions key.
+    m = re.search(r'"actions"\s*:\s*\[(.*)', raw, re.DOTALL)
+    segment = m.group(1) if m else raw
+    return [
+        s.replace('\\"', '"').replace("\\\\", "\\")
+        for s in re.findall(r'"((?:[^"\\]|\\.)*)"', segment)
+    ]
 
 
 def _clip(text: str, limit: int) -> str:
@@ -214,11 +232,10 @@ async def run_action_suggester(turn_number: int) -> list[str]:
         for tc in tool_calls:
             if tc["name"] != "suggest_actions":
                 continue
-            args = _parse_args(tc["arguments"])
-            actions = args.get("actions")
-            if isinstance(actions, list):
-                cleaned = [_to_first_person(str(a)) for a in actions if str(a).strip()]
+            actions = _extract_actions(tc["arguments"])
+            cleaned = [_to_first_person(a) for a in actions if a.strip()]
+            if cleaned:
                 return cleaned[:_MAX_SUGGESTIONS]
 
-        log.info("ACTION-SUGGEST no tool call turn=%s | model=%s", turn_number, model_id)
+        log.info("ACTION-SUGGEST no usable tool call turn=%s | model=%s", turn_number, model_id)
         return []

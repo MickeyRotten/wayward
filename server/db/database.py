@@ -210,6 +210,15 @@ async def _run_scope_migrations() -> None:
             cols = [row[1] for row in result.fetchall()]
             if column not in cols:
                 await conn.execute(text(ddl))
+        # New adventure-scoped table added after some DBs were created (in-chat
+        # persistent toasts). Create it if missing — new DBs already have it.
+        if not (await conn.execute(text("PRAGMA adventure.table_info(chat_events)"))).fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.chat_events "
+                "(id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, turn_number INTEGER DEFAULT 0, "
+                "kind VARCHAR DEFAULT 'item', text TEXT DEFAULT '', tethered INTEGER DEFAULT 0, "
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+            ))
     await migrate_to_item_instances()
     await migrate_quests_to_tasks()
     await migrate_characters_to_files()

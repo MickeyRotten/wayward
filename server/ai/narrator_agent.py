@@ -67,12 +67,6 @@ FINAL_ROUND_NUDGE = (
     "equip, or scene change that wasn't already carried out by a tool above."
 )
 
-# Tool-deciding rounds rarely need a long completion; the full response budget is
-# reserved for the final narration round. (A final narration that lands on an
-# earlier round and gets clipped by this cap is re-run at full length.)
-_TOOL_ROUND_MAX_TOKENS = 512
-
-
 # --- Tool schemas (OpenAI/OpenRouter function-calling format) ---------------
 
 _SLOT_ENUM = [
@@ -286,9 +280,10 @@ async def run_narrator_agent(
             if not offer_tools and max_rounds > 1:
                 # Forced narration round — make clear no more actions can happen.
                 messages.append({"role": "system", "content": FINAL_ROUND_NUDGE})
-            # Tool-deciding rounds need only a short completion; reserve the full
-            # response budget for the final narration round.
-            round_max_tokens = min(full_max_tokens, _TOOL_ROUND_MAX_TOKENS) if offer_tools else full_max_tokens
+            # Every round gets the full response budget. A short cap on tool rounds
+            # saves nothing (a genuine tool round stops early at the tool call) but
+            # would clip a final narration that lands on a tool-offering round,
+            # forcing a wasteful discard-and-regenerate.
 
             result = None
             streamed = False
@@ -298,7 +293,7 @@ async def run_narrator_agent(
                 model_id=settings.model_id,
                 messages=messages,
                 temperature=settings.temperature,
-                max_tokens=round_max_tokens,
+                max_tokens=full_max_tokens,
                 tools=TOOL_SCHEMAS if offer_tools else None,
                 top_p=settings.top_p,
                 min_p=settings.min_p,
@@ -317,25 +312,7 @@ async def run_narrator_agent(
             content = (result or {}).get("content") or ""
 
             if not tool_calls:
-                # Final narration. If the short tool-round cap clipped it, redo
-                # this round at full length (tools off) so nothing is truncated.
-                if (offer_tools and round_max_tokens < full_max_tokens
-                        and (result or {}).get("finish_reason") == "length"):
-                    if streamed:
-                        yield {"type": "discard"}
-                    content = ""
-                    async for ev in chat_completion_agent_turn(
-                        api_key=settings.api_key, model_id=settings.model_id, messages=messages,
-                        temperature=settings.temperature, max_tokens=full_max_tokens, tools=None,
-                        top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,
-                        frequency_penalty=settings.frequency_penalty,
-                        presence_penalty=settings.presence_penalty,
-                        repetition_penalty=settings.repetition_penalty,
-                    ):
-                        if ev["type"] == "content":
-                            yield {"type": "content", "text": ev["text"]}
-                        elif ev["type"] == "result":
-                            content = ev.get("content") or ""
+                # No tool calls → this is the final narration (streamed live above).
                 final_content = content
                 break
 

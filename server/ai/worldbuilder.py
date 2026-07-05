@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.ai.openrouter import chat_completion_agent_turn
+from server.db import events as event_ops
 from server.db import party as party_ops
 from server.db.database import new_session
 from server.db.models import (
@@ -641,6 +642,9 @@ async def reverse_chronicler_effects(
             if await _reverse_accepted_proposal(p, session):
                 reversed_count += 1
         await session.delete(p)  # drop the now-orphaned proposal record
+
+    # Drop the tethered Chronicler toasts for the same turn(s).
+    await event_ops.delete_tethered(session, from_turn, exact=exact)
     return reversed_count
 
 
@@ -736,6 +740,13 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
                 ok, note = await apply_proposal(proposal, session)
                 proposal.status = "accepted" if ok else "failed"
                 proposal.note = note
+                if ok:
+                    # Persistent in-chat toast, tethered to this turn (removed if
+                    # the turn is later deleted/regenerated/swiped).
+                    await event_ops.add_event(
+                        session, turn_number=turn_number, kind="chronicler",
+                        text=proposal.summary, tethered=True,
+                    )
             else:
                 proposal.status = "pending"
 

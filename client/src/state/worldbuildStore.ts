@@ -6,6 +6,7 @@ import { useTasksStore } from './tasksStore'
 import { usePartyStore } from './partyStore'
 import { useItemsStore } from './itemsStore'
 import { useSettingsStore } from './settingsStore'
+import { useChatStore } from './chatStore'
 
 interface WorldbuildState {
   proposals: WorldbuildProposal[]
@@ -47,12 +48,15 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
     try {
       const result = await api.post<WorldbuildProposal[]>('/worldbuild/run', { turn })
       await get().fetchProposals()
-      // Auto-mode may have applied lore/tasks already — reflect them + surface
-      // a transient notice of what was just recorded.
+      // Auto-mode may have applied lore/tasks already — reflect them and pull
+      // in the persistent Chronicler toasts it recorded on this turn.
       if (mode === 'auto') {
         refreshWorld()
         const applied = (result || []).filter((p) => p.status === 'accepted')
-        if (applied.length > 0) set({ lastApplied: applied })
+        if (applied.length > 0) {
+          set({ lastApplied: applied })
+          void useChatStore.getState().fetchEvents()
+        }
       }
     } catch {
       // best effort — world-building shouldn't break the turn

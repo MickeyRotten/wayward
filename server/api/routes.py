@@ -38,12 +38,14 @@ from server.ai.summarizer import (
 )
 from server.db.database import new_session, switch_active
 from server.db import characters as char_files
+from server.db import events as event_ops
 from server.db import inventory as inv_ops
 from server.db import party as party_ops
 from server.db import storage
 from server.api.schemas import (
     ActionSuggestionsResponse,
     ActionSuggestionsRunRequest,
+    ChatEventResponse,
     ChatMessageResponse,
     ChatMessageUpdate,
     ChatTurnRequest,
@@ -77,6 +79,7 @@ from server.api.schemas import (
 )
 from server.db.database import get_session
 from server.db.models import (
+    ChatEvent,
     ChatMessage,
     InventoryStack,
     ItemInstance,
@@ -1076,6 +1079,8 @@ async def add_to_inventory(
     message, deltas = await inv_ops.grant_items(session, item, data.count, "manual_add")
     if not deltas:
         raise HTTPException(400, message)
+    qty = f" ×{data.count}" if data.count and data.count > 1 else ""
+    await event_ops.add_player_event(session, f"Added {item.title}{qty} to the pack")
     await session.commit()
     return {"ok": True}
 
@@ -1091,6 +1096,8 @@ async def remove_from_inventory(
     message, deltas = await inv_ops.remove_items(session, item, data.count, "manual_remove")
     if not deltas:
         raise HTTPException(404, message)
+    qty = f" ×{data.count}" if data.count and data.count > 1 else ""
+    await event_ops.add_player_event(session, f"Dropped {item.title}{qty}")
     await session.commit()
     return {"ok": True}
 
@@ -1108,7 +1115,9 @@ async def remove_inventory_instance(
     equipped = await inv_ops.equipped_map(session)
     if inst.id in equipped:
         raise HTTPException(400, "Item is equipped — unequip it first")
+    item = await _get_item(session, inst.item_id)
     await session.delete(inst)
+    await event_ops.add_player_event(session, f"Dropped {item.title if item else 'an item'}")
     await session.commit()
     return {"ok": True}
 
@@ -1131,6 +1140,8 @@ async def equip_item(data: dict = Body(default={}), session: AsyncSession = Depe
     if slot not in EQUIP_SLOT_KEYS:
         raise HTTPException(400, "Invalid equipment slot")
     await inv_ops.equip_instance(session, char, char.id, slot, item, instance_id=data.get("instanceId"))
+    who = (char.basic_info or {}).get("name", "Someone").split(" ")[0]
+    await event_ops.add_player_event(session, f"{who} equipped {item.title}")
     await session.commit()
     return {"ok": True}
 
@@ -1146,8 +1157,12 @@ async def unequip_item(data: dict = Body(default={}), session: AsyncSession = De
         raise HTTPException(400, "Invalid equipment slot")
     equipment = dict(char.equipment or {})
     if equipment.get(slot):
+        inst = await session.get(ItemInstance, equipment[slot])
+        item = await _get_item(session, inst.item_id) if inst else None
         equipment[slot] = None
         await party_ops.set_equipment(session, char.id, equipment)
+        who = (char.basic_info or {}).get("name", "Someone").split(" ")[0]
+        await event_ops.add_player_event(session, f"{who} unequipped {item.title if item else 'an item'}")
         await session.commit()
     return {"ok": True}
 
@@ -1386,6 +1401,23 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
     ]
 
 
+@router.get("/chat/events", response_model=list[ChatEventResponse])
+async def get_chat_events(session: AsyncSession = Depends(get_session)):
+    """Persistent in-chat toasts (Chronicler notices + player item actions),
+    rendered inline in the story log alongside the messages."""
+    return [
+        ChatEventResponse(
+            id=e.id,
+            turnNumber=e.turn_number,
+            kind=e.kind,
+            text=e.text,
+            tethered=bool(e.tethered),
+            createdAt=e.created_at.isoformat() if e.created_at else "",
+        )
+        for e in await event_ops.list_events(session)
+    ]
+
+
 @router.put("/chat/messages/{msg_id}", response_model=ChatMessageResponse)
 async def edit_message(
     msg_id: int,
@@ -1442,6 +1474,8 @@ async def delete_message_and_after(
     # Chronicler facts are tied to their message: drop lore/quests the Chronicler
     # created on this turn and every turn after it (the ones being deleted).
     await reverse_chronicler_effects(session, msg.turn_number)
+    # ...and their in-chat toasts. Untethered player-action toasts are kept.
+    await event_ops.delete_tethered(session, msg.turn_number)
 
     await session.execute(
         delete(ChatMessage).where(ChatMessage.id >= msg.id)
@@ -1488,6 +1522,7 @@ async def save_partial(
 @router.delete("/chat/messages", status_code=204)
 async def clear_chat(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(ChatMessage))
+    await event_ops.clear_events(session)  # wipe all toasts with the chat
     for b in await party_ops.all_bindings(session):
         b.last_spoke_turn = 0
     await session.commit()

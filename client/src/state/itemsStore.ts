@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import { api } from '../lib/api'
 import { useLoreStore } from './loreStore'
+import { useChatStore } from './chatStore'
 import type { ItemCatalogEntry, InventoryStack } from '@shared/types/models'
 
 // Items are stored as lorebook entries (cat === 'items'). Keep the lore list in
 // sync after item mutations so Lore → Items reflects changes immediately.
 const syncLore = () => { void useLoreStore.getState().fetchEntries() }
+// Player item actions post an in-chat toast server-side — pull it in.
+const syncEvents = () => { void useChatStore.getState().fetchEvents() }
 
 export interface InventoryStackWithItem extends InventoryStack {
   item?: ItemCatalogEntry
@@ -57,16 +60,19 @@ export const useItemsStore = create<ItemsState>((set, get) => ({
   addToInventory: async (itemId, count = 1) => {
     await api.post('/inventory/add', { itemId, count })
     await get().fetchInventory()
+    syncEvents()
   },
 
   removeFromInventory: async (itemId, count = 1) => {
     await api.post('/inventory/remove', { itemId, count })
     await get().fetchInventory()
+    syncEvents()
   },
 
   removeInstance: async (instanceId) => {
     await api.post('/inventory/remove-instance', { instanceId })
     await get().fetchInventory()
+    syncEvents()
   },
 
   createItem: async (data) => {

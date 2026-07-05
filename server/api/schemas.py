@@ -191,6 +191,15 @@ class ChatMessageResponse(BaseModel):
     createdAt: str
 
 
+class ChatEventResponse(BaseModel):
+    id: int
+    turnNumber: int
+    kind: str            # 'chronicler' | 'item'
+    text: str
+    tethered: bool
+    createdAt: str
+
+
 class ChatTurnRequest(BaseModel):
     message: str
     mode: str = "narrator"  # 'narrator' | 'planner'

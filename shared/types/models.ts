@@ -175,6 +175,18 @@ export interface ChatMessage {
   createdAt: string
 }
 
+// A persistent in-chat toast rendered inline in the story log. 'chronicler'
+// toasts are tethered to their turn (removed when it's deleted/regenerated);
+// 'item' toasts (player equip/drop/add) are untethered and never turn-removed.
+export interface ChatEvent {
+  id: number
+  turnNumber: number
+  kind: 'chronicler' | 'item'
+  text: string
+  tethered: boolean
+  createdAt: string
+}
+
 export interface Campaign {
   id: string
   name: string

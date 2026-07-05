@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
 import { api } from '../lib/api'
 import { useItemsStore } from './itemsStore'
+import { useChatStore } from './chatStore'
 
 interface PartyState {
   playerCharacter: PlayerCharacter | null
@@ -80,11 +81,13 @@ export const usePartyStore = create<PartyState>((set, get) => ({
     await api.post('/characters/equip', { characterId, itemId, slot, instanceId })
     await get().fetchAll()
     await useItemsStore.getState().fetchInventory()
+    void useChatStore.getState().fetchEvents()  // an equip toast was posted
   },
 
   unequipSlot: async (characterId, slot) => {
     await api.post('/characters/unequip', { characterId, slot })
     await get().fetchAll()
     await useItemsStore.getState().fetchInventory()
+    void useChatStore.getState().fetchEvents()  // an unequip toast was posted
   },
 }))

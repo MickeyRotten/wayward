@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatMessage, PlannerDelete } from '@shared/types/models'
+import type { ChatEvent, ChatMessage, PlannerDelete } from '@shared/types/models'
 import { api } from '../lib/api'
 import { useItemsStore } from './itemsStore'
 import { usePartyStore } from './partyStore'
@@ -59,6 +59,7 @@ function threadMaxTurn(messages: ChatMessage[], planning: boolean): number {
 
 interface ChatState {
   messages: ChatMessage[]
+  events: ChatEvent[]
   currentTurn: number
   planningMode: boolean
   pendingDeletes: PlannerDelete[]
@@ -73,6 +74,7 @@ interface ChatState {
   maxContextTokens: number | null
   activeVariants: Record<number, number>
   fetchHistory: () => Promise<void>
+  fetchEvents: () => Promise<void>
   sendTurn: (message: string) => Promise<void>
   regenerate: (guidance?: string) => Promise<void>
   retryLastTurn: () => Promise<void>
@@ -94,6 +96,7 @@ let _aborted = false
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
+  events: [],
   currentTurn: 0,
   planningMode: (() => { try { return localStorage.getItem(PLANNING_KEY) === '1' } catch { return false } })(),
   pendingDeletes: [],
@@ -122,6 +125,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
     set({ messages, currentTurn: maxTurn, activeVariants: variants })
+    void get().fetchEvents()
+  },
+
+  fetchEvents: async () => {
+    try {
+      set({ events: await api.get<ChatEvent[]>('/chat/events') })
+    } catch { /* toasts are non-critical */ }
   },
 
   sendTurn: async (message) => {

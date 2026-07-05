@@ -231,6 +231,33 @@ class ChatMessage(Base):
     )
 
 
+class ChatEvent(Base):
+    """A persistent in-chat toast — a small notice rendered inline in the story
+    log, separate from the freeform ChatMessage prose.
+
+    Two flavours, distinguished by ``tethered``:
+      - Chronicler notices (``kind='chronicler'``, ``tethered=True``) belong to
+        the turn that spawned them and are removed when that turn is deleted /
+        regenerated / swiped (like the Chronicler's lore effects).
+      - Player-action notices (``kind='item'``, ``tethered=False``) — equipping,
+        dropping, adding an item — are not tied to any turn and are never removed
+        by turn edits.
+    ``turn_number`` is the anchor the client renders the toast *after* (the turn
+    in play when it was created); it is not a foreign key.
+    """
+    __tablename__ = "chat_events"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    turn_number: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String, default="item")
+    text: Mapped[str] = mapped_column(Text, default="")
+    tethered: Mapped[bool] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+
 class InventoryStack(Base):
     __tablename__ = "inventory_stacks"
     __table_args__ = ADVENTURE

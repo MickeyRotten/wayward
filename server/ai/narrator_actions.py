@@ -16,11 +16,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db import inventory as inv_ops
+from server.db import party as party_ops
 from server.db.models import (
     ItemInstance,
     LorebookEntry,
-    PartyMember,
-    PlayerCharacter,
+    PartyBinding,
 )
 
 log = logging.getLogger("wayward.narrator_actions")
@@ -188,7 +188,10 @@ async def execute_actions(
             log.info("Narrator unequip: unresolved character '%s', skipping", char_name)
             continue
 
-        equipment = dict(character.equipment) if character.equipment else {}
+        binding = await party_ops.binding_for(session, char_id)
+        if binding is None:
+            continue
+        equipment = dict(binding.equipment or {})
         previous_instance_id = equipment.get(slot)
 
         if not previous_instance_id:
@@ -198,7 +201,7 @@ async def execute_actions(
         # Clear the slot; the instance is now unreferenced → derived as stowed.
         # No InventoryStack / delta needed.
         equipment[slot] = None
-        character.equipment = equipment
+        binding.equipment = equipment
 
         equip_changes.append({
             "characterId": char_id,
@@ -234,40 +237,36 @@ async def reverse_equipment_changes(
         if slot not in VALID_EQUIPMENT_SLOTS:
             continue
 
-        character = await session.get(PlayerCharacter, char_id)
-        if character is None:
-            character = await session.get(PartyMember, char_id)
-        if character is None:
+        binding = (await session.execute(
+            select(PartyBinding).where(PartyBinding.character_id == char_id)
+        )).scalars().first()
+        if binding is None:
             log.info(
                 "reverse_equipment_changes: unresolved character '%s', skipping",
                 char_id,
             )
             continue
 
-        equipment = dict(character.equipment) if character.equipment else {}
+        equipment = dict(binding.equipment or {})
         equipment[slot] = previous_item_id
-        character.equipment = equipment
+        binding.equipment = equipment
 
 
 async def _resolve_character(
     session: AsyncSession, name: str
-) -> tuple[PlayerCharacter | PartyMember | None, str | None]:
-    """Resolve a character by name (case-insensitive).
+) -> tuple[object | None, str | None]:
+    """Resolve a character by name (case-insensitive), PC first then party.
 
-    Checks the player character first, then party members.
-    Returns (model_instance, id) or (None, None).
-    """
-    # Check player character
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    Returns a ``RuntimeCharacter`` (identity + equipment composite) and its
+    character id, or (None, None)."""
+    if not name:
+        return None, None
+    pc = await party_ops.load_pc(session)
     if pc and pc.basic_info.get("name", "").lower() == name.lower():
         return pc, pc.id
-
-    # Check party members
-    members = (await session.execute(select(PartyMember))).scalars().all()
-    for pm in members:
-        if pm.basic_info.get("name", "").lower() == name.lower():
-            return pm, pm.id
-
+    for m in await party_ops.load_party(session):
+        if m.basic_info.get("name", "").lower() == name.lower():
+            return m, m.id
     return None, None
 
 
@@ -425,12 +424,15 @@ async def tool_unequip(args: dict, session: AsyncSession) -> ToolEffect:
     if character is None:
         return ToolEffect(result=f"No character named '{char_name}'.", ok=False)
 
-    equipment = dict(character.equipment) if character.equipment else {}
+    binding = await party_ops.binding_for(session, char_id)
+    if binding is None:
+        return ToolEffect(result=f"No character named '{char_name}'.", ok=False)
+    equipment = dict(binding.equipment or {})
     previous_instance_id = equipment.get(slot)
     if not previous_instance_id:
         return ToolEffect(result=f"{char_name}'s {slot} slot is already empty.", ok=False)
     equipment[slot] = None
-    character.equipment = equipment
+    binding.equipment = equipment
 
     # Clearing the slot is all that's needed: the instance is now unreferenced,
     # so it's *derived* as stowed in the pack. No InventoryStack / delta.

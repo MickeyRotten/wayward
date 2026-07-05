@@ -152,6 +152,27 @@ class LorebookConfig(Base):
 
 # ── Adventure (a save file) ───────────────────────────────────────
 
+class PartyBinding(Base):
+    """A character's per-adventure state. Character *identity* (basicInfo,
+    fieldSkill, portraits) lives in a portable file — see server/db/characters.py
+    — keyed by ``character_id``. This binding holds only what's specific to THIS
+    adventure: the role (the single pc vs a party member), worn equipment (slot →
+    ItemInstance id), party membership, last-spoke turn, and list order.
+    """
+    __tablename__ = "party_bindings"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    character_id: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, default="member")  # pc | member
+    equipment: Mapped[dict] = mapped_column(JSON, default=dict)
+    in_party: Mapped[bool] = mapped_column(Integer, default=True)
+    last_spoke_turn: Mapped[int] = mapped_column(Integer, default=0)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# Legacy — retained only so the one-time characters→files migration can read
+# prior data. The app no longer writes these tables.
 class PlayerCharacter(Base):
     __tablename__ = "player_characters"
     __table_args__ = ADVENTURE

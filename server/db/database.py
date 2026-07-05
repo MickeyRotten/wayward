@@ -172,6 +172,7 @@ async def init_db() -> None:
     if source in ("legacy", "fresh"):
         await migrate_to_item_instances()
         await migrate_quests_to_tasks()
+        await migrate_characters_to_files()
 
 
 async def _run_app_migrations() -> None:
@@ -208,6 +209,7 @@ async def _run_scope_migrations() -> None:
                 await conn.execute(text(ddl))
     await migrate_to_item_instances()
     await migrate_quests_to_tasks()
+    await migrate_characters_to_files()
 
 
 async def migrate_to_item_instances() -> None:
@@ -335,5 +337,72 @@ async def migrate_quests_to_tasks() -> None:
             await s.delete(q)
         for o in objectives:
             await s.delete(o)
+
+        await s.commit()
+
+
+async def migrate_characters_to_files() -> None:
+    """One-time, idempotent move of legacy PlayerCharacter + PartyMember rows into
+    portable character *files* (server/db/characters.py) + per-adventure
+    ``PartyBinding`` rows.
+
+    Each legacy row → a character folder keyed by the row's id (identity json;
+    its portrait copied from server/portraits into full+crop) + a binding holding
+    the adventure-specific state (role, equipment, in_party, last_spoke_turn).
+    Legacy rows are consumed. Skipped once any binding already exists.
+    """
+    if async_session is None or _active_adventure_path is None:
+        return
+
+    async with engine.begin() as conn:
+        res = await conn.execute(text("PRAGMA adventure.table_info(party_bindings)"))
+        if not res.fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.party_bindings "
+                "(id VARCHAR NOT NULL PRIMARY KEY, character_id VARCHAR NOT NULL, "
+                "role VARCHAR DEFAULT 'member', equipment JSON, in_party INTEGER DEFAULT 1, "
+                "last_spoke_turn INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)"
+            ))
+        pc_exists = bool((await conn.execute(text("PRAGMA adventure.table_info(player_characters)"))).fetchall())
+        pm_exists = bool((await conn.execute(text("PRAGMA adventure.table_info(party_members)"))).fetchall())
+
+    from server.db import characters as char_files
+    from server.db.models import PartyBinding, PartyMember, PlayerCharacter
+
+    portraits_dir = SERVER_DIR / "portraits"
+
+    def _seed_portrait(cid: str, basic_info: dict | None) -> None:
+        fn = (basic_info or {}).get("portrait") or ""
+        if not fn:
+            return
+        src = portraits_dir / fn
+        if not src.exists():
+            return
+        data = src.read_bytes()
+        char_files.set_full(cid, data, src.suffix or ".png")
+        char_files.set_crop(cid, data)  # same image until re-cropped
+
+    async with async_session() as s:
+        if (await s.execute(select(PartyBinding))).scalars().first() is not None:
+            return  # already migrated (or new-style data present)
+        if not (pc_exists or pm_exists):
+            return
+
+        pc = (await s.execute(select(PlayerCharacter))).scalars().first() if pc_exists else None
+        if pc is not None:
+            char_files.create_character("persona", pc.basic_info, None, cid=pc.id)
+            _seed_portrait(pc.id, pc.basic_info)
+            s.add(PartyBinding(character_id=pc.id, role="pc",
+                               equipment=pc.equipment or {}, in_party=True, sort_order=0))
+            await s.delete(pc)
+
+        members = (await s.execute(select(PartyMember))).scalars().all() if pm_exists else []
+        for i, m in enumerate(members):
+            char_files.create_character("character", m.basic_info, m.field_skill, cid=m.id)
+            _seed_portrait(m.id, m.basic_info)
+            s.add(PartyBinding(character_id=m.id, role="member", equipment=m.equipment or {},
+                               in_party=bool(m.in_party), last_spoke_turn=m.last_spoke_turn or 0,
+                               sort_order=i))
+            await s.delete(m)
 
         await s.commit()

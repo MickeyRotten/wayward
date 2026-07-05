@@ -12,25 +12,28 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.db import characters as char_files
 from server.db.models import (
     ItemInstance,
     LorebookEntry,
-    PartyMember,
-    PlayerCharacter,
+    PartyBinding,
 )
 
 
 async def equipped_map(session: AsyncSession) -> dict[str, dict]:
-    """instance_id -> {characterId, characterName, slot} for every equipped instance."""
+    """instance_id -> {characterId, characterName, slot} for every equipped instance.
+
+    Worn gear lives on each character's per-adventure ``PartyBinding``; the name
+    comes from the character's identity file. ``characterId`` is the character id
+    (the app-wide handle), not the binding id."""
     out: dict[str, dict] = {}
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
-    chars: list = [pc] if pc else []
-    chars += (await session.execute(select(PartyMember))).scalars().all()
-    for ch in chars:
-        name = (ch.basic_info or {}).get("name", "") or ""
-        for slot, val in (ch.equipment or {}).items():
+    bindings = (await session.execute(select(PartyBinding))).scalars().all()
+    for b in bindings:
+        identity = char_files.read_character(b.character_id) or {}
+        name = (identity.get("basicInfo") or {}).get("name", "") or ""
+        for slot, val in (b.equipment or {}).items():
             if val:
-                out[val] = {"characterId": ch.id, "characterName": name, "slot": slot}
+                out[val] = {"characterId": b.character_id, "characterName": name, "slot": slot}
     return out
 
 
@@ -114,7 +117,14 @@ async def equip_instance(
 ) -> tuple[str, list[dict], list[dict]]:
     """Equip an item onto a character slot. If ``instance_id`` is given, equip
     that exact stowed copy; otherwise reuse any stowed instance or mint a new
-    one. Returns (message, equip_changes, inventory_deltas)."""
+    one. Worn gear is written to the character's per-adventure ``PartyBinding``.
+    Returns (message, equip_changes, inventory_deltas)."""
+    binding = (await session.execute(
+        select(PartyBinding).where(PartyBinding.character_id == char_id)
+    )).scalars().first()
+    if binding is None:
+        return (f"'{item.title}' could not be equipped — no such character in the party.", [], [])
+
     instance = None
     if instance_id:
         cand = await session.get(ItemInstance, instance_id)
@@ -128,10 +138,10 @@ async def equip_instance(
         # Minting counts as an inventory addition for reversal purposes.
         inv_deltas.append({"itemId": item.id, "delta": 1, "source": "narrator_grant", "instanceId": instance.id})
 
-    equipment = dict(character.equipment) if character.equipment else {}
+    equipment = dict(binding.equipment or {})
     previous = equipment.get(slot)
     equipment[slot] = instance.id
-    character.equipment = equipment
+    binding.equipment = equipment
     changes = [{
         "characterId": char_id, "slot": slot,
         "previousItemId": previous, "newItemId": instance.id,

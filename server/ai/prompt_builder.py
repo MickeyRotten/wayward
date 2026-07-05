@@ -5,10 +5,9 @@ from server.db.models import (
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
-    PartyMember,
-    PlayerCharacter,
     Task,
 )
+from server.db.party import RuntimeCharacter
 
 
 def _format_equipment(
@@ -41,8 +40,8 @@ def _format_equipment(
 
 def build_prompt(
     narrator_config: NarratorConfig,
-    player_character: PlayerCharacter,
-    party_members: list[PartyMember],
+    player_character: RuntimeCharacter,
+    party_members: list[RuntimeCharacter],
     chat_history: list[ChatMessage],
     player_message: str,
     spotlight_block: str | None = None,

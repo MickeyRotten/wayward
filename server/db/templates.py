@@ -25,7 +25,7 @@ from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.planner import PLANNER_GUIDANCE
 from server.ai.scenario import compose_scenario_content
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
-from server.db.database import migrate_to_item_instances, new_session
+from server.db.database import migrate_characters_to_files, migrate_to_item_instances, new_session
 from server.db.models import (
     InventoryStack,
     LorebookConfig,
@@ -193,6 +193,8 @@ async def apply_template(name: str) -> bool:
 
         await s.commit()
 
-    # Convert catalog-id equipment + inventory stacks into item instances.
+    # Convert catalog-id equipment + inventory stacks into item instances, then
+    # move the PC/party rows into portable character files + adventure bindings.
     await migrate_to_item_instances()
+    await migrate_characters_to_files()
     return bool(tpl.get("playerCharacter"))

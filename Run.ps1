@@ -24,6 +24,7 @@ try {
  \        /  / __ \\___  | \     /  / __ \|  | \/ /_/ |
   \__/\  /  (____  / ____|  \/\_/  (____  /__|  \____ |
        \/        \/\/                   \/           \/
+
 '@
     Write-Host $banner -ForegroundColor Yellow
     Write-Host "  Alpha - setup & launch" -ForegroundColor DarkGray

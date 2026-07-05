@@ -37,10 +37,9 @@ from server.db.models import (
     LorebookEntry,
     NarratorConfig,
     OpenRouterSettings,
-    PartyMember,
-    PlayerCharacter,
     Task,
 )
+from server.db import party as party_ops
 
 log = logging.getLogger("wayward.planner")
 
@@ -205,8 +204,8 @@ async def _build_planner_context(session) -> str:
     for e in lore:
         by_cat.setdefault(e.cat, []).append(e.title + (" [locked]" if e.locked else ""))
     tasks = (await session.execute(select(Task))).scalars().all()
-    members = (await session.execute(select(PartyMember))).scalars().all()
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    members = await party_ops.load_party(session)
+    pc = await party_ops.load_pc(session)
 
     lines = ["CURRENT WORLD STATE (reuse exact names; edit rather than duplicate):"]
     for cat in ("world", "characters", "items", "monsters", "spells"):
@@ -375,20 +374,20 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         existing, _ = await _resolve_character(session, mname)
         if existing is not None:
             return f"'{mname}' already exists — use update_member.", None
-        session.add(PartyMember(
+        await party_ops.add_member(
+            session,
             basic_info={"name": mname, "species": args.get("species", ""),
                         "description": args.get("description", ""), "personality": args.get("personality", ""),
                         "gender": args.get("gender", ""), "age": args.get("age", 0) or 0,
                         "heightCm": args.get("heightCm", 0) or 0, "weightKg": args.get("weightKg", 0) or 0,
-                        "portrait": "", "likes": args.get("likes", ""), "dislikes": args.get("dislikes", "")},
-            equipment={},
+                        "likes": args.get("likes", ""), "dislikes": args.get("dislikes", "")},
             field_skill={"name": args.get("fieldSkillName", ""), "description": args.get("fieldSkillDescription", "")},
-        ))
+        )
         return f"Created party member: {mname}.", None
 
     if name in ("update_member", "delete_member", "set_in_party"):
         member, _ = await _resolve_character(session, (args.get("name") or "").strip())
-        if member is None or not isinstance(member, PartyMember):
+        if member is None or member.role != "member":
             return f"No party member named '{args.get('name', '')}'.", None
         if name == "update_member":
             bi = dict(member.basic_info)
@@ -398,23 +397,22 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
                       "description", "personality", "likes", "dislikes"):
                 if args.get(k) is not None:
                     bi[k] = args[k]
-            member.basic_info = bi
             fs = dict(member.field_skill or {})
             if args.get("fieldSkillName") is not None:
                 fs["name"] = args["fieldSkillName"]
             if args.get("fieldSkillDescription") is not None:
                 fs["description"] = args["fieldSkillDescription"]
-            member.field_skill = fs
-            return f"Updated member: {member.basic_info.get('name')}.", None
+            await party_ops.update_member_identity(session, member.id, bi, fs)
+            return f"Updated member: {bi.get('name')}.", None
         if name == "set_in_party":
-            member.in_party = bool(args.get("inParty"))
-            return f"{member.basic_info.get('name')} is now {'in the party' if member.in_party else 'benched'}.", None
+            await party_ops.set_in_party(session, member.id, bool(args.get("inParty")))
+            return f"{member.basic_info.get('name')} is now {'in the party' if args.get('inParty') else 'benched'}.", None
         return f"Queued deletion of member '{member.basic_info.get('name')}' for confirmation.", \
             {"kind": "member", "targetId": member.id, "label": member.basic_info.get("name", "?")}
 
     # ---- Player character ----
     if name == "update_pc":
-        pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+        pc = await party_ops.load_pc(session)
         if not pc:
             return "No player character exists.", None
         bi = dict(pc.basic_info)
@@ -422,7 +420,7 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
                   "description", "personality", "likes", "dislikes"):
             if args.get(k) is not None:
                 bi[k] = args[k]
-        pc.basic_info = bi
+        await party_ops.set_pc_identity(session, bi)
         return f"Updated the player character ({bi.get('name', '')}).", None
 
     # ---- Scenario / Narrator ----

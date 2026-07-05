@@ -714,3 +714,6 @@ Done (Run.ps1): replaced the plain "===/ Wayward Alpha / ===" text banner at lau
 - Party Members (characters) and Player Characters (personas) as .jsons in their own folders, easily reusable across adventures / campaigns, and easy to share (bit like character cards in SillyTavern).
 
 ---
+[ ] Create a Mac-compatible launcher too. The files can be renamed to Run_Win, and Run_Mac.
+
+---

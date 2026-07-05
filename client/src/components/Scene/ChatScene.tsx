@@ -199,7 +199,7 @@ export function ChatScene() {
 
   // PC info
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
-  const pcPortrait = playerCharacter?.basicInfo?.portrait || ''
+  const pcPortrait = playerCharacter?.portraitCrop || ''
 
   // Item and character names to highlight inline in the narration.
   const chipEntities: ChipEntity[] = [
@@ -975,7 +975,7 @@ function MessageBubble({
   isFirstNarrator?: boolean
   pcName: string
   pcPortrait: string
-  partyMemberMap: Map<string, { id: string; basicInfo: { name: string; portrait?: string } }>
+  partyMemberMap: Map<string, { id: string; basicInfo: { name: string }; portraitCrop?: string | null }>
   memberResolver: Map<string, MemberLite>
   chipEntities: ChipEntity[]
   catalogMap: Map<string, ItemCatalogEntry>
@@ -1100,7 +1100,7 @@ function MessageBubble({
   if (partyMember) {
     // ── Party Member message ──
     const pmName = partyMember.basicInfo?.name || 'Party Member'
-    const pmPortrait = partyMember.basicInfo?.portrait || ''
+    const pmPortrait = partyMember.portraitCrop || ''
 
     return (
       <div className="max-w-[85%] mr-auto group">

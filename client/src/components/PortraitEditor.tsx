@@ -18,11 +18,14 @@ export function PortraitEditor({
   onCancel,
 }: {
   initialSrc?: string
-  onSave: (blob: Blob) => void | Promise<void>
+  // crop = the framed 3:4 JPEG; full = the chosen source image (null when the
+  // user kept the existing portrait and only re-cropped).
+  onSave: (crop: Blob, full: Blob | null) => void | Promise<void>
   onCancel: () => void
 }) {
   const [src, setSrc] = useState<string | undefined>(initialSrc)
   const [img, setImg] = useState<HTMLImageElement | null>(null)
+  const [sourceBlob, setSourceBlob] = useState<Blob | null>(null)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [saving, setSaving] = useState(false)
@@ -82,6 +85,7 @@ export function PortraitEditor({
   }
 
   const pickFile = (file: File) => {
+    setSourceBlob(file)  // keep the original as the "full" art
     const reader = new FileReader()
     reader.onload = () => setSrc(reader.result as string)
     reader.readAsDataURL(file)
@@ -102,7 +106,7 @@ export function PortraitEditor({
       if (!ctx) { setSaving(false); return }
       ctx.drawImage(img, sx, sy, sW, sH, 0, 0, OUT_W, OUT_H)
       const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.9))
-      if (blob) await onSave(blob)
+      if (blob) await onSave(blob, sourceBlob)
     } finally {
       setSaving(false)
     }

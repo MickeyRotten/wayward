@@ -45,6 +45,7 @@ const FIELD_SKILL_PLACEHOLDER = `Punches as hard as a wrecking ball — able to 
 export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode: 'view' | 'edit' }) {
   const save = usePartyStore((s) => s.savePartyMember)
   const remove = usePartyStore((s) => s.removePartyMember)
+  const fetchAll = usePartyStore((s) => s.fetchAll)
   const select = useUiStore((s) => s.select)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PartyMember>(structuredClone(member))
@@ -89,7 +90,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
     return (
       <div className="space-y-6 p-6">
         {/* Portrait — fixed 3:4, image fills; Edit Portrait opens the crop modal. */}
-        <PortraitBlock portrait={d.basicInfo.portrait} onChange={(fn) => updateBasic('portrait', fn, true)} />
+        <PortraitBlock characterId={member.id} fullUrl={member.portraitFull} cropUrl={member.portraitCrop} onUpdated={() => void fetchAll()} />
 
         {/* Basic Info */}
         <Section title="Basic Info">
@@ -155,7 +156,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
       </div>
 
       {/* Portrait */}
-      <PortraitBlock portrait={d.basicInfo.portrait} onChange={(fn) => updateBasic('portrait', fn, true)} />
+      <PortraitBlock characterId={member.id} fullUrl={member.portraitFull} cropUrl={member.portraitCrop} onUpdated={() => void fetchAll()} />
 
       {/* Basic Info */}
       <Section title="Basic Info">

@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../state/settingsStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
+import { CharacterLibrary } from '../CharacterLibrary/CharacterLibrary'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
 
 export function HomeView() {
@@ -17,6 +18,7 @@ export function HomeView() {
   const select = useUiStore((s) => s.select)
 
   const [error, setError] = useState('')
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
   const active = members.filter((m) => m.inParty)
   const benched = members.filter((m) => !m.inParty)
@@ -58,7 +60,7 @@ export function HomeView() {
           <CharacterCard
             name={pc.basicInfo.name || 'Unnamed'}
             subtitle={`${pc.basicInfo.species}${pc.basicInfo.gender ? ` · ${pc.basicInfo.gender}` : ''}`}
-            portrait={pc.basicInfo.portrait}
+            portrait={pc.portraitCrop ?? undefined}
             fallback="PC"
             selected={selection?.kind === 'player'}
             onSelect={() => select({ kind: 'player' })}
@@ -86,15 +88,24 @@ export function HomeView() {
         )}
 
         {editMode && (
-          <button
-            type="button"
-            disabled={full}
-            title={full ? 'Party is full — raise Max Party Size in Config' : undefined}
-            className="w-full font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-30 disabled:hover:border-line disabled:hover:text-textsec disabled:cursor-not-allowed"
-            onClick={handleAdd}
-          >
-            + ADD MEMBER
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={full}
+              title={full ? 'Party is full — raise Max Party Size in Config' : undefined}
+              className="flex-1 font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-30 disabled:hover:border-line disabled:hover:text-textsec disabled:cursor-not-allowed"
+              onClick={handleAdd}
+            >
+              + ADD MEMBER
+            </button>
+            <button
+              type="button"
+              className="flex-1 font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors"
+              onClick={() => setLibraryOpen(true)}
+            >
+              FROM LIBRARY
+            </button>
+          </div>
         )}
 
         {benched.length > 0 && (
@@ -120,6 +131,8 @@ export function HomeView() {
 
         {error && <p className="text-[11px] text-danger font-body px-3 pt-1">{error}</p>}
       </div>
+
+      {libraryOpen && <CharacterLibrary onClose={() => setLibraryOpen(false)} />}
     </div>
   )
 }
@@ -180,7 +193,7 @@ function MemberCard({
     >
       <SelectionBar show={selected} />
       <button type="button" className="flex-1 text-left min-w-0 flex items-stretch" onClick={onSelect}>
-        <CardPortrait portrait={info.portrait} fallback={(info.name || '?')[0].toUpperCase()} />
+        <CardPortrait portrait={member.portraitCrop ?? undefined} fallback={(info.name || '?')[0].toUpperCase()} />
         <div className="min-w-0 flex-1 px-3 py-3 flex flex-col justify-start">
           <span className="font-disp text-[20px] pt-[2px] block leading-tight truncate">{info.name || 'Unnamed'}</span>
           <span className="text-[10px] text-textdim font-body">{info.species}</span>
@@ -205,7 +218,7 @@ function CardPortrait({ portrait, fallback }: { portrait?: string; fallback: str
   if (portrait) {
     return (
       <div className="w-24 self-stretch shrink-0 border-r border-line overflow-hidden">
-        <img src={`/portraits/${portrait}`} alt="" className="w-full h-full object-cover object-top" />
+        <img src={portrait} alt="" className="w-full h-full object-cover object-top" />
       </div>
     )
   }

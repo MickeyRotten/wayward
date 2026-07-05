@@ -5,7 +5,11 @@ import type { Adventure } from '@shared/types/models'
 
 function portraitSrc(p: string): string | null {
   if (!p) return null
-  return p.startsWith('/') || p.startsWith('http') ? p : `/portraits/${p}`
+  // Legacy sidecars stored a filename or full URL; new ones store a character id
+  // whose crop is served per-character.
+  if (p.startsWith('/') || p.startsWith('http')) return p
+  if (p.includes('.')) return `/portraits/${p}`  // legacy filename
+  return `/api/characters/${p}/portrait/crop`     // character id
 }
 
 /** Compact "time ago" label from an ISO timestamp. */

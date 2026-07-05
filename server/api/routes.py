@@ -94,6 +94,14 @@ from server.db.models import (
 router = APIRouter(prefix="/api")
 
 
+def _portrait_full_url(cid: str) -> str | None:
+    return f"/api/characters/{cid}/portrait/full" if char_files.full_path(cid) else None
+
+
+def _portrait_crop_url(cid: str) -> str | None:
+    return f"/api/characters/{cid}/portrait/crop" if char_files.crop_path(cid) else None
+
+
 def _pc_to_response(pc) -> PlayerCharacterResponse:
     """Build the PC response from a RuntimeCharacter composite (identity file +
     binding)."""
@@ -102,6 +110,8 @@ def _pc_to_response(pc) -> PlayerCharacterResponse:
         schemaVersion=1,
         basicInfo=pc.basic_info,
         equipment=pc.equipment,
+        portraitFull=_portrait_full_url(pc.id),
+        portraitCrop=_portrait_crop_url(pc.id),
     )
 
 
@@ -114,6 +124,8 @@ def _pm_to_response(pm) -> PartyMemberResponse:
         fieldSkill=pm.field_skill,
         lastSpokeTurn=pm.last_spoke_turn,
         inParty=bool(pm.in_party),
+        portraitFull=_portrait_full_url(pm.id),
+        portraitCrop=_portrait_crop_url(pm.id),
     )
 
 

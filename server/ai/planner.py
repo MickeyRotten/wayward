@@ -28,7 +28,7 @@ from server.ai.narrator_actions import (
     tool_unequip,
 )
 from server.ai.openrouter import chat_completion_agent_turn
-from server.ai.prompt_builder import _estimate_tokens, _trim_to_budget
+from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
 from server.ai.worldbuilder import LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
@@ -529,7 +529,8 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
         ]
         # Trim oldest planner history to the context budget — a long Edit-Mode
         # session would otherwise grow unbounded and eventually overflow context.
-        hist_msgs = [{"role": m.role, "content": m.content} for m in history]
+        # (_augment_message folds an attached image's vision description in.)
+        hist_msgs = [{"role": m.role, "content": _augment_message(m)} for m in history]
         max_ctx = settings.max_context_tokens if settings else 128000
         max_resp = settings.max_tokens_response if settings else 1000
         budget = int((max_ctx - max_resp) * 0.9) - _estimate_tokens(sys_msgs) - 200

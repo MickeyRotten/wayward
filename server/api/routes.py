@@ -1,3 +1,4 @@
+import base64
 import datetime
 import io
 import json
@@ -28,7 +29,8 @@ from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, run_action_s
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
-from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
+from server.ai.prompt_builder import augment_user_content, build_prompt, estimate_prompt_tokens
+from server.ai.vision import VISION_DEFAULT_INSTRUCTIONS, describe_image
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, _name_mentioned, compute_spotlight_signals, detect_speakers, format_spotlight_block
 from server.ai.summarizer import (
     format_messages_for_summary,
@@ -867,6 +869,10 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         actionSuggestionsModelId=getattr(s, "action_suggestions_model_id", "") or "",
         summaryThreshold=getattr(s, "summary_threshold", 0.7) or 0.7,
         summaryModelId=getattr(s, "summary_model_id", "") or "",
+        visionModelId=getattr(s, "vision_model_id", "") or "google/gemma-3-4b-it",
+        visionUseSameKey=bool(getattr(s, "vision_use_same_key", True)),
+        visionApiKeySet=bool(getattr(s, "vision_api_key", "")),
+        visionInstructions=(getattr(s, "vision_instructions", "") or "").strip() or VISION_DEFAULT_INSTRUCTIONS,
         apiKeySet=bool(s.api_key),
     )
 
@@ -910,6 +916,13 @@ async def update_openrouter_settings(
     s.action_suggestions_model_id = data.actionSuggestionsModelId
     s.summary_threshold = data.summaryThreshold
     s.summary_model_id = data.summaryModelId
+    s.vision_model_id = data.visionModelId
+    s.vision_use_same_key = data.visionUseSameKey
+    if data.visionApiKey is not None:  # write-only, like apiKey
+        s.vision_api_key = data.visionApiKey
+    # Storing the default text verbatim is treated as "unset" so future
+    # default improvements reach users who never customized it.
+    s.vision_instructions = "" if data.visionInstructions.strip() == VISION_DEFAULT_INSTRUCTIONS else data.visionInstructions
     await session.commit()
     return _or_response(s)
 
@@ -1375,6 +1388,73 @@ async def delete_lore_entry(
     await session.commit()
 
 
+# ── Chat images (player-attached, described by the vision agent) ──
+
+_IMAGE_MIME_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
+_MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024
+_DATA_URL_RE = re.compile(r"^data:(image/[a-z+.-]+);base64,(.+)$", re.DOTALL)
+
+
+async def _chat_images_dir(session: AsyncSession, create: bool = True) -> Path | None:
+    """The active adventure's chat_images/ folder (images live with the save)."""
+    cid, aid = await _active_ids(session)
+    if not cid or not aid:
+        return None
+    d = storage.adventure_dir(cid, aid) / "chat_images"
+    if create:
+        d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+async def _store_chat_image(session: AsyncSession, data_url: str) -> str:
+    """Decode + save a data-URL image into the adventure folder; returns the
+    stored filename. Raises HTTPException on bad/oversized input."""
+    m = _DATA_URL_RE.match(data_url or "")
+    if not m:
+        raise HTTPException(400, "Image must be a base64 image data URL")
+    mime, b64 = m.group(1), m.group(2)
+    ext = _IMAGE_MIME_EXT.get(mime)
+    if not ext:
+        raise HTTPException(400, f"Unsupported image type: {mime}")
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "Invalid base64 image data")
+    if len(raw) > _MAX_CHAT_IMAGE_BYTES:
+        raise HTTPException(400, "Image too large (max 10 MB)")
+    directory = await _chat_images_dir(session)
+    if directory is None:
+        raise HTTPException(409, "No active adventure")
+    name = f"{uuid.uuid4().hex}.{ext}"
+    (directory / name).write_bytes(raw)
+    return name
+
+
+async def _delete_chat_images(session: AsyncSession, names: list[str]) -> None:
+    directory = await _chat_images_dir(session, create=False)
+    if directory is None:
+        return
+    for name in names:
+        if name:
+            (directory / Path(name).name).unlink(missing_ok=True)
+
+
+def _image_url(m: ChatMessage) -> str | None:
+    path = getattr(m, "image_path", None)
+    return f"/api/chat/images/{path}" if path else None
+
+
+@router.get("/chat/images/{filename}")
+async def get_chat_image(filename: str, session: AsyncSession = Depends(get_session)):
+    directory = await _chat_images_dir(session, create=False)
+    if directory is None:
+        raise HTTPException(404, "No active adventure")
+    path = directory / Path(filename).name  # basename only — no traversal
+    if not path.is_file():
+        raise HTTPException(404, "Image not found")
+    return FileResponse(path)
+
+
 # ── Chat Messages ─────────────────────────────────────────────────
 
 @router.get("/chat/messages", response_model=list[ChatMessageResponse])
@@ -1398,6 +1478,8 @@ async def get_chat_messages(session: AsyncSession = Depends(get_session)):
             spotlightReason=m.spotlight_reason,
             appliedInventoryDeltas=m.applied_inventory_deltas,
             appliedEquipmentChanges=m.applied_equipment_changes,
+            imageUrl=_image_url(m),
+            imageDescription=getattr(m, "image_description", None),
             createdAt=m.created_at.isoformat() if m.created_at else "",
         )
         for m in result.scalars().all()
@@ -1480,6 +1562,12 @@ async def delete_message_and_after(
     # ...and their in-chat toasts. Untethered player-action toasts are kept.
     await event_ops.delete_tethered(session, msg.turn_number)
 
+    # Remove attached image files of the deleted messages from the adventure folder.
+    doomed = (
+        await session.execute(select(ChatMessage).where(ChatMessage.id >= msg.id))
+    ).scalars().all()
+    await _delete_chat_images(session, [m.image_path for m in doomed if getattr(m, "image_path", None)])
+
     await session.execute(
         delete(ChatMessage).where(ChatMessage.id >= msg.id)
     )
@@ -1524,6 +1612,11 @@ async def save_partial(
 
 @router.delete("/chat/messages", status_code=204)
 async def clear_chat(session: AsyncSession = Depends(get_session)):
+    # Wipe attached image files along with the messages that referenced them.
+    with_images = (
+        await session.execute(select(ChatMessage).where(ChatMessage.image_path.is_not(None)))
+    ).scalars().all()
+    await _delete_chat_images(session, [m.image_path for m in with_images])
     await session.execute(delete(ChatMessage))
     await event_ops.clear_events(session)  # wipe all toasts with the chat
     for b in await party_ops.all_bindings(session):
@@ -2069,8 +2162,23 @@ async def chat_turn(
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
 
-    user_msg = ChatMessage(role="user", content=data.message, turn_number=current_turn, speaker=pc.id)
+    # Player-attached image: save it with the adventure, have the vision agent
+    # describe it (the narrator itself may be text-only), and record both on the
+    # user message so swipes/regenerates reuse the description.
+    image_path: str | None = None
+    image_desc: str | None = None
+    if data.image:
+        image_path = await _store_chat_image(session, data.image)
+        image_desc = await describe_image(settings, data.image, data.message)
+
+    user_msg = ChatMessage(
+        role="user", content=data.message, turn_number=current_turn, speaker=pc.id,
+        image_path=image_path, image_description=image_desc,
+    )
     session.add(user_msg)
+
+    # What the narrator sees: the message text plus the image description.
+    prompt_message = augment_user_content(data.message, image_desc) if image_path else data.message
 
     agentic = await _should_use_tools(settings)
 
@@ -2084,7 +2192,7 @@ async def chat_turn(
         settings, narrator, pc, party,
         history=all_messages,
         summary=summary,
-        player_message=data.message,
+        player_message=prompt_message,
         current_turn=current_turn,
         session=session,
         agentic=agentic,
@@ -2162,7 +2270,10 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         settings, narrator, pc, party,
         history=history,
         summary=summary,
-        player_message=user_msg.content,
+        player_message=(
+            augment_user_content(user_msg.content, getattr(user_msg, "image_description", None))
+            if getattr(user_msg, "image_path", None) else user_msg.content
+        ),
         current_turn=turn,
         session=session,
         agentic=agentic,
@@ -2255,7 +2366,10 @@ async def regenerate(
         settings, narrator, pc, party,
         history=history,
         summary=summary,
-        player_message=last_user_msg.content,
+        player_message=(
+            augment_user_content(last_user_msg.content, getattr(last_user_msg, "image_description", None))
+            if getattr(last_user_msg, "image_path", None) else last_user_msg.content
+        ),
         current_turn=last_turn,
         session=session,
         agentic=agentic,
@@ -2463,9 +2577,18 @@ async def _planner_turn(data: ChatTurnRequest, session: AsyncSession):
     ).scalar() or 0
     turn = max_turn + 1
 
+    # Player-attached image — same treatment as the narrator path. The Editor's
+    # history loader folds the description in via _augment_message.
+    image_path: str | None = None
+    image_desc: str | None = None
+    if data.image:
+        image_path = await _store_chat_image(session, data.image)
+        image_desc = await describe_image(settings, data.image, data.message)
+
     session.add(ChatMessage(
         role="user", content=data.message, turn_number=turn,
         speaker=pc.id if pc else "player", mode="planner",
+        image_path=image_path, image_description=image_desc,
     ))
     await session.commit()
     return _stream_planner_response(settings, turn)

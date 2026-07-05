@@ -70,8 +70,30 @@ export function ChatScene() {
   const [searchQuery, setSearchQuery] = useState('')
   const [matchIdx, setMatchIdx] = useState(0)
   const [atBottom, setAtBottom] = useState(true)
+  const [pendingImage, setPendingImage] = useState<string | null>(null)  // data URL, attached to the next send
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  // Downscale an attached image client-side (phones produce 10+ MB photos) to
+  // a JPEG data URL capped at 1024px on the long edge.
+  const handleImageFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const MAX = 1024
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+        setPendingImage(canvas.toDataURL('image/jpeg', 0.85))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  }
 
   const submitRegenNote = () => {
     const note = regenNote.trim()
@@ -109,10 +131,12 @@ export function ChatScene() {
 
   const handleSend = () => {
     const text = input.trim()
-    if (!text || busy) return
+    if ((!text && !pendingImage) || busy) return
     setInput('')
+    const image = pendingImage
+    setPendingImage(null)
     setAtBottom(true) // snap to newest on send
-    sendTurn(text)
+    sendTurn(text || (image ? 'I show this.' : ''), image)
   }
 
   const handleShowLog = async () => {
@@ -665,6 +689,20 @@ export function ChatScene() {
 
       {/* Input */}
       <div className="border-t border-line2 p-3 bg-bg1">
+        {/* Pending image preview — attached to the next message */}
+        {pendingImage && (
+          <div className="flex items-center gap-2 mb-2">
+            <img src={pendingImage} alt="Attached" className="h-14 w-14 object-cover rounded-md border border-line2" />
+            <span className="font-ui text-[10px] text-textdim tracking-wider">IMAGE ATTACHED</span>
+            <button
+              type="button"
+              className="font-ui text-[10px] text-textdim border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
+              onClick={() => setPendingImage(null)}
+            >
+              REMOVE
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
           {/* Tools button + dropdown (opens above) */}
           <div className="relative shrink-0">
@@ -723,6 +761,37 @@ export function ChatScene() {
             </button>
           </div>
 
+          {/* Attach image (described to the Narrator/Editor by the vision agent) */}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            title="Attach an image"
+            aria-label="Attach an image"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleImageFile(f)
+              e.target.value = ''  // allow re-picking the same file
+            }}
+          />
+          <button
+            type="button"
+            title="Attach an image"
+            aria-label="Attach an image"
+            disabled={!apiKeySet || busy}
+            className={`shrink-0 border px-2.5 py-2 transition-colors disabled:opacity-40 ${
+              pendingImage ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
+            }`}
+            onClick={() => imageInputRef.current?.click()}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="m21 15-5-5L5 21" />
+            </svg>
+          </button>
+
           <textarea
             ref={inputRef}
             className="flex-1 border border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none max-h-[160px] overflow-y-auto"
@@ -751,7 +820,7 @@ export function ChatScene() {
             <button
               type="button"
               className="shrink-0 font-ui text-[10px] bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors disabled:opacity-40"
-              disabled={!apiKeySet || !input.trim() || busy}
+              disabled={!apiKeySet || (!input.trim() && !pendingImage) || busy}
               onClick={handleSend}
             >
               SEND
@@ -1052,6 +1121,15 @@ function MessageBubble({
 
             {/* Message content */}
             <div className="flex-1 border-l-2 border-blue/60 bg-blue/5 rounded-r-md px-4 py-3">
+              {/* Player-attached image (described to the narrator by the vision agent) */}
+              {message.imageUrl && (
+                <img
+                  src={message.imageUrl}
+                  alt={message.imageDescription || 'Attached image'}
+                  title={message.imageDescription || undefined}
+                  className="max-h-64 max-w-full rounded-md border border-line2 mb-2"
+                />
+              )}
               {editing ? (
                 <EditArea
                   ref={textareaRef}

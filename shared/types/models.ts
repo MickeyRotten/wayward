@@ -120,6 +120,13 @@ export interface OpenRouterSettings {
   actionSuggestionsModelId: string
   summaryThreshold: number
   summaryModelId: string
+  // Vision agent (describes player-attached chat images). Blank model id →
+  // the built-in default (google/gemma-3-4b-it). It can run on its own
+  // OpenRouter key; visionApiKeySet mirrors apiKeySet (the key itself is
+  // write-only).
+  visionModelId: string
+  visionUseSameKey: boolean
+  visionInstructions: string  // effective text (server fills the default when unset)
 }
 
 export type WorldbuildingMode = 'disabled' | 'confirmation' | 'auto'
@@ -172,6 +179,8 @@ export interface ChatMessage {
   spotlightReason?: string | null
   appliedInventoryDeltas?: InventoryDelta[] | null
   appliedEquipmentChanges?: EquipmentChange[] | null
+  imageUrl?: string | null          // player-attached image (user messages)
+  imageDescription?: string | null  // the vision agent's description of it
   createdAt: string
 }
 
@@ -259,4 +268,5 @@ export interface OpenRouterModel {
   name: string
   contextLength: number
   supportsTools: boolean
+  supportsImages: boolean
 }

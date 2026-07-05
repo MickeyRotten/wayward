@@ -149,6 +149,10 @@ class OpenRouterSettingsUpdate(BaseModel):
     actionSuggestionsModelId: str = ""
     summaryThreshold: float = 0.7
     summaryModelId: str = ""
+    visionModelId: str = ""
+    visionUseSameKey: bool = True
+    visionApiKey: str | None = None  # write-only, like apiKey
+    visionInstructions: str = ""     # blank => built-in default
 
 
 class OpenRouterSettingsResponse(BaseModel):
@@ -170,6 +174,10 @@ class OpenRouterSettingsResponse(BaseModel):
     actionSuggestionsModelId: str
     summaryThreshold: float
     summaryModelId: str
+    visionModelId: str
+    visionUseSameKey: bool
+    visionApiKeySet: bool
+    visionInstructions: str  # effective text (default filled in when unset)
     apiKeySet: bool
 
 
@@ -190,6 +198,8 @@ class ChatMessageResponse(BaseModel):
     spotlightReason: str | None = None
     appliedInventoryDeltas: list[dict] | None = None
     appliedEquipmentChanges: list[dict] | None = None
+    imageUrl: str | None = None          # player-attached image (served from the adventure folder)
+    imageDescription: str | None = None  # the vision agent's description of it
     createdAt: str
 
 
@@ -205,6 +215,10 @@ class ChatEventResponse(BaseModel):
 class ChatTurnRequest(BaseModel):
     message: str
     mode: str = "narrator"  # 'narrator' | 'planner'
+    # Optional player-attached image as a data URL (image/jpeg|png|webp). The
+    # vision agent describes it for the narrator/editor; the file is saved in
+    # the adventure's chat_images/ folder for display in the chat log.
+    image: str | None = None
 
 
 # --- Planner (Planning mode) ---

@@ -10,6 +10,24 @@ from server.db.models import (
 from server.db.party import RuntimeCharacter
 
 
+def augment_user_content(content: str, image_description: str | None, has_image: bool = True) -> str:
+    """Fold a vision-agent image description into a user message's text for the
+    LLM (display keeps the clean content + the image itself; the model sees
+    this). When an image was attached but the vision agent couldn't describe
+    it, the model is still told one exists."""
+    if image_description:
+        return f"{content}\n\n[The player attached an image. It shows: {image_description}]"
+    if has_image:
+        return f"{content}\n\n[The player attached an image; no description is available.]"
+    return content
+
+
+def _augment_message(m: ChatMessage) -> str:
+    if m.role == "user" and getattr(m, "image_path", None):
+        return augment_user_content(m.content, getattr(m, "image_description", None) or None)
+    return m.content
+
+
 def _format_equipment(
     equip: dict,
     catalog_lookup: dict[str, tuple[str, str]],
@@ -164,7 +182,7 @@ def build_prompt(
     budget = int(budget * 0.9)
 
     history_messages = [
-        {"role": m.role, "content": m.content}
+        {"role": m.role, "content": _augment_message(m)}
         for m in chat_history
     ]
     history_messages = _trim_to_budget(history_messages, budget)

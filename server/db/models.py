@@ -70,6 +70,15 @@ class OpenRouterSettings(Base):
     # fraction of the budget; optional separate model (blank => main model).
     summary_threshold: Mapped[float] = mapped_column(Float, default=0.7)
     summary_model_id: Mapped[str] = mapped_column(String, default="")
+    # Vision agent: describes player-attached chat images so the (possibly
+    # text-only) narrator/editor can react to them. Blank model => the built-in
+    # default (google/gemma-3-4b-it). Can run on a separate OpenRouter key
+    # (e.g. a free-tier key) — vision_use_same_key toggles which one is used.
+    vision_model_id: Mapped[str] = mapped_column(String, default="google/gemma-3-4b-it")
+    vision_use_same_key: Mapped[bool] = mapped_column(Integer, default=True)
+    vision_api_key: Mapped[str] = mapped_column(String, default="")
+    # How the vision agent describes images (blank => built-in default).
+    vision_instructions: Mapped[str] = mapped_column(Text, default="")
 
 
 # ── Campaign (the world) ──────────────────────────────────────────
@@ -229,6 +238,11 @@ class ChatMessage(Base):
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    # Player-attached image (user messages only): filename inside the adventure's
+    # chat_images/ folder, plus the vision agent's description of it — the
+    # description is what the (possibly text-only) narrator/editor actually sees.
+    image_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    image_description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

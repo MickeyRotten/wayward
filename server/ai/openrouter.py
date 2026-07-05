@@ -55,12 +55,59 @@ async def fetch_models(api_key: str = "") -> list[dict]:
             # "tools" means the model can do function/tool calling (required for
             # the agentic narrator loop).
             "supportsTools": "tools" in (m.get("supported_parameters") or []),
+            # Image input capability (for the vision agent's model picker).
+            "supportsImages": "image" in ((m.get("architecture") or {}).get("input_modalities") or []),
         }
         for m in data
     ]
     models.sort(key=lambda m: m["name"])
     _model_cache[cache_key] = (now, models)
     return models
+
+
+async def chat_completion_text(
+    api_key: str,
+    model_id: str,
+    messages: list[dict],
+    temperature: float = 0.2,
+    max_tokens: int = 500,
+) -> str:
+    """One plain, non-streaming completion; returns the assistant text.
+
+    Used by the vision agent (image description) — message ``content`` may be
+    the OpenAI multi-part shape (text + image_url parts).
+    """
+    body = {
+        "model": model_id,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    async with httpx.AsyncClient() as client:
+        for attempt in range(_MAX_ATTEMPTS):
+            res = await client.post(
+                f"{OPENROUTER_BASE}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+                timeout=120,
+            )
+            if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_retry_delay(res, attempt))
+                continue
+            if res.status_code >= 400:
+                try:
+                    msg = _error_text(res.json().get("error", {}))
+                except Exception:
+                    msg = f"{res.status_code} {res.reason_phrase}"
+                raise RuntimeError(f"Model error: {msg}")
+            data = res.json()
+            if data.get("error"):
+                raise RuntimeError(f"Model error: {_error_text(data['error'])}")
+            return ((data.get("choices") or [{}])[0].get("message", {}).get("content") or "").strip()
+    raise RuntimeError("Model error: retries exhausted")
 
 
 def _error_text(err) -> str:

@@ -21,14 +21,18 @@ interface SettingsState {
   actionSuggestionsModelId: string
   summaryThreshold: number
   summaryModelId: string
+  visionModelId: string
+  visionUseSameKey: boolean
+  visionApiKeySet: boolean
+  visionInstructions: string
   apiKeySet: boolean
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
-  saveSettings: (update: Partial<OpenRouterSettings> & { apiKey?: string }) => Promise<void>
+  saveSettings: (update: Partial<OpenRouterSettings> & { apiKey?: string; visionApiKey?: string }) => Promise<void>
   fetchModels: () => Promise<void>
 }
 
-type SettingsResponse = OpenRouterSettings & { apiKeySet: boolean }
+type SettingsResponse = OpenRouterSettings & { apiKeySet: boolean; visionApiKeySet: boolean }
 
 function applyResponse(s: SettingsResponse) {
   return {
@@ -50,6 +54,10 @@ function applyResponse(s: SettingsResponse) {
     actionSuggestionsModelId: s.actionSuggestionsModelId,
     summaryThreshold: s.summaryThreshold,
     summaryModelId: s.summaryModelId,
+    visionModelId: s.visionModelId,
+    visionUseSameKey: s.visionUseSameKey,
+    visionApiKeySet: s.visionApiKeySet,
+    visionInstructions: s.visionInstructions,
     apiKeySet: s.apiKeySet,
   }
 }
@@ -73,6 +81,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   actionSuggestionsModelId: '',
   summaryThreshold: 0.7,
   summaryModelId: '',
+  visionModelId: 'google/gemma-3-4b-it',
+  visionUseSameKey: true,
+  visionApiKeySet: false,
+  visionInstructions: '',
   apiKeySet: false,
   availableModels: [],
 
@@ -102,7 +114,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       actionSuggestionsModelId: update.actionSuggestionsModelId ?? state.actionSuggestionsModelId,
       summaryThreshold: update.summaryThreshold ?? state.summaryThreshold,
       summaryModelId: update.summaryModelId ?? state.summaryModelId,
+      visionModelId: update.visionModelId ?? state.visionModelId,
+      visionUseSameKey: update.visionUseSameKey ?? state.visionUseSameKey,
+      visionInstructions: update.visionInstructions ?? state.visionInstructions,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),
+      ...(update.visionApiKey !== undefined ? { visionApiKey: update.visionApiKey } : {}),
     }
     const s = await api.put<SettingsResponse>('/settings/openrouter', payload)
     set(applyResponse(s))

@@ -75,7 +75,7 @@ interface ChatState {
   activeVariants: Record<number, number>
   fetchHistory: () => Promise<void>
   fetchEvents: () => Promise<void>
-  sendTurn: (message: string) => Promise<void>
+  sendTurn: (message: string, image?: string | null) => Promise<void>
   regenerate: (guidance?: string) => Promise<void>
   retryLastTurn: () => Promise<void>
   swipe: (turn: number) => Promise<void>
@@ -134,7 +134,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch { /* toasts are non-critical */ }
   },
 
-  sendTurn: async (message) => {
+  sendTurn: async (message, image) => {
     const planning = get().planningMode
     const mode = planning ? 'planner' : 'narrator'
     const turn = threadMaxTurn(get().messages, planning) + 1
@@ -147,6 +147,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       variant: 0,
       speaker: 'player',
       mode,
+      // Show the attached image immediately; the server-stored URL replaces it
+      // on the next history fetch.
+      imageUrl: image ?? null,
       createdAt: new Date().toISOString(),
     }
     set((s) => ({
@@ -158,7 +161,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       thinkingStartedAt: Date.now(),
     }))
 
-    await _handleStream('/api/chat/turn', { message, mode })
+    await _handleStream('/api/chat/turn', { message, mode, ...(image ? { image } : {}) })
   },
 
   regenerate: async (guidance) => {

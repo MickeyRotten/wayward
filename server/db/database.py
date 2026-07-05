@@ -185,6 +185,10 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "summary_threshold", "ALTER TABLE openrouter_settings ADD COLUMN summary_threshold FLOAT DEFAULT 0.7"),
         ("openrouter_settings", "summary_model_id", "ALTER TABLE openrouter_settings ADD COLUMN summary_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "action_suggestions_model_id", "ALTER TABLE openrouter_settings ADD COLUMN action_suggestions_model_id VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "vision_model_id", "ALTER TABLE openrouter_settings ADD COLUMN vision_model_id VARCHAR DEFAULT 'google/gemma-3-4b-it'"),
+        ("openrouter_settings", "vision_use_same_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_use_same_key INTEGER DEFAULT 1"),
+        ("openrouter_settings", "vision_api_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_api_key VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "vision_instructions", "ALTER TABLE openrouter_settings ADD COLUMN vision_instructions TEXT DEFAULT ''"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:
@@ -203,6 +207,8 @@ async def _run_scope_migrations() -> None:
         ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
         ("campaign.narrator_configs", "action_suggestions_instructions", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_instructions TEXT DEFAULT ''"),
         ("campaign.lorebook_entries", "scenario_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN scenario_fields JSON"),
+        ("adventure.chat_messages", "image_path", "ALTER TABLE adventure.chat_messages ADD COLUMN image_path VARCHAR"),
+        ("adventure.chat_messages", "image_description", "ALTER TABLE adventure.chat_messages ADD COLUMN image_description TEXT"),
     ]
     async with engine.begin() as conn:
         for qualified, column, ddl in migrations:

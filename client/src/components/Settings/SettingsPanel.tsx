@@ -48,6 +48,10 @@ export function SettingsPanel() {
   const [actionSuggestionsModelId, setActionSuggestionsModelId] = useState(settings.actionSuggestionsModelId)
   const [summaryThreshold, setSummaryThreshold] = useState(settings.summaryThreshold)
   const [summaryModelId, setSummaryModelId] = useState(settings.summaryModelId)
+  const [visionModelId, setVisionModelId] = useState(settings.visionModelId)
+  const [visionUseSameKey, setVisionUseSameKey] = useState(settings.visionUseSameKey)
+  const [visionApiKey, setVisionApiKey] = useState('')
+  const [visionInstructions, setVisionInstructions] = useState(settings.visionInstructions)
   const [showAllModels, setShowAllModels] = useState(false)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
@@ -75,7 +79,10 @@ export function SettingsPanel() {
     setActionSuggestionsModelId(settings.actionSuggestionsModelId)
     setSummaryThreshold(settings.summaryThreshold)
     setSummaryModelId(settings.summaryModelId)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId])
+    setVisionModelId(settings.visionModelId)
+    setVisionUseSameKey(settings.visionUseSameKey)
+    setVisionInstructions(settings.visionInstructions)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -117,9 +124,14 @@ export function SettingsPanel() {
       actionSuggestionsModelId,
       summaryThreshold,
       summaryModelId,
+      visionModelId,
+      visionUseSameKey,
+      visionInstructions,
+      ...(visionApiKey ? { visionApiKey } : {}),
     })
     await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions })
     setApiKey('')
+    setVisionApiKey('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
@@ -135,6 +147,7 @@ export function SettingsPanel() {
     setWbMode('confirmation'); setWbModelId('')
     setSummaryThreshold(0.7); setSummaryModelId('')
     setActionSuggestionsEnabled(false); setActionSuggestionsModelId('')
+    setVisionModelId('google/gemma-3-4b-it'); setVisionUseSameKey(true); setVisionInstructions('')
   }
   const resetWorld = () => {
     setInstructions(''); setSpotlightRule(''); setPostHistory(''); setPlannerInstructions('')
@@ -420,6 +433,63 @@ export function SettingsPanel() {
               </span>
             </label>
           </SubSection>
+
+          <SubSection title="Vision">
+            <span className="text-[10px] text-textdim font-body">
+              When you attach an image to a chat message, the Vision agent looks at it and describes it for the Narrator or Editor (which may be text-only models). Runs once per attached image.
+            </span>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Vision Model</span>
+              <ModelPicker
+                value={visionModelId}
+                onChange={setVisionModelId}
+                models={settings.availableModels.filter((m) => m.supportsImages)}
+                showAll
+                blankLabel="Default — Gemma 3 4B"
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Must accept image input. Default: Google Gemma 3 4B (cheap and fast).
+              </span>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Vision Instructions</span>
+              <ExpandableTextarea
+                label="Vision Instructions"
+                className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+                rows={4}
+                value={visionInstructions}
+                onChange={setVisionInstructions}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                How the vision agent describes attached images (detail level, tone, what to focus on). Leave blank to use the built-in default.
+              </span>
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+              <input
+                type="checkbox"
+                checked={visionUseSameKey}
+                onChange={(e) => setVisionUseSameKey(e.target.checked)}
+              />
+              Use the main OpenRouter API key
+            </label>
+            {!visionUseSameKey && (
+              <label className="block">
+                <span className="text-[11px] text-textdim font-body">
+                  Vision API Key {settings.visionApiKeySet ? '(set — enter to replace)' : ''}
+                </span>
+                <input
+                  type="password"
+                  className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                  placeholder={settings.visionApiKeySet ? '••••••••' : 'sk-or-...'}
+                  value={visionApiKey}
+                  onChange={(e) => setVisionApiKey(e.target.value)}
+                />
+                <span className="text-[10px] text-textdim font-body">
+                  A separate OpenRouter key just for the vision agent (e.g. a free-tier key).
+                </span>
+              </label>
+            )}
+          </SubSection>
         </Section>
 
         {/* World */}
@@ -532,12 +602,13 @@ function AppearanceSection() {
   )
 }
 
-function ModelPicker({ value, onChange, models, showAll, toolsOnly = true }: {
+function ModelPicker({ value, onChange, models, showAll, toolsOnly = true, blankLabel = 'Use main model' }: {
   value: string
   onChange: (v: string) => void
   models: OpenRouterModel[]
   showAll: boolean
   toolsOnly?: boolean
+  blankLabel?: string
 }) {
   if (models.length === 0) {
     return (
@@ -556,7 +627,11 @@ function ModelPicker({ value, onChange, models, showAll, toolsOnly = true }: {
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
-      <option value="">Use main model</option>
+      <option value="">{blankLabel}</option>
+      {/* Keep a stored id selectable even if it's missing from the list */}
+      {value && !list.some((m) => m.id === value) && (
+        <option value={value}>{value}</option>
+      )}
       {list.map((m) => (
         <option key={m.id} value={m.id}>{m.name}{m.supportsTools ? '' : ' (no tools)'}</option>
       ))}

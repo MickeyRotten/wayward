@@ -120,6 +120,9 @@ async def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CAMPAIGNS_DIR.mkdir(parents=True, exist_ok=True)
 
+    from server.db import characters as char_files
+    char_files.install_bundled_cards()  # ship starter cards (e.g. Varena) into the library
+
     _build_engine()
     # app.db tables (no active scope attached yet).
     async with engine.begin() as conn:
@@ -390,16 +393,20 @@ async def migrate_characters_to_files() -> None:
 
         pc = (await s.execute(select(PlayerCharacter))).scalars().first() if pc_exists else None
         if pc is not None:
-            char_files.create_character("persona", pc.basic_info, None, cid=pc.id)
-            _seed_portrait(pc.id, pc.basic_info)
+            # Don't clobber an existing character file (e.g. a bundled card the
+            # row is linked to by id) — only mint identity when it's new.
+            if not char_files.exists(pc.id):
+                char_files.create_character("persona", pc.basic_info, None, cid=pc.id)
+                _seed_portrait(pc.id, pc.basic_info)
             s.add(PartyBinding(character_id=pc.id, role="pc",
                                equipment=pc.equipment or {}, in_party=True, sort_order=0))
             await s.delete(pc)
 
         members = (await s.execute(select(PartyMember))).scalars().all() if pm_exists else []
         for i, m in enumerate(members):
-            char_files.create_character("character", m.basic_info, m.field_skill, cid=m.id)
-            _seed_portrait(m.id, m.basic_info)
+            if not char_files.exists(m.id):
+                char_files.create_character("character", m.basic_info, m.field_skill, cid=m.id)
+                _seed_portrait(m.id, m.basic_info)
             s.add(PartyBinding(character_id=m.id, role="member", equipment=m.equipment or {},
                                in_party=bool(m.in_party), last_spoke_turn=m.last_spoke_turn or 0,
                                sort_order=i))

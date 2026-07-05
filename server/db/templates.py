@@ -177,13 +177,19 @@ async def apply_template(name: str) -> bool:
             ))
 
         # --- Party members (adventure scope) ---
+        # A member may pin a stable "id" to link it to a bundled character card
+        # (e.g. Varena) — the characters→files migration then writes that id's
+        # folder, so the campaign's member and the library card are one identity.
         for pm in tpl.get("partyMembers", []):
-            s.add(PartyMember(
+            member = PartyMember(
                 basic_info=pm.get("basicInfo", {}),
                 field_skill=pm.get("fieldSkill") or {},
                 equipment=_equipment_from(pm.get("equipment"), key_to_id),
                 in_party=True,
-            ))
+            )
+            if pm.get("id"):
+                member.id = pm["id"]
+            s.add(member)
 
         # --- Starting inventory (adventure scope) ---
         for inv in tpl.get("inventory", []):

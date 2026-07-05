@@ -1,0 +1,22 @@
+{
+  "id": "f0000001-0000-4000-8000-000000000001",
+  "type": "character",
+  "schemaVersion": 1,
+  "createdAt": "2024-01-01T00:00:00+00:00",
+  "basicInfo": {
+    "name": "Varena",
+    "gender": "Female",
+    "species": "Elf",
+    "age": 120,
+    "heightCm": 172,
+    "weightKg": 54,
+    "description": "A breathtakingly beautiful elven ranger with flowing silver hair, luminous violet eyes, and the ageless grace of someone born a century before you drew breath. Aloof and effortlessly capable, she carries herself as though the mortal world is a charming inconvenience — though her aim with a bow is anything but.",
+    "likes": "Moonlight, fine wine, poetry, being right",
+    "dislikes": "Cities, mud, human impatience",
+    "personality": ""
+  },
+  "fieldSkill": {
+    "name": "Elven Marksmanship",
+    "description": "Looses arrows with uncanny precision — able to thread a shot through branches to strike a distant eye. Still a bow: no help at grappling range, against heavy armor, or with nothing to shoot at."
+  }
+}

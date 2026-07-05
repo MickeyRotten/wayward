@@ -45,6 +45,32 @@ def characters_dir() -> Path:
     return db.DATA_DIR / "characters"
 
 
+# Built-in starter cards shipped in the repo (installed into the library on boot).
+_BUNDLED_CARDS_DIR = Path(__file__).resolve().parent.parent / "templates" / "cards"
+
+
+def install_bundled_cards() -> None:
+    """Copy repo-shipped starter character cards into the library, keyed by their
+    stable id. Idempotent — skips a card whose id folder already exists."""
+    if not _BUNDLED_CARDS_DIR.exists():
+        return
+    for src in sorted(_BUNDLED_CARDS_DIR.iterdir()):
+        if not src.is_dir():
+            continue
+        try:
+            data = json.loads((src / _JSON_NAME).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        cid = data.get("id")
+        if not cid or exists(cid):
+            continue
+        dest = char_dir(cid)
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in src.iterdir():
+            if f.is_file():
+                shutil.copy(f, dest / f.name)
+
+
 def char_dir(cid: str) -> Path:
     return characters_dir() / cid
 

@@ -128,17 +128,17 @@ async def refresh_active_adventure_meta() -> None:
     Only the active adventure is attached, so only its sidecar is refreshed."""
     from sqlalchemy import select
 
-    from server.db.models import AppState, ChatMessage, PartyMember, PlayerCharacter
+    from server.db import characters as char_files
+    from server.db import party as party_ops
+    from server.db.models import AppState, ChatMessage
 
     async with db.new_session() as s:
         st = (await s.execute(select(AppState))).scalars().first()
         if not st or not st.active_campaign_id or not st.active_adventure_id:
             return
         cid, aid = st.active_campaign_id, st.active_adventure_id
-        pc = (await s.execute(select(PlayerCharacter))).scalars().first()
-        members = (
-            await s.execute(select(PartyMember).where(PartyMember.in_party == True))  # noqa: E712
-        ).scalars().all()
+        pc = await party_ops.load_pc(s)
+        members = [m for m in await party_ops.load_party(s) if m.in_party]
         location = (
             await s.execute(
                 select(ChatMessage.location)
@@ -154,15 +154,19 @@ async def refresh_active_adventure_meta() -> None:
             )
         ).scalars().first()
 
+    # Portraits are per-character files now; the sidecar stores the CHARACTER ID
+    # (the Save/Load card resolves it to /api/characters/<id>/portrait/crop), and
+    # only when that character actually has a crop image.
+    def _portrait_token(c) -> str:
+        return c.id if c and char_files.crop_path(c.id) else ""
+
     meta = _read_json(adventure_json_path(cid, aid)) or {}
     pc_info = pc.basic_info if pc else {}
     meta.update({
         "lastPlayedAt": _now(),
         "pcName": pc_info.get("name", "") or "",
-        "pcPortrait": pc_info.get("portrait", "") or "",
-        "partyPortraits": [
-            m.basic_info.get("portrait", "") for m in members if m.basic_info.get("portrait")
-        ],
+        "pcPortrait": _portrait_token(pc),
+        "partyPortraits": [t for t in (_portrait_token(m) for m in members) if t],
         # Latest values declared anywhere in history (revert on delete).
         "location": location or "",
         "day": day or 1,

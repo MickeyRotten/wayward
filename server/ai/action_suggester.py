@@ -18,7 +18,8 @@ from sqlalchemy import select
 
 from server.ai.openrouter import chat_completion_agent_turn
 from server.db.database import new_session
-from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, PartyMember, Task
+from server.db import party as party_ops
+from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, Task
 
 log = logging.getLogger("wayward.action_suggester")
 
@@ -143,9 +144,7 @@ async def _build_context(session, turn_number: int) -> str:
     — deliberately not a full world-state dump."""
     scene = await _latest_scene_fields(session, turn_number)
 
-    members = (
-        await session.execute(select(PartyMember).where(PartyMember.in_party == True))  # noqa: E712
-    ).scalars().all()
+    members = [m for m in await party_ops.load_party(session) if m.in_party]
     member_names = [m.basic_info.get("name", "") for m in members if m.basic_info.get("name")]
 
     tasks = (

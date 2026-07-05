@@ -42,6 +42,7 @@ const EQUIP_SLOTS: { key: keyof Equipment; label: string }[] = [
 export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const pc = usePartyStore((s) => s.playerCharacter)
   const save = usePartyStore((s) => s.savePlayerCharacter)
+  const fetchAll = usePartyStore((s) => s.fetchAll)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PlayerCharacter | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -84,7 +85,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
     return (
       <div className="space-y-6 p-6">
         {/* Portrait — fixed 3:4, image fills; Edit Portrait opens the crop modal. */}
-        <PortraitBlock portrait={d.basicInfo.portrait} onChange={(fn) => updateBasic('portrait', fn, true)} />
+        <PortraitBlock characterId={pc!.id} fullUrl={pc?.portraitFull} cropUrl={pc?.portraitCrop} onUpdated={() => void fetchAll()} />
 
         {/* Basic Info */}
         <Section title="Basic Info">
@@ -124,7 +125,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   return (
     <div className="space-y-6 p-6">
       {/* Portrait */}
-      <PortraitBlock portrait={d.basicInfo.portrait} onChange={(fn) => updateBasic('portrait', fn, true)} />
+      <PortraitBlock characterId={pc!.id} fullUrl={pc?.portraitFull} cropUrl={pc?.portraitCrop} onUpdated={() => void fetchAll()} />
 
       {/* Basic Info */}
       <Section title="Basic Info">

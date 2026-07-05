@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from server.db.models import PartyMember
+from server.db.party import RuntimeCharacter
 
 STOPWORDS = frozenset({
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -84,7 +84,7 @@ class SpotlightSignal:
 def compute_spotlight_signals(
     player_message: str,
     recent_context: str,
-    party_members: list[PartyMember],
+    party_members: list[RuntimeCharacter],
     current_turn: int,
 ) -> list[SpotlightSignal]:
     msg_lower = player_message.lower()
@@ -168,7 +168,7 @@ def format_spotlight_block(signals: list[SpotlightSignal], rule: str | None = No
 
 def detect_speakers(
     response_text: str,
-    party_members: list[PartyMember],
+    party_members: list[RuntimeCharacter],
 ) -> list[str]:
     """Which party members actually SPOKE in this narration (were attributed a
     line of dialogue) — used to update last_spoke_turn. A bare mention of the

@@ -68,6 +68,9 @@ export interface PlayerCharacter {
   schemaVersion: number
   basicInfo: BasicInfo
   equipment: Equipment
+  // Character-file portrait URLs (full → Inspector, crop → chat/avatars).
+  portraitFull?: string | null
+  portraitCrop?: string | null
 }
 
 export interface PartyMember {
@@ -78,6 +81,20 @@ export interface PartyMember {
   fieldSkill: FieldSkill
   lastSpokeTurn: number
   inParty: boolean
+  portraitFull?: string | null
+  portraitCrop?: string | null
+}
+
+// A character-library card (identity file), independent of any adventure.
+export interface CharacterCard {
+  id: string
+  type: 'persona' | 'character'
+  basicInfo: BasicInfo
+  fieldSkill: FieldSkill
+  hasFull: boolean
+  hasCrop: boolean
+  fullUrl?: string | null
+  cropUrl?: string | null
 }
 
 export interface NarratorConfig {

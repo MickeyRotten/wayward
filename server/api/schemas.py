@@ -47,6 +47,10 @@ class PlayerCharacterResponse(BaseModel):
     schemaVersion: int
     basicInfo: BasicInfoSchema
     equipment: EquipmentSchema
+    # Character-file portrait URLs (full → Inspector, crop → chat/avatars); null
+    # when that image doesn't exist yet.
+    portraitFull: str | None = None
+    portraitCrop: str | None = None
 
 
 # --- Party Member ---
@@ -71,6 +75,8 @@ class PartyMemberResponse(BaseModel):
     fieldSkill: FieldSkillSchema
     lastSpokeTurn: int
     inParty: bool = True
+    portraitFull: str | None = None
+    portraitCrop: str | None = None
 
 
 class PartyMembershipUpdate(BaseModel):

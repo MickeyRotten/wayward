@@ -22,13 +22,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.ai.openrouter import chat_completion_agent_turn
+from server.db import party as party_ops
 from server.db.database import new_session
 from server.db.models import (
     ChatMessage,
     LorebookEntry,
     OpenRouterSettings,
-    PartyMember,
-    PlayerCharacter,
     Task,
     WorldbuildingProposal,
 )
@@ -259,7 +258,7 @@ async def _resolve_task(session: AsyncSession, text: str) -> Task | None:
 
 
 async def _member_exists(session: AsyncSession, name: str) -> bool:
-    members = (await session.execute(select(PartyMember))).scalars().all()
+    members = await party_ops.load_party(session)
     return any(m.basic_info.get("name", "").lower() == name.lower() for m in members)
 
 
@@ -282,7 +281,7 @@ async def _build_world_state(session: AsyncSession) -> str:
     for e in lore:
         by_cat.setdefault(e.cat, []).append(e.title)
     tasks = (await session.execute(select(Task))).scalars().all()
-    members = (await session.execute(select(PartyMember).where(PartyMember.in_party == True))).scalars().all()  # noqa: E712
+    members = [m for m in await party_ops.load_party(session) if m.in_party]
 
     lines = ["CURRENT WORLD STATE (reuse these exact names; update rather than duplicate):"]
     for cat in ("world", "characters", "items", "monsters", "spells"):
@@ -317,8 +316,8 @@ async def _known_name_tokens(session: AsyncSession) -> set[str]:
     members, PC) — so the pre-filter doesn't re-trigger on names already recorded.
     Tasks are free-text goals, not proper names, so they're intentionally excluded."""
     lore = (await session.execute(select(LorebookEntry))).scalars().all()
-    members = (await session.execute(select(PartyMember))).scalars().all()
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    members = await party_ops.load_party(session)
+    pc = await party_ops.load_pc(session)
     names = [e.title for e in lore]
     names += [m.basic_info.get("name", "") for m in members]
     if pc:
@@ -534,26 +533,21 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
     if kind == "member" and op == "create":
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
         max_size = settings.max_party_size if settings else 3
-        active = (await session.execute(
-            select(func.count()).select_from(PartyMember).where(PartyMember.in_party == True)  # noqa: E712
-        )).scalar()
-        if active >= max_size:
+        if await party_ops.active_count(session) >= max_size:
             return False, "Party is full."
         # Promote a lorebook character into the party: if a matching lore
         # 'characters' entry exists, remove it (the character now lives as a
         # party member) and reuse its description if the proposal lacks one.
         absorbed = await _absorb_lore_character(session, p.get("name", ""))
         description = p.get("description", "") or (absorbed or "")
-        session.add(PartyMember(
+        await party_ops.add_member(
+            session,
             basic_info={
                 "name": p.get("name", ""), "species": p.get("species", ""),
                 "description": description, "personality": p.get("personality", ""),
-                "gender": "", "age": 0, "heightCm": 0, "weightKg": 0,
-                "portrait": "", "likes": "", "dislikes": "",
             },
-            equipment={},
             field_skill={"name": p.get("fieldSkillName", ""), "description": p.get("fieldSkillDescription", "")},
-        ))
+        )
         return True, None
 
     return False, f"Unknown proposal {kind}/{op}."
@@ -694,9 +688,9 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         # Guard data for the deterministic rule backstop: every party member
         # (incl. benched) and the PC must never be filed as lore, and item
         # entries are only allowed if the item was **bolded** in this narration.
-        all_members = (await session.execute(select(PartyMember))).scalars().all()
+        all_members = await party_ops.load_party(session)
         member_names = {m.basic_info.get("name", "").strip().lower() for m in all_members if m.basic_info.get("name")}
-        pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+        pc = await party_ops.load_pc(session)
         pc_name = (pc.basic_info.get("name", "").strip().lower() if pc else "")
 
         messages = [

@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,9 @@ from server.ai.summarizer import (
     should_summarize,
 )
 from server.db.database import new_session, switch_active
+from server.db import characters as char_files
 from server.db import inventory as inv_ops
+from server.db import party as party_ops
 from server.db import storage
 from server.api.schemas import (
     ActionSuggestionsResponse,
@@ -82,9 +84,8 @@ from server.db.models import (
     LorebookEntry,
     NarratorConfig,
     OpenRouterSettings,
-    PartyMember,
+    PartyBinding,
     AppState,
-    PlayerCharacter,
     Task,
     StorySummary,
     WorldbuildingProposal,
@@ -93,33 +94,43 @@ from server.db.models import (
 router = APIRouter(prefix="/api")
 
 
-def _pc_to_response(pc: PlayerCharacter) -> PlayerCharacterResponse:
+def _portrait_full_url(cid: str) -> str | None:
+    return f"/api/characters/{cid}/portrait/full" if char_files.full_path(cid) else None
+
+
+def _portrait_crop_url(cid: str) -> str | None:
+    return f"/api/characters/{cid}/portrait/crop" if char_files.crop_path(cid) else None
+
+
+def _pc_to_response(pc) -> PlayerCharacterResponse:
+    """Build the PC response from a RuntimeCharacter composite (identity file +
+    binding)."""
     return PlayerCharacterResponse(
         id=pc.id,
-        schemaVersion=pc.schema_version,
+        schemaVersion=1,
         basicInfo=pc.basic_info,
         equipment=pc.equipment,
+        portraitFull=_portrait_full_url(pc.id),
+        portraitCrop=_portrait_crop_url(pc.id),
     )
 
 
-def _pm_to_response(pm: PartyMember) -> PartyMemberResponse:
+def _pm_to_response(pm) -> PartyMemberResponse:
     return PartyMemberResponse(
         id=pm.id,
-        schemaVersion=pm.schema_version,
+        schemaVersion=1,
         basicInfo=pm.basic_info,
         equipment=pm.equipment,
         fieldSkill=pm.field_skill,
         lastSpokeTurn=pm.last_spoke_turn,
         inParty=bool(pm.in_party),
+        portraitFull=_portrait_full_url(pm.id),
+        portraitCrop=_portrait_crop_url(pm.id),
     )
 
 
 async def _active_party_count(session: AsyncSession) -> int:
-    return (
-        await session.execute(
-            select(func.count()).select_from(PartyMember).where(PartyMember.in_party == True)  # noqa: E712
-        )
-    ).scalar() or 0
+    return await party_ops.active_count(session)
 
 
 async def _max_party_size(session: AsyncSession) -> int:
@@ -166,8 +177,8 @@ async def create_adventure_route(
     await _set_active_adventure(aid)
     # Blank slate: seed an empty editable PC so the sheet renders.
     async with new_session() as s:
-        if not (await s.execute(select(PlayerCharacter))).scalars().first():
-            s.add(PlayerCharacter())
+        if await party_ops.pc_binding(s) is None:
+            await party_ops.set_pc_identity(s, {})
             await s.commit()
     await storage.refresh_active_adventure_meta()
     return {"id": aid, "switched": True}
@@ -270,8 +281,8 @@ async def create_campaign_route(
     created_pc = await tpl.apply_template(template)
 
     async with new_session() as s:
-        if not created_pc and not (await s.execute(select(PlayerCharacter))).scalars().first():
-            s.add(PlayerCharacter())
+        if not created_pc and await party_ops.pc_binding(s) is None:
+            await party_ops.set_pc_identity(s, {})
         # Structured Editor starter shown in Edit Mode for the new campaign.
         s.add(ChatMessage(
             role="assistant", content=CAMPAIGN_STARTER, turn_number=1, variant=0,
@@ -298,8 +309,8 @@ async def load_campaign_route(cid: str, session: AsyncSession = Depends(get_sess
     await _set_active(cid, aid)
     if seed_pc:
         async with new_session() as s:
-            if not (await s.execute(select(PlayerCharacter))).scalars().first():
-                s.add(PlayerCharacter())
+            if await party_ops.pc_binding(s) is None:
+                await party_ops.set_pc_identity(s, {})
                 await s.commit()
     return {"id": cid, "adventureId": aid, "switched": True}
 
@@ -333,27 +344,23 @@ async def delete_campaign_route(cid: str, session: AsyncSession = Depends(get_se
     return {"deleted": cid, "switchedTo": switched_to}
 
 
-def _portrait_refs(db_path: Path) -> set[str]:
-    """Portrait filenames referenced by an adventure's PC + party members."""
-    refs: set[str] = set()
+def _character_ids(db_path: Path) -> set[str]:
+    """Character ids referenced by an adventure's party bindings (their identity
+    files carry the portraits, bundled into the export separately)."""
+    ids: set[str] = set()
     if not db_path.exists():
-        return refs
+        return ids
     con = sqlite3.connect(str(db_path))
     try:
-        for tbl in ("player_characters", "party_members"):
-            try:
-                for (bi,) in con.execute(f"SELECT basic_info FROM {tbl}"):
-                    try:
-                        p = (json.loads(bi) or {}).get("portrait")
-                    except (json.JSONDecodeError, TypeError):
-                        p = None
-                    if p:
-                        refs.add(p)
-            except sqlite3.OperationalError:
-                pass
+        try:
+            for (cid,) in con.execute("SELECT character_id FROM party_bindings"):
+                if cid:
+                    ids.add(cid)
+        except sqlite3.OperationalError:
+            pass
     finally:
         con.close()
-    return refs
+    return ids
 
 
 @router.get("/campaigns/{cid}/export")
@@ -373,9 +380,9 @@ async def export_campaign(cid: str, adventures: str | None = None):
     else:
         advs = all_advs
 
-    portraits: set[str] = set()
+    char_ids: set[str] = set()
     for a in advs:
-        portraits |= _portrait_refs(storage.adventure_db_path(cid, a["id"]))
+        char_ids |= _character_ids(storage.adventure_db_path(cid, a["id"]))
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -385,10 +392,13 @@ async def export_campaign(cid: str, adventures: str | None = None):
             base = f"adventures/{a['id']}"
             z.writestr(f"{base}/adventure.json", json.dumps(a, ensure_ascii=False))
             z.write(storage.adventure_db_path(cid, a["id"]), f"{base}/adventure.db")
-        for fn in portraits:
-            p = PORTRAITS_DIR / fn
-            if p.exists():
-                z.write(p, f"portraits/{fn}")
+        # Bundle each referenced character's folder (identity json + portraits).
+        for ch_id in char_ids:
+            ch_dir = char_files.char_dir(ch_id)
+            if ch_dir.exists():
+                for p in ch_dir.iterdir():
+                    if p.is_file():
+                        z.write(p, f"characters/{ch_id}/{p.name}")
     buf.seek(0)
     safe = re.sub(r"[^\w\-]+", "_", meta.get("name", "campaign")).strip("_") or "campaign"
     return StreamingResponse(
@@ -457,11 +467,23 @@ async def import_campaign(file: UploadFile):
         await storage.create_adventure(new_cid, "Adventure 1")
 
     for n in names:
+        # Legacy exports carried loose portraits/ files → the global dir (the
+        # characters→files migration picks them up when the campaign is loaded).
         if n.startswith("portraits/") and not n.endswith("/"):
             fn = n.split("/", 1)[1]
             dest = PORTRAITS_DIR / fn
             if fn and not dest.exists():
                 dest.write_bytes(z.read(n))
+        # New exports carry character folders (identity + portraits). Restore
+        # them into the global library, keeping any character id we already have.
+        elif n.startswith("characters/") and not n.endswith("/"):
+            parts = n.split("/", 2)
+            if len(parts) == 3:
+                ch_id, fname = parts[1], parts[2]
+                dest = char_files.char_dir(ch_id) / fname
+                if not dest.exists():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(z.read(n))
 
     return {"id": new_cid, "name": name}
 
@@ -470,7 +492,7 @@ async def import_campaign(file: UploadFile):
 
 @router.get("/player-character", response_model=PlayerCharacterResponse | None)
 async def get_player_character(session: AsyncSession = Depends(get_session)):
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    pc = await party_ops.load_pc(session)
     if not pc:
         return None
     return _pc_to_response(pc)
@@ -481,18 +503,15 @@ async def upsert_player_character(
     data: PlayerCharacterUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
-    if not pc:
-        pc = PlayerCharacter()
-        session.add(pc)
-    pc.basic_info = data.basicInfo.model_dump()
-    pc.equipment = data.equipment.model_dump()
+    # Identity → the persona's character file; equipment → the pc binding.
+    pc = await party_ops.set_pc_identity(session, data.basicInfo.model_dump())
+    await party_ops.set_equipment(session, pc.id, data.equipment.model_dump())
     await session.commit()
-    await session.refresh(pc)
-    return _pc_to_response(pc)
+    reloaded = await party_ops.load_pc(session)
+    return _pc_to_response(reloaded)
 
 
-# ── Portrait Upload ───────────────────────────────────────────────
+# ── Portrait Upload (legacy generic dir; character portraits live per-file) ──
 
 @router.post("/portraits/upload")
 async def upload_portrait(file: UploadFile):
@@ -506,12 +525,11 @@ async def upload_portrait(file: UploadFile):
     return {"filename": filename, "url": f"/portraits/{filename}"}
 
 
-# ── Party Members ─────────────────────────────────────────────────
+# ── Party Members (identity → character files, state → bindings) ──
 
 @router.get("/party-members", response_model=list[PartyMemberResponse])
 async def list_party_members(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(PartyMember))
-    return [_pm_to_response(pm) for pm in result.scalars().all()]
+    return [_pm_to_response(m) for m in await party_ops.load_party(session)]
 
 
 @router.post("/party-members", response_model=PartyMemberResponse, status_code=201)
@@ -521,15 +539,13 @@ async def add_party_member(
 ):
     if await _active_party_count(session) >= await _max_party_size(session):
         raise HTTPException(400, "Party is full — increase the party size limit in Config.")
-    pm = PartyMember(
+    m = await party_ops.add_member(
+        session,
         basic_info=data.basicInfo.model_dump(),
-        equipment=data.equipment.model_dump(),
         field_skill=data.fieldSkill.model_dump(),
     )
-    session.add(pm)
     await session.commit()
-    await session.refresh(pm)
-    return _pm_to_response(pm)
+    return _pm_to_response(m)
 
 
 @router.put("/party-members/{member_id}/in-party", response_model=PartyMemberResponse)
@@ -538,16 +554,15 @@ async def set_party_membership(
     data: PartyMembershipUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    pm = await session.get(PartyMember, member_id)
-    if not pm:
+    m = await party_ops.load_character(session, member_id)
+    if m is None or m.role != "member":
         raise HTTPException(404, "Party member not found")
-    if data.inParty and not pm.in_party:
+    if data.inParty and not m.in_party:
         if await _active_party_count(session) >= await _max_party_size(session):
             raise HTTPException(400, "Party is full — increase the party size limit in Config.")
-    pm.in_party = data.inParty
+    await party_ops.set_in_party(session, member_id, data.inParty)
     await session.commit()
-    await session.refresh(pm)
-    return _pm_to_response(pm)
+    return _pm_to_response(await party_ops.load_character(session, member_id))
 
 
 @router.put("/party-members/{member_id}", response_model=PartyMemberResponse)
@@ -556,15 +571,15 @@ async def update_party_member(
     data: PartyMemberUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    pm = await session.get(PartyMember, member_id)
-    if not pm:
+    m = await party_ops.load_character(session, member_id)
+    if m is None or m.role != "member":
         raise HTTPException(404, "Party member not found")
-    pm.basic_info = data.basicInfo.model_dump()
-    pm.equipment = data.equipment.model_dump()
-    pm.field_skill = data.fieldSkill.model_dump()
+    await party_ops.update_member_identity(
+        session, member_id, data.basicInfo.model_dump(), data.fieldSkill.model_dump()
+    )
+    await party_ops.set_equipment(session, member_id, data.equipment.model_dump())
     await session.commit()
-    await session.refresh(pm)
-    return _pm_to_response(pm)
+    return _pm_to_response(await party_ops.load_character(session, member_id))
 
 
 @router.delete("/party-members/{member_id}", status_code=204)
@@ -572,11 +587,107 @@ async def remove_party_member(
     member_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    pm = await session.get(PartyMember, member_id)
-    if not pm:
+    # Unbind from THIS adventure; the character identity file stays in the
+    # library (delete it explicitly from the Character Library).
+    if not await party_ops.remove_member(session, member_id):
         raise HTTPException(404, "Party member not found")
-    await session.delete(pm)
     await session.commit()
+
+
+# ── Character Library (portable identity files) ───────────────────
+
+def _character_meta(data: dict) -> dict:
+    cid = data.get("id", "")
+    return {
+        "id": cid,
+        "type": data.get("type", "character"),
+        "basicInfo": data.get("basicInfo", {}),
+        "fieldSkill": data.get("fieldSkill", {}),
+        "hasFull": char_files.full_path(cid) is not None,
+        "hasCrop": char_files.crop_path(cid) is not None,
+        "fullUrl": f"/api/characters/{cid}/portrait/full" if char_files.full_path(cid) else None,
+        "cropUrl": f"/api/characters/{cid}/portrait/crop" if char_files.crop_path(cid) else None,
+    }
+
+
+@router.get("/characters")
+async def list_characters():
+    return [_character_meta(c) for c in char_files.list_characters()]
+
+
+@router.get("/characters/{cid}/portrait/{which}")
+async def get_character_portrait(cid: str, which: str):
+    path = char_files.full_path(cid) if which == "full" else char_files.crop_path(cid)
+    if path is None:
+        raise HTTPException(404, "No portrait")
+    return FileResponse(str(path))
+
+
+@router.post("/characters/{cid}/portrait")
+async def upload_character_portrait(
+    cid: str,
+    full: UploadFile | None = None,
+    crop: UploadFile | None = None,
+):
+    """Set a character's full and/or crop portrait (replacing the old image)."""
+    if not char_files.exists(cid):
+        raise HTTPException(404, "Character not found")
+    if full is not None:
+        ext = Path(full.filename or "full.png").suffix or ".png"
+        char_files.set_full(cid, await full.read(), ext)
+    if crop is not None:
+        char_files.set_crop(cid, await crop.read())
+    return _character_meta(char_files.read_character(cid) or {"id": cid})
+
+
+@router.post("/characters/{cid}/duplicate")
+async def duplicate_character(cid: str):
+    new = char_files.duplicate_character(cid)
+    if new is None:
+        raise HTTPException(404, "Character not found")
+    return _character_meta(new)
+
+
+@router.post("/characters/{cid}/import", response_model=PartyMemberResponse, status_code=201)
+async def import_character(cid: str, session: AsyncSession = Depends(get_session)):
+    """Bind an existing library character into the active adventure as a member."""
+    if not char_files.exists(cid):
+        raise HTTPException(404, "Character not found")
+    in_party = await _active_party_count(session) < await _max_party_size(session)
+    m = await party_ops.bind_existing(session, cid, in_party=in_party)
+    if m is None:
+        raise HTTPException(404, "Character not found")
+    await session.commit()
+    return _pm_to_response(m)
+
+
+@router.delete("/characters/{cid}", status_code=204)
+async def delete_character(cid: str, session: AsyncSession = Depends(get_session)):
+    """Delete a character file from the library and unbind it from this adventure."""
+    await party_ops.remove_member(session, cid)
+    await session.commit()
+    char_files.delete_character(cid)
+
+
+@router.get("/characters/{cid}/export")
+async def export_character(cid: str):
+    raw = char_files.export_zip(cid)
+    if raw is None:
+        raise HTTPException(404, "Character not found")
+    name = (char_files.read_character(cid) or {}).get("basicInfo", {}).get("name") or "character"
+    safe = re.sub(r"[^\w\-]+", "_", name).strip("_") or "character"
+    return StreamingResponse(
+        io.BytesIO(raw), media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.zip"'},
+    )
+
+
+@router.post("/characters/import-file")
+async def import_character_file(file: UploadFile):
+    new = char_files.import_zip(await file.read())
+    if new is None:
+        raise HTTPException(400, "Not a valid character file")
+    return _character_meta(new)
 
 
 # ── Scenario ───────────────────────────────────────────────────────
@@ -1003,10 +1114,7 @@ async def remove_inventory_instance(
 
 
 async def _resolve_character_by_id(session: AsyncSession, char_id: str):
-    ch = await session.get(PlayerCharacter, char_id)
-    if ch is None:
-        ch = await session.get(PartyMember, char_id)
-    return ch
+    return await party_ops.load_character(session, char_id)
 
 
 @router.post("/characters/equip")
@@ -1039,7 +1147,7 @@ async def unequip_item(data: dict = Body(default={}), session: AsyncSession = De
     equipment = dict(char.equipment or {})
     if equipment.get(slot):
         equipment[slot] = None
-        char.equipment = equipment
+        await party_ops.set_equipment(session, char.id, equipment)
         await session.commit()
     return {"ok": True}
 
@@ -1380,9 +1488,8 @@ async def save_partial(
 @router.delete("/chat/messages", status_code=204)
 async def clear_chat(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(ChatMessage))
-    result = await session.execute(select(PartyMember))
-    for pm in result.scalars().all():
-        pm.last_spoke_turn = 0
+    for b in await party_ops.all_bindings(session):
+        b.last_spoke_turn = 0
     await session.commit()
 
 
@@ -1390,8 +1497,8 @@ async def clear_chat(session: AsyncSession = Depends(get_session)):
 
 @router.get("/adventure/export")
 async def export_adventure(session: AsyncSession = Depends(get_session)):
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
-    members = (await session.execute(select(PartyMember))).scalars().all()
+    pc = await party_ops.load_pc(session)
+    members = await party_ops.load_party(session)
     narrator = (await session.execute(select(NarratorConfig))).scalars().first()
     messages = (await session.execute(select(ChatMessage).order_by(ChatMessage.id))).scalars().all()
     summary = (await session.execute(select(StorySummary))).scalars().first()
@@ -1491,31 +1598,27 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
     await session.execute(delete(Task))
     await session.execute(delete(InventoryStack))
     await session.execute(delete(ChatMessage))
-    await session.execute(delete(PartyMember))
-    await session.execute(delete(PlayerCharacter))
+    await session.execute(delete(PartyBinding))
     await session.execute(delete(NarratorConfig))
     await session.execute(delete(StorySummary))
     await session.execute(delete(WorldbuildingProposal))
     await session.execute(delete(OpenRouterSettings))
 
-    # Restore player character
+    # Restore player character (identity → new persona file, equipment → binding)
     if data.get("playerCharacter"):
         pc_data = data["playerCharacter"]
-        pc = PlayerCharacter(
-            basic_info=pc_data.get("basicInfo", {}),
-            equipment=pc_data.get("equipment", {}),
-        )
-        session.add(pc)
+        pc = await party_ops.set_pc_identity(session, pc_data.get("basicInfo", {}))
+        await party_ops.set_equipment(session, pc.id, pc_data.get("equipment", {}))
 
     # Restore party members
     for pm_data in data.get("partyMembers", []):
-        pm = PartyMember(
+        m = await party_ops.add_member(
+            session,
             basic_info=pm_data.get("basicInfo", {}),
-            equipment=pm_data.get("equipment", {}),
             field_skill=pm_data.get("fieldSkill", {}),
             in_party=pm_data.get("inParty", True),
         )
-        session.add(pm)
+        await party_ops.set_equipment(session, m.id, pm_data.get("equipment", {}))
 
     # Restore narrator
     nar = data.get("narrator", {})
@@ -1648,8 +1751,7 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
     await session.execute(delete(Task))
     await session.execute(delete(InventoryStack))
     await session.execute(delete(ChatMessage))
-    await session.execute(delete(PartyMember))
-    await session.execute(delete(PlayerCharacter))
+    await session.execute(delete(PartyBinding))
     await session.execute(delete(NarratorConfig))
     await session.execute(delete(StorySummary))
     await session.execute(delete(WorldbuildingProposal))
@@ -1743,14 +1845,12 @@ async def _load_game_context(session: AsyncSession):
         raise HTTPException(400, "No model selected")
 
     narrator = (await session.execute(select(NarratorConfig))).scalars().first() or NarratorConfig(instructions="")
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    pc = await party_ops.load_pc(session)
     if not pc:
         raise HTTPException(400, "No player character created")
 
     # Only active (in-party) members participate in narration and spotlight.
-    party = list(
-        (await session.execute(select(PartyMember).where(PartyMember.in_party == True))).scalars().all()  # noqa: E712
-    )
+    party = [m for m in await party_ops.load_party(session) if m.in_party]
     # Narration only ever sees the 'narrator' thread — Planning-mode messages
     # live in their own thread and never enter narration context.
     all_messages = list(
@@ -1836,9 +1936,7 @@ async def _maybe_summarize_and_build(
 
     # If the player addressed a benched (not-in-party) member by name, hint the
     # narrator to acknowledge their absence rather than silently ignoring it.
-    benched = (await session.execute(
-        select(PartyMember).where(PartyMember.in_party == False)  # noqa: E712
-    )).scalars().all()
+    benched = [m for m in await party_ops.load_party(session) if not m.in_party]
     absent = [
         pm.basic_info["name"] for pm in benched
         if pm.basic_info.get("name") and _name_mentioned(pm.basic_info["name"], player_message)
@@ -2314,7 +2412,7 @@ async def _planner_turn(data: ChatTurnRequest, session: AsyncSession):
         raise HTTPException(400, "OpenRouter API key not configured")
     if not settings.model_id:
         raise HTTPException(400, "No model selected")
-    pc = (await session.execute(select(PlayerCharacter))).scalars().first()
+    pc = await party_ops.load_pc(session)
 
     max_turn = (
         await session.execute(
@@ -2395,9 +2493,9 @@ async def planner_apply_deletes(
                 await session.delete(t)
                 applied += 1
         elif d.kind == "member":
-            m = await session.get(PartyMember, d.targetId)
-            if m:
-                await session.delete(m)
+            # Unbind the member from this adventure (identity file stays in the
+            # library); targetId is the character id.
+            if await party_ops.remove_member(session, d.targetId):
                 applied += 1
     await session.commit()
     return {"applied": applied}
@@ -2408,7 +2506,7 @@ async def planner_apply_deletes(
 def _stream_llm_response(
     messages: list[dict],
     settings: OpenRouterSettings,
-    party_list: list[PartyMember],
+    party_list: list,
     current_turn: int,
     variant: int,
     did_summarize: bool = False,
@@ -2491,9 +2589,7 @@ def _stream_llm_response(
                     speaker_ids = detect_speakers(full_text, party_list)
                     for pm in party_list:
                         if pm.id in speaker_ids:
-                            db_pm = await save_session.get(PartyMember, pm.id)
-                            if db_pm:
-                                db_pm.last_spoke_turn = current_turn
+                            await party_ops.set_last_spoke(save_session, pm.id, current_turn)
 
                 # Determine spotlight reason for the first speaking party member
                 spot_reason: str | None = None
@@ -2585,7 +2681,7 @@ def _stream_llm_response(
 def _stream_agent_response(
     messages: list[dict],
     settings: OpenRouterSettings,
-    party_list: list[PartyMember],
+    party_list: list,
     current_turn: int,
     variant: int,
     spotlight_signals: list[SpotlightSignal] | None = None,
@@ -2659,9 +2755,7 @@ def _stream_agent_response(
                     speaker_ids = detect_speakers(final_content, party_list)
                     for pm in party_list:
                         if pm.id in speaker_ids:
-                            db_pm = await save_session.get(PartyMember, pm.id)
-                            if db_pm:
-                                db_pm.last_spoke_turn = current_turn
+                            await party_ops.set_last_spoke(save_session, pm.id, current_turn)
 
                 spot_reason: str | None = None
                 if speaker_ids and spotlight_signals:

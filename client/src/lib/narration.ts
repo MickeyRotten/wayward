@@ -28,7 +28,7 @@ export function buildMemberResolver(partyMembers: PartyMember[]): Map<string, Me
     if (!pm.inParty) continue
     const name = (pm.basicInfo?.name || '').trim()
     if (!name) continue
-    const lite: MemberLite = { id: pm.id, name, portrait: pm.basicInfo?.portrait }
+    const lite: MemberLite = { id: pm.id, name, portrait: pm.portraitCrop ?? undefined }
     const full = name.toLowerCase()
     const first = name.split(/\s+/)[0].toLowerCase()
     if (!map.has(full)) map.set(full, lite)

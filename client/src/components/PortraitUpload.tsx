@@ -10,6 +10,18 @@ export async function uploadPortraitBlob(blob: Blob): Promise<string | null> {
   return data.filename as string
 }
 
+/** Save a character's portrait: the framed crop (chat/avatars) and optionally the
+    full source image (Inspector). Replaces the character's previous portrait. */
+export async function uploadCharacterPortrait(
+  characterId: string, crop: Blob, full: Blob | null,
+): Promise<boolean> {
+  const form = new FormData()
+  form.append('crop', crop, 'crop.jpg')
+  if (full) form.append('full', full, 'full.jpg')
+  const res = await fetch(`/api/characters/${characterId}/portrait`, { method: 'POST', body: form })
+  return res.ok
+}
+
 export function PortraitUpload({
   portrait,
   onUploaded,

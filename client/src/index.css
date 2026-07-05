@@ -58,6 +58,14 @@ html, body, #root {
   font-family: var(--fbody);
 }
 
+/* Mobile browsers: 100% of the layout viewport hides content behind the
+   collapsing address bar; dvh tracks the *visible* viewport instead. */
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh;
+  }
+}
+
 /* Design System rounds all controls (inputs/buttons/tags ~2px). Applied as a
    base default so every form control and button is consistently rounded;
    explicit `rounded-*` utilities still override this where a different radius

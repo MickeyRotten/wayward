@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { AppShell } from './components/Layout/AppShell'
+import { MobileShell } from './components/Layout/MobileShell'
 import { IconRail } from './components/IconRail/IconRail'
 import { HomeView } from './components/Home/HomeView'
 import { ItemsPanel } from './components/ItemsPanel/ItemsPanel'
@@ -24,11 +25,14 @@ import { useCampaignsStore } from './state/campaignsStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 import { applyChatFontSize } from './state/appearanceStore'
+import { useIsMobile } from './lib/useIsMobile'
 
 function App() {
   const activeTab = useUiStore((s) => s.activeTab)
   const setActiveTab = useUiStore((s) => s.setActiveTab)
+  const mobileView = useUiStore((s) => s.mobileView)
   const select = useUiStore((s) => s.select)
+  const isMobile = useIsMobile()
   const editMode = useChatStore((s) => s.planningMode)
   const prevTabRef = useRef<TabId>('home')
 
@@ -92,8 +96,8 @@ function App() {
     setActiveTab(tab)
   }
 
-  const leftPanel = (() => {
-    switch (activeTab) {
+  const panelFor = (tab: TabId) => {
+    switch (tab) {
       case 'home':
         return <HomeView />
       case 'items':
@@ -111,16 +115,23 @@ function App() {
       default:
         return <HomeView />
     }
-  })()
+  }
 
   return (
     <>
-      <AppShell
-        iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
-        left={leftPanel}
-        middle={<ChatScene />}
-        right={<PartyInspector />}
-      />
+      {isMobile ? (
+        <MobileShell
+          main={mobileView === 'chat' ? <ChatScene /> : panelFor(mobileView)}
+          inspector={<PartyInspector />}
+        />
+      ) : (
+        <AppShell
+          iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
+          left={panelFor(activeTab)}
+          middle={<ChatScene />}
+          right={<PartyInspector />}
+        />
+      )}
       {switching && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-bg0/85">
           <span className="font-disp text-[20px] text-gold pt-[3px]">

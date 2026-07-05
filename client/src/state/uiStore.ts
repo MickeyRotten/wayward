@@ -10,9 +10,15 @@ export type SelectionKind =
   | { kind: 'lore'; id: string }
   | null
 
+/** Mobile-only: which full-screen view the MobileShell shows. Desktop ignores it. */
+export type MobileView = 'chat' | TabId
+
 interface UiState {
   activeTab: TabId
   setActiveTab: (tab: TabId) => void
+
+  mobileView: MobileView
+  setMobileView: (view: MobileView) => void
 
   selection: SelectionKind
   everSelected: boolean
@@ -38,6 +44,9 @@ function selectionKey(sel: SelectionKind): string | null {
 export const useUiStore = create<UiState>((set, get) => ({
   activeTab: 'home',
   setActiveTab: (tab) => set({ activeTab: tab }),
+
+  mobileView: 'chat',
+  setMobileView: (view) => set({ mobileView: view }),
 
   selection: null,
   everSelected: false,

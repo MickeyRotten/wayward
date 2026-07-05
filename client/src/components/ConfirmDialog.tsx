@@ -21,7 +21,7 @@ export function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg0/80">
-      <div className="bg-bg1 border border-line2 rounded-lg w-[360px] p-5 space-y-4">
+      <div className="bg-bg1 border border-line2 rounded-lg w-[360px] max-w-[calc(100vw-2rem)] p-5 space-y-4">
         <p className="text-sm font-body text-text leading-relaxed">{message}</p>
         <div className="flex gap-3">
           <button

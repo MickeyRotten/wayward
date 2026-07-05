@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import type { TabId } from '../../state/uiStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
 
-const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
+// Exported so the mobile bottom nav (MobileNav) reuses the same icons/labels.
+export const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   {
     id: 'home',
     label: 'Home',

@@ -11,6 +11,10 @@ export default defineConfig({
     },
   },
   server: {
+    // Allow Tailscale MagicDNS hostnames (e.g. mypc.tailnet.ts.net) through
+    // Vite's host check when launched via Run-Tailscale.bat. Localhost and raw
+    // IPs (incl. Tailscale's 100.x) are always allowed regardless.
+    allowedHosts: ['.ts.net'],
     proxy: {
       '/api': 'http://127.0.0.1:8000',
       '/portraits': 'http://127.0.0.1:8000',

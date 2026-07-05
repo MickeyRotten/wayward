@@ -2,6 +2,20 @@
 # Installs everything required (Node, Python deps, npm deps), starts the
 # backend (FastAPI/uvicorn) and frontend (Vite) each in their own window,
 # then opens the browser at the app URL.
+#
+# -Remote    : also bind the frontend to every network interface (0.0.0.0) so
+#              other devices on your LAN can connect at http://<this-pc-ip>:5173.
+#              Launched via Run-Remote.bat.
+# -Tailscale : same 0.0.0.0 binding, but reachable from anywhere on your
+#              Tailscale tailnet (not just the local LAN). Prints your tailnet
+#              IP + MagicDNS name to connect with. Launched via Run-Tailscale.bat.
+#
+# In every case the backend stays local-only; the browser reaches it through
+# Vite's /api proxy, so nothing extra is exposed and CORS is never involved.
+param(
+    [switch]$Remote,
+    [switch]$Tailscale
+)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -106,8 +120,10 @@ try {
         -ArgumentList '-m', 'uvicorn', 'server.main:app', '--port', "$BACKEND_PORT"
 
     Info "Starting frontend -> $APP_URL"
+    $viteArgs = @('run', 'dev', '--', '--port', "$FRONTEND_PORT", '--strictPort')
+    if ($Remote -or $Tailscale) { $viteArgs += @('--host', '0.0.0.0') }
     $frontend = Start-Process -FilePath 'npm.cmd' -WorkingDirectory $clientDir -NoNewWindow -PassThru `
-        -ArgumentList 'run', 'dev', '--', '--port', "$FRONTEND_PORT", '--strictPort'
+        -ArgumentList $viteArgs
 
     # ---------------------------------------------------------------
     # 6. Wait for the frontend to respond, then open the browser
@@ -127,6 +143,52 @@ try {
 
     Write-Host ""
     Info "Wayward is running at $APP_URL  (backend + frontend log below)"
+    if ($Tailscale) {
+        # Resolve the Tailscale CLI (PATH, or the default Windows install path).
+        $ts = (Get-Command tailscale -ErrorAction SilentlyContinue).Source
+        if (-not $ts) {
+            $tsDefault = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
+            if (Test-Path $tsDefault) { $ts = $tsDefault }
+        }
+        Write-Host ""
+        if (-not $ts) {
+            Write-Host "  Tailscale not found. Install it from https://tailscale.com/download and" -ForegroundColor Yellow
+            Write-Host "  sign in, then re-run. The app is still bound to all interfaces, so any" -ForegroundColor Yellow
+            Write-Host "  tailnet IP will work once Tailscale is up." -ForegroundColor Yellow
+        } else {
+            $tsIp   = (& $ts ip -4 2>$null | Select-Object -First 1)
+            $tsName = $null
+            try {
+                $status = & $ts status --json 2>$null | ConvertFrom-Json
+                if ($status.Self.DNSName) { $tsName = $status.Self.DNSName.TrimEnd('.') }
+            } catch {}
+            if ($tsIp -or $tsName) {
+                Write-Host "  Tailscale access is ON. From any device on your tailnet, open:" -ForegroundColor Green
+                if ($tsName) { Write-Host "      http://${tsName}:$FRONTEND_PORT" -ForegroundColor Cyan }
+                if ($tsIp)   { Write-Host "      http://${tsIp}:$FRONTEND_PORT" -ForegroundColor Cyan }
+                Write-Host "  Both devices must be signed in to the same tailnet." -ForegroundColor DarkGray
+            } else {
+                Write-Host "  Tailscale is installed but not connected. Run 'tailscale up' and sign in," -ForegroundColor Yellow
+                Write-Host "  then reconnect at http://<your-tailscale-ip>:$FRONTEND_PORT." -ForegroundColor Yellow
+            }
+        }
+        Write-Host "  If it won't connect, allow Node.js through Windows Firewall when prompted." -ForegroundColor DarkGray
+    }
+    elseif ($Remote) {
+        # Show every non-loopback IPv4 address so the user knows what to hand out.
+        $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+            Select-Object -ExpandProperty IPAddress)
+        Write-Host ""
+        Write-Host "  Remote access is ON. On another device on the same network, open:" -ForegroundColor Green
+        if ($ips.Count -gt 0) {
+            foreach ($ip in $ips) { Write-Host "      http://${ip}:$FRONTEND_PORT" -ForegroundColor Cyan }
+        } else {
+            Write-Host "      http://<this-pc-ip>:$FRONTEND_PORT   (couldn't auto-detect your IP)" -ForegroundColor Cyan
+        }
+        Write-Host "  If it won't connect, allow Node.js through Windows Firewall (Private networks)" -ForegroundColor DarkGray
+        Write-Host "  when prompted, and make sure the other device is on the same Wi-Fi/LAN." -ForegroundColor DarkGray
+    }
     Info "Close this window to stop both servers."
     Write-Host ""
 

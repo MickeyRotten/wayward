@@ -31,7 +31,7 @@ log = logging.getLogger("wayward.action_suggester")
 _MAX_TOKENS = 700
 _MAX_SUGGESTIONS = 4
 
-GUIDANCE = """You suggest short, concrete actions the player could try next, based on the current scene.
+ACTION_SUGGESTIONS_GUIDANCE = """You suggest short, concrete actions the player could try next, based on the current scene.
 
 Call suggest_actions with 0-4 phrases. Each phrase should:
 - Be written in the FIRST PERSON, starting with "I" — the player speaking as their character ("I push open the heavy door", "I ask Tifa about the ruins").
@@ -204,10 +204,12 @@ async def run_action_suggester(turn_number: int) -> list[str]:
             return []
 
         model_id = settings.action_suggestions_model_id or settings.model_id
+        # Custom guidance (Config → Agents & Tools) overrides the built-in default.
+        guidance = getattr(narrator, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE
         context = await _build_context(session, turn_number)
 
         messages = [
-            {"role": "system", "content": GUIDANCE},
+            {"role": "system", "content": guidance},
             {"role": "user", "content": context},
         ]
 

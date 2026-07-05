@@ -735,3 +735,9 @@ Done: added a persistent in-chat toast layer. New adventure-scoped `ChatEvent` m
 Done: the action-suggester capped the completion at 300 tokens (`_MAX_TOKENS`). When the `suggest_actions` tool-call JSON ran past that it was clipped mid-array — unparseable JSON, so `_parse_args` returned `{}` and the whole set was dropped (suggestions "cut off" or missing entirely). Fix in `server/ai/action_suggester.py`: raised the budget to 700 (a genuine 4-phrase call is far shorter, so no added cost in practice), and replaced `_parse_args` with `_extract_actions`, which parses clean JSON on the happy path and otherwise **salvages** the complete double-quoted phrases from a truncated `actions` array via regex — so a clipped tail still yields every phrase that made it through instead of losing all of them.
 
 ---
+
+[x] Iteration: Add a custom instruction field for the AI Action Suggestions in Config.
+
+Done: the Action-Suggestion agent's guidance is now editable per-campaign. New `NarratorConfig.action_suggestions_instructions` field (blank → the built-in `ACTION_SUGGESTIONS_GUIDANCE`, renamed from `GUIDANCE`), with an additive column migration for existing campaign DBs. Threaded through `GET`/`PUT /narrator` (response returns the effective default when blank, like the other instruction blocks) and the adventure export/import JSON. `run_action_suggester` uses the configured text when set. Client: `narratorStore` carries the field; Config → Agents & Tools → Action Suggestions gains a "Suggestion Instructions" `ExpandableTextarea` under the model picker. Verified: server round-trip (custom text persists; blank falls back to default), client tsc + build clean.
+
+---

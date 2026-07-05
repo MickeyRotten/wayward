@@ -24,7 +24,7 @@ from server.ai.item_detection import (
 )
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai.worldbuilder import apply_proposal, reverse_chronicler_effects, run_worldbuilder
-from server.ai.action_suggester import run_action_suggester
+from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, run_action_suggester
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
@@ -777,6 +777,7 @@ def _narrator_response(n: NarratorConfig) -> NarratorResponse:
         postHistoryInstructions=n.post_history_instructions or "",
         plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
         actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
+        actionSuggestionsInstructions=getattr(n, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE,
     )
 
 
@@ -813,6 +814,8 @@ async def update_narrator(
         n.planner_instructions = data.plannerInstructions
     if data.actionSuggestionsEnabled is not None:
         n.action_suggestions_enabled = data.actionSuggestionsEnabled
+    if data.actionSuggestionsInstructions is not None:
+        n.action_suggestions_instructions = data.actionSuggestionsInstructions
     await session.commit()
     return _narrator_response(n)
 
@@ -1554,6 +1557,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "firstMessage": narrator.first_message if narrator else "",
             "postHistoryInstructions": narrator.post_history_instructions if narrator else "",
             "plannerInstructions": getattr(narrator, "planner_instructions", "") if narrator else "",
+            "actionSuggestionsEnabled": bool(getattr(narrator, "action_suggestions_enabled", False)) if narrator else False,
+            "actionSuggestionsInstructions": getattr(narrator, "action_suggestions_instructions", "") if narrator else "",
         },
         "chatMessages": [
             {
@@ -1664,6 +1669,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         first_message=nar.get("firstMessage", ""),
         post_history_instructions=nar.get("postHistoryInstructions", ""),
         planner_instructions=nar.get("plannerInstructions", ""),
+        action_suggestions_enabled=nar.get("actionSuggestionsEnabled", False),
+        action_suggestions_instructions=nar.get("actionSuggestionsInstructions", ""),
     ))
 
     # Restore chat

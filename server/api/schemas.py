@@ -93,6 +93,7 @@ class NarratorUpdate(BaseModel):
     postHistoryInstructions: str | None = None
     plannerInstructions: str | None = None
     actionSuggestionsEnabled: bool | None = None
+    actionSuggestionsInstructions: str | None = None
 
 
 class NarratorResponse(BaseModel):
@@ -103,6 +104,7 @@ class NarratorResponse(BaseModel):
     postHistoryInstructions: str
     plannerInstructions: str
     actionSuggestionsEnabled: bool
+    actionSuggestionsInstructions: str
 
 
 # --- Scenario ---

@@ -96,6 +96,9 @@ class NarratorConfig(Base):
     # the chat input. Opt-in (off by default) since it's an extra LLM call
     # per turn. Fixed/canned buttons (Look Around, Rest, etc.) are unaffected.
     action_suggestions_enabled: Mapped[bool] = mapped_column(Integer, default=False)
+    # Custom guidance for the Action-Suggestion agent. Blank => the built-in
+    # default (action_suggester.ACTION_SUGGESTIONS_GUIDANCE) is used.
+    action_suggestions_instructions: Mapped[str] = mapped_column(Text, default="")
 
 
 class LorebookEntry(Base):

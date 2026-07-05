@@ -201,6 +201,7 @@ async def _run_scope_migrations() -> None:
     migrations: list[tuple[str, str, str]] = [
         ("adventure.chat_messages", "day", "ALTER TABLE adventure.chat_messages ADD COLUMN day INTEGER"),
         ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
+        ("campaign.narrator_configs", "action_suggestions_instructions", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_instructions TEXT DEFAULT ''"),
         ("campaign.lorebook_entries", "scenario_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN scenario_fields JSON"),
     ]
     async with engine.begin() as conn:

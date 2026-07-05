@@ -54,6 +54,7 @@ export function SettingsPanel() {
   const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
   const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
   const [actionSuggestionsEnabled, setActionSuggestionsEnabled] = useState(narrator.actionSuggestionsEnabled)
+  const [actionSuggestionsInstructions, setActionSuggestionsInstructions] = useState(narrator.actionSuggestionsInstructions)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -82,7 +83,8 @@ export function SettingsPanel() {
     setPostHistory(narrator.postHistoryInstructions)
     setPlannerInstructions(narrator.plannerInstructions)
     setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
-  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled])
+    setActionSuggestionsInstructions(narrator.actionSuggestionsInstructions)
+  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -116,7 +118,7 @@ export function SettingsPanel() {
       summaryThreshold,
       summaryModelId,
     })
-    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled })
+    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions })
     setApiKey('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
@@ -402,6 +404,19 @@ export function SettingsPanel() {
               />
               <span className="text-[10px] text-textdim font-body">
                 Optional. Leave as "Use main model", or pick a cheap/fast tool-capable model.
+              </span>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Suggestion Instructions</span>
+              <ExpandableTextarea
+                label="Action Suggestion Instructions"
+                className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[80px]"
+                rows={4}
+                value={actionSuggestionsInstructions}
+                onChange={setActionSuggestionsInstructions}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Guides how the AI picks suggestions (tone, length, what to favor or avoid). Leave blank to use the built-in default.
               </span>
             </label>
           </SubSection>

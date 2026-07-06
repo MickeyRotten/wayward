@@ -26,6 +26,23 @@ def _retry_delay(res, attempt: int) -> float:
 _model_cache: dict[str, tuple[float, list[dict]]] = {}
 MODEL_CACHE_TTL = 300  # 5 minutes
 
+# One shared client for every OpenRouter call (narrator rounds, Chronicler,
+# suggester, vision, summaries) — connection pooling / TLS keep-alive instead
+# of a fresh handshake per call. Closed via close_client() on app shutdown.
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=180)
+    return _shared_client
+
+
+async def close_client() -> None:
+    if _shared_client is not None and not _shared_client.is_closed:
+        await _shared_client.aclose()
+
 
 async def fetch_models(api_key: str = "") -> list[dict]:
     # OpenRouter's /models endpoint is public; the key is optional. Cache under a
@@ -37,13 +54,12 @@ async def fetch_models(api_key: str = "") -> list[dict]:
         return cached[1]
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    async with httpx.AsyncClient() as client:
-        res = await client.get(
-            f"{OPENROUTER_BASE}/models",
-            headers=headers,
-            timeout=30,
-        )
-        res.raise_for_status()
+    res = await _client().get(
+        f"{OPENROUTER_BASE}/models",
+        headers=headers,
+        timeout=30,
+    )
+    res.raise_for_status()
 
     data = res.json().get("data", [])
     models = [
@@ -83,30 +99,30 @@ async def chat_completion_text(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    async with httpx.AsyncClient() as client:
-        for attempt in range(_MAX_ATTEMPTS):
-            res = await client.post(
-                f"{OPENROUTER_BASE}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-                timeout=120,
-            )
-            if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                await asyncio.sleep(_retry_delay(res, attempt))
-                continue
-            if res.status_code >= 400:
-                try:
-                    msg = _error_text(res.json().get("error", {}))
-                except Exception:
-                    msg = f"{res.status_code} {res.reason_phrase}"
-                raise RuntimeError(f"Model error: {msg}")
-            data = res.json()
-            if data.get("error"):
-                raise RuntimeError(f"Model error: {_error_text(data['error'])}")
-            return ((data.get("choices") or [{}])[0].get("message", {}).get("content") or "").strip()
+    client = _client()
+    for attempt in range(_MAX_ATTEMPTS):
+        res = await client.post(
+            f"{OPENROUTER_BASE}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=120,
+        )
+        if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+            await asyncio.sleep(_retry_delay(res, attempt))
+            continue
+        if res.status_code >= 400:
+            try:
+                msg = _error_text(res.json().get("error", {}))
+            except Exception:
+                msg = f"{res.status_code} {res.reason_phrase}"
+            raise RuntimeError(f"Model error: {msg}")
+        data = res.json()
+        if data.get("error"):
+            raise RuntimeError(f"Model error: {_error_text(data['error'])}")
+        return ((data.get("choices") or [{}])[0].get("message", {}).get("content") or "").strip()
     raise RuntimeError("Model error: retries exhausted")
 
 
@@ -180,46 +196,46 @@ async def chat_completion_stream(
     }
     _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty, repetition_penalty)
 
-    async with httpx.AsyncClient() as client:
-        for attempt in range(_MAX_ATTEMPTS):
-            async with client.stream(
-                "POST",
-                f"{OPENROUTER_BASE}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-                timeout=120,
-            ) as res:
-                # Retry transient failures before any content is streamed.
-                if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                    await res.aread()
-                    await asyncio.sleep(_retry_delay(res, attempt))
+    client = _client()
+    for attempt in range(_MAX_ATTEMPTS):
+        async with client.stream(
+            "POST",
+            f"{OPENROUTER_BASE}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=120,
+        ) as res:
+            # Retry transient failures before any content is streamed.
+            if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+                await res.aread()
+                await asyncio.sleep(_retry_delay(res, attempt))
+                continue
+            await _raise_on_http_error(res)
+            async for line in res.aiter_lines():
+                if not line.startswith("data: "):
                     continue
-                await _raise_on_http_error(res)
-                async for line in res.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[6:]
-                    if payload.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(chunk, dict) and chunk.get("error"):
-                        raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
-                    try:
-                        choice = chunk["choices"][0]
-                    except (KeyError, IndexError):
-                        continue
-                    if choice.get("finish_reason") == "content_filter":
-                        raise RuntimeError("The model's safety filter blocked this response.")
-                    content = (choice.get("delta") or {}).get("content", "")
-                    if content:
-                        yield content
-                return
+                payload = line[6:]
+                if payload.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(chunk, dict) and chunk.get("error"):
+                    raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
+                try:
+                    choice = chunk["choices"][0]
+                except (KeyError, IndexError):
+                    continue
+                if choice.get("finish_reason") == "content_filter":
+                    raise RuntimeError("The model's safety filter blocked this response.")
+                content = (choice.get("delta") or {}).get("content", "")
+                if content:
+                    yield content
+            return
 
 
 async def chat_completion_agent_turn(
@@ -260,63 +276,63 @@ async def chat_completion_agent_turn(
     tool_acc: dict[int, dict] = {}
     finish_reason: str | None = None
 
-    async with httpx.AsyncClient() as client:
-        for attempt in range(_MAX_ATTEMPTS):
-            async with client.stream(
-                "POST",
-                f"{OPENROUTER_BASE}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-                timeout=180,
-            ) as res:
-                # Retry transient failures before any content is streamed.
-                if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                    await res.aread()
-                    await asyncio.sleep(_retry_delay(res, attempt))
+    client = _client()
+    for attempt in range(_MAX_ATTEMPTS):
+        async with client.stream(
+            "POST",
+            f"{OPENROUTER_BASE}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=180,
+        ) as res:
+            # Retry transient failures before any content is streamed.
+            if res.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+                await res.aread()
+                await asyncio.sleep(_retry_delay(res, attempt))
+                continue
+            await _raise_on_http_error(res)
+            async for line in res.aiter_lines():
+                if not line.startswith("data: "):
                     continue
-                await _raise_on_http_error(res)
-                async for line in res.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[6:]
-                    if payload.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(chunk, dict) and chunk.get("error"):
-                        raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
-                    try:
-                        choice = chunk["choices"][0]
-                    except (KeyError, IndexError):
-                        continue
+                payload = line[6:]
+                if payload.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(chunk, dict) and chunk.get("error"):
+                    raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
+                try:
+                    choice = chunk["choices"][0]
+                except (KeyError, IndexError):
+                    continue
 
-                    if choice.get("finish_reason"):
-                        finish_reason = choice["finish_reason"]
-                        if finish_reason == "content_filter":
-                            raise RuntimeError("The model's safety filter blocked this response.")
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+                    if finish_reason == "content_filter":
+                        raise RuntimeError("The model's safety filter blocked this response.")
 
-                    delta = choice.get("delta", {})
-                    content = delta.get("content")
-                    if content:
-                        content_parts.append(content)
-                        yield {"type": "content", "text": content}
+                delta = choice.get("delta", {})
+                content = delta.get("content")
+                if content:
+                    content_parts.append(content)
+                    yield {"type": "content", "text": content}
 
-                    for tc in delta.get("tool_calls") or []:
-                        idx = tc.get("index", 0)
-                        acc = tool_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
-                        if tc.get("id"):
-                            acc["id"] = tc["id"]
-                        fn = tc.get("function") or {}
-                        if fn.get("name"):
-                            acc["name"] = fn["name"]
-                        if fn.get("arguments"):
-                            acc["arguments"] += fn["arguments"]
-                break  # streamed successfully; stop retrying
+                for tc in delta.get("tool_calls") or []:
+                    idx = tc.get("index", 0)
+                    acc = tool_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                    if tc.get("id"):
+                        acc["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        acc["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        acc["arguments"] += fn["arguments"]
+            break  # streamed successfully; stop retrying
 
     tool_calls = [tool_acc[i] for i in sorted(tool_acc)]
     yield {

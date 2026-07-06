@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import datetime
 import io
@@ -634,12 +635,19 @@ async def list_characters():
     return [_character_meta(c) for c in char_files.list_characters()]
 
 
+# Portrait/chat-image URLs are stable while the underlying file can be
+# replaced, so no `immutable` here — a short max-age plus the automatic
+# ETag/Last-Modified revalidation keeps re-renders off the network without
+# pinning stale art.
+_MEDIA_CACHE = {"Cache-Control": "private, max-age=300"}
+
+
 @router.get("/characters/{cid}/portrait/{which}")
 async def get_character_portrait(cid: str, which: str):
     path = char_files.full_path(cid) if which == "full" else char_files.crop_path(cid)
     if path is None:
         raise HTTPException(404, "No portrait")
-    return FileResponse(str(path))
+    return FileResponse(str(path), headers=_MEDIA_CACHE)
 
 
 @router.post("/characters/{cid}/portrait")
@@ -1593,7 +1601,7 @@ async def get_chat_image(filename: str, session: AsyncSession = Depends(get_sess
     path = directory / Path(filename).name  # basename only — no traversal
     if not path.is_file():
         raise HTTPException(404, "Image not found")
-    return FileResponse(path)
+    return FileResponse(path, headers=_MEDIA_CACHE)
 
 
 # ── Chat Messages ─────────────────────────────────────────────────
@@ -2062,8 +2070,11 @@ import pathlib as _pathlib
 _PROMPT_LOG_PATH = _pathlib.Path(__file__).resolve().parent.parent.parent / ".prompt_log.json"
 
 
-def _save_prompt_log(messages: list[dict]):
-    _PROMPT_LOG_PATH.write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
+async def _save_prompt_log(messages: list[dict]):
+    # Serialization + disk write of the full prompt (can be ~MB) — keep it off
+    # the event loop so it never stalls the SSE stream.
+    payload = json.dumps(messages, ensure_ascii=False)
+    await asyncio.to_thread(_PROMPT_LOG_PATH.write_text, payload, encoding="utf-8")
 
 
 @router.get("/chat/prompt-log")
@@ -2112,6 +2123,12 @@ async def _detect_player_deltas(
     return detect_item_use(player_message, inventory)
 
 
+# Newest messages loaded per turn. The prompt is token-trimmed far below this
+# and older history lives in the StorySummary, so nothing above the window can
+# ever reach the model — loading it would be pure waste on long adventures.
+_HISTORY_WINDOW = 500
+
+
 async def _load_game_context(session: AsyncSession):
     """Load all game state needed for a chat turn."""
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
@@ -2128,14 +2145,16 @@ async def _load_game_context(session: AsyncSession):
     # Only active (in-party) members participate in narration and spotlight.
     party = [m for m in await party_ops.load_party(session) if m.in_party]
     # Narration only ever sees the 'narrator' thread — Planning-mode messages
-    # live in their own thread and never enter narration context.
-    all_messages = list(
-        (await session.execute(
-            select(ChatMessage)
-            .where(func.coalesce(ChatMessage.mode, "narrator") != "planner")
-            .order_by(ChatMessage.id)
-        )).scalars().all()
-    )
+    # live in their own thread and never enter narration context. Bounded to the
+    # newest window (ascending after reversal); the newest turn is always inside
+    # it, so max()/variant lookups on recent turns behave exactly as before.
+    recent = (await session.execute(
+        select(ChatMessage)
+        .where(func.coalesce(ChatMessage.mode, "narrator") != "planner")
+        .order_by(ChatMessage.id.desc())
+        .limit(_HISTORY_WINDOW)
+    )).scalars().all()
+    all_messages = list(reversed(recent))
     summary = (await session.execute(select(StorySummary))).scalars().first()
     if not summary:
         summary = StorySummary(content="", summary_up_to_turn=0)
@@ -2377,11 +2396,17 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     """Generate a new variant for a specific turn. Appends to existing variants."""
     settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
 
-    # Find the user message for this turn
-    user_msg = next(
-        (m for m in all_messages if m.turn_number == turn and m.role == "user"),
-        None,
-    )
+    # Find the user message for this turn — targeted query (not the bounded
+    # window) so swiping a turn older than the window still resolves.
+    user_msg = (await session.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.turn_number == turn,
+            ChatMessage.role == "user",
+            func.coalesce(ChatMessage.mode, "narrator") != "planner",
+        )
+        .order_by(ChatMessage.id)
+    )).scalars().first()
     if not user_msg:
         raise HTTPException(400, f"No user message found for turn {turn}")
 
@@ -2392,9 +2417,14 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     # recent assistant variant carries the combined deltas reflected in state),
     # then re-run detection on the same player message and apply fresh. This
     # keeps inventory idempotent across repeated swipes.
-    turn_variants = [
-        m for m in all_messages if m.turn_number == turn and m.role == "assistant"
-    ]
+    turn_variants = list((await session.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.turn_number == turn,
+            ChatMessage.role == "assistant",
+            func.coalesce(ChatMessage.mode, "narrator") != "planner",
+        )
+    )).scalars().all())
     if turn_variants:
         latest_variant = max(turn_variants, key=lambda m: m.variant)
         await _reverse_message_effects(latest_variant, session)
@@ -2425,9 +2455,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     )
 
     # Count existing variants for this turn to determine next variant number
-    variant_count = sum(
-        1 for m in all_messages if m.turn_number == turn and m.role == "assistant"
-    )
+    variant_count = len(turn_variants)
 
     if agentic:
         return _stream_agent_response(
@@ -2820,7 +2848,6 @@ def _stream_llm_response(
     player_deltas: list[dict] | None = None,
 ):
     player_deltas = player_deltas or []
-    _save_prompt_log(messages)
 
     context_tokens = estimate_prompt_tokens(messages)
     api_key = settings.api_key
@@ -2835,22 +2862,24 @@ def _stream_llm_response(
     max_tokens = settings.max_tokens_response
     max_context = settings.max_context_tokens
 
-    # Terminal log: full request — model, all sampling settings, and the full
-    # assembled prompt — for troubleshooting.
+    # Terminal log: model + sampling settings at INFO; the full assembled prompt
+    # (potentially hundreds of KB) only when DEBUG logging is on.
     log.info(
         "LLM REQUEST turn=%s variant=%s | model=%s | temp=%s top_p=%s min_p=%s top_k=%s "
-        "freq=%s pres=%s rep=%s | max_tokens=%s max_context=%s | ~%s prompt tokens",
+        "freq=%s pres=%s rep=%s | max_tokens=%s max_context=%s | ~%s prompt tokens | %d messages",
         current_turn, variant, model_id, temperature, top_p, min_p, top_k,
         frequency_penalty, presence_penalty, repetition_penalty,
-        max_tokens, max_context, context_tokens,
+        max_tokens, max_context, context_tokens, len(messages),
     )
-    log.info(
-        "LLM PROMPT (%d messages):\n%s",
-        len(messages),
-        "\n".join(f"  ── [{m['role']}] ──\n{m['content']}" for m in messages),
-    )
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug(
+            "LLM PROMPT (%d messages):\n%s",
+            len(messages),
+            "\n".join(f"  ── [{m['role']}] ──\n{m['content']}" for m in messages),
+        )
 
     async def stream():
+        await _save_prompt_log(messages)
         if did_summarize:
             yield f"data: {json.dumps({'type': 'summarized'})}\n\n"
 
@@ -2878,8 +2907,9 @@ def _stream_llm_response(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             return
 
-        # Terminal log: full raw output from the LLM.
-        log.info("LLM RESPONSE turn=%s variant=%s (%d chars):\n%s", current_turn, variant, len(full_text), full_text)
+        # Terminal log: size at INFO, full raw output only at DEBUG.
+        log.info("LLM RESPONSE turn=%s variant=%s (%d chars)", current_turn, variant, len(full_text))
+        log.debug("LLM RESPONSE text:\n%s", full_text)
 
         # Parse and strip the action block before saving
         clean_text, actions = parse_action_block(full_text)
@@ -3009,13 +3039,15 @@ def _stream_agent_response(
         current_turn, variant, settings.model_id, settings.temperature,
         settings.max_tokens_response, max_context, settings.max_tool_rounds, context_tokens,
     )
-    log.info(
-        "LLM AGENT PROMPT (%d messages):\n%s",
-        len(messages),
-        "\n".join(f"  ── [{m['role']}] ──\n{m.get('content', '')}" for m in messages),
-    )
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug(
+            "LLM AGENT PROMPT (%d messages):\n%s",
+            len(messages),
+            "\n".join(f"  ── [{m['role']}] ──\n{m.get('content', '')}" for m in messages),
+        )
 
     async def stream():
+        await _save_prompt_log(messages)
         yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
 
         final_content = ""

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
 import { useSettingsStore } from '../../state/settingsStore'
@@ -22,10 +22,9 @@ interface PromptLogMessage {
 export function ChatScene() {
   const messages = useChatStore((s) => s.messages)
   const isLoading = useChatStore((s) => s.isLoading)
-  const isSummarizing = useChatStore((s) => s.isSummarizing)
-  const streamingContent = useChatStore((s) => s.streamingContent)
-  const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
-  const toolStatus = useChatStore((s) => s.toolStatus)
+  // NOTE: streamingContent/thinkingStartedAt/toolStatus/isSummarizing are
+  // deliberately NOT subscribed here — only <StreamingWindow/> reads them, so
+  // per-chunk SSE updates re-render that one small node, not the whole scene.
   const toolFailures = useChatStore((s) => s.toolFailures)
   const clearToolFailures = useChatStore((s) => s.clearToolFailures)
   const error = useChatStore((s) => s.error)
@@ -114,12 +113,15 @@ export function ChatScene() {
   }
 
   // Sticky auto-scroll: follow new content only when already near the bottom, so
-  // scrolling up to read isn't yanked back down mid-turn.
+  // scrolling up to read isn't yanked back down mid-turn. (Streaming chunks are
+  // followed by StreamingWindow's own effect.) rAF batches the scrollHeight
+  // read/write after paint instead of forcing a sync reflow.
   useEffect(() => {
-    if (atBottom && listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight
-    }
-  }, [messages, streamingContent, atBottom])
+    if (!atBottom || !listRef.current) return
+    const el = listRef.current
+    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    return () => cancelAnimationFrame(raf)
+  }, [messages, atBottom])
 
   // Auto-grow the input: single row by default, expand with wrapped lines up
   // to a cap, then scroll.
@@ -165,15 +167,23 @@ export function ChatScene() {
   }
 
   // Restrict to the active thread: narration vs the Planning conversation.
+  // All list derivations are memoized so their identities are stable across
+  // unrelated re-renders — that's what lets React.memo(MessageBubble) hold.
   const threadMode = planningMode ? 'planner' : 'narrator'
-  const threadMessages = messages.filter((m) => (m.mode ?? 'narrator') === threadMode)
+  const threadMessages = useMemo(
+    () => messages.filter((m) => (m.mode ?? 'narrator') === threadMode),
+    [messages, threadMode],
+  )
 
   // Build the visible message list — one assistant message per turn (the active variant)
-  const visibleMessages = buildVisibleMessages(threadMessages, activeVariants)
+  const visibleMessages = useMemo(
+    () => buildVisibleMessages(threadMessages, activeVariants),
+    [threadMessages, activeVariants],
+  )
   const lastTurn = Math.max(0, ...threadMessages.map((m) => m.turnNumber))
 
   // Get variant info for each turn
-  const variantCounts = getVariantCounts(threadMessages)
+  const variantCounts = useMemo(() => getVariantCounts(threadMessages), [threadMessages])
 
   // Persistent in-chat toasts (Chronicler notices + player item actions), only
   // in the story thread. Group by their anchor turn so each renders right after
@@ -220,30 +230,36 @@ export function ChatScene() {
       )
 
   // Build a lookup for party member info by id
-  const partyMemberMap = new Map(
-    partyMembers.map((pm) => [pm.id, pm])
+  const partyMemberMap = useMemo(
+    () => new Map(partyMembers.map((pm) => [pm.id, pm])),
+    [partyMembers],
   )
 
   // Name → in-party member resolver, for parsing party dialogue out of narration.
-  const memberResolver = buildMemberResolver(partyMembers)
+  const memberResolver = useMemo(() => buildMemberResolver(partyMembers), [partyMembers])
 
   // Per-message cinematic scene header: shown above a narrator message when its
   // declared location/time differs from the last one established (a scene change).
-  const sceneHeaders = computeSceneHeaders(visibleMessages)
+  const sceneHeaders = useMemo(() => computeSceneHeaders(visibleMessages), [visibleMessages])
 
   // PC info
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
   const pcPortrait = playerCharacter?.portraitCrop || ''
 
-  // Item and character names to highlight inline in the narration.
-  const chipEntities: ChipEntity[] = [
-    ...catalog.map((item) => ({ name: item.name, kind: 'item' as const, id: item.id })),
-    ...partyMembers.map((m) => ({ name: m.basicInfo?.name || '', kind: 'member' as const, id: m.id })),
-    ...(playerCharacter ? [{ name: pcName, kind: 'member' as const, id: playerCharacter.id }] : []),
-  ].filter((e) => e.name.trim() && e.name !== 'Player')
+  // Item and character names to highlight inline in the narration. Stable
+  // identity also keys applyEntityChips' compiled-regex cache.
+  const chipEntities: ChipEntity[] = useMemo(
+    () =>
+      [
+        ...catalog.map((item) => ({ name: item.name, kind: 'item' as const, id: item.id })),
+        ...partyMembers.map((m) => ({ name: m.basicInfo?.name || '', kind: 'member' as const, id: m.id })),
+        ...(playerCharacter ? [{ name: pcName, kind: 'member' as const, id: playerCharacter.id }] : []),
+      ].filter((e) => e.name.trim() && e.name !== 'Player'),
+    [catalog, partyMembers, playerCharacter, pcName],
+  )
 
   // Item id -> catalog entry, for resolving names in inventory/equipment notices
-  const catalogMap = new Map(catalog.map((item) => [item.id, item]))
+  const catalogMap = useMemo(() => new Map(catalog.map((item) => [item.id, item])), [catalog])
 
   // Resolve a character id to a display name (player character or party member)
   const resolveCharName = useCallback(
@@ -472,38 +488,15 @@ export function ChatScene() {
           </div>
         )}
 
-        {/* Streaming response — routed through the segmenter so dialogue boxes,
-            dividers, etc. form live as text streams. */}
-        {isLoading && streamingContent && (
-          <div className="max-w-[85%] max-lg:max-w-full mr-auto px-4 py-3">
-            <SegmentedNarration
-              segments={planningMode ? [{ type: 'narration', text: streamingContent }] : parseSegments(streamingContent, memberResolver)}
-              chipEntities={chipEntities}
-            />
-          </div>
-        )}
-
-        {/* Generating indicator — narrator/planner avatar with animated dots */}
-        {isLoading && !streamingContent && (
-          <div className="flex items-start gap-3 mr-auto px-1 py-3">
-            <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
-              <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
-            </div>
-            <div className="pt-2">
-              {toolStatus ? (
-                <span className="font-ui text-[10px] text-gold/80 tracking-wider">
-                  {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
-                </span>
-              ) : planningMode ? (
-                <span className="font-ui text-[10px] text-textdim tracking-wider">
-                  THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
-                </span>
-              ) : (
-                <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
-              )}
-            </div>
-          </div>
-        )}
+        {/* Live streaming text + thinking indicator — its own component so
+            per-chunk store updates re-render only this node. */}
+        <StreamingWindow
+          planningMode={planningMode}
+          memberResolver={memberResolver}
+          chipEntities={chipEntities}
+          listRef={listRef}
+          atBottom={atBottom}
+        />
 
         {/* Chronicler (world-building) indicator — runs after the narration */}
         {!isLoading && worldbuildRunning && (
@@ -1003,6 +996,8 @@ function Portrait({
         <img
           src={src.startsWith('/') || src.startsWith('http') ? src : `/portraits/${src}`}
           alt={name}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover object-top"
         />
       ) : (
@@ -1016,7 +1011,22 @@ function Portrait({
 
 // ── Message Bubble with speaker differentiation ────────────────────
 
-function MessageBubble({
+// Equality for React.memo: shallow-compare everything except the callback
+// props — they're fresh closures every parent render, but everything they
+// capture that affects output (variant counts, busy, ids) arrives via the
+// other, compared props. This is what stops streaming chunks / unrelated store
+// updates from re-rendering (and re-parsing) the whole message history.
+function bubblePropsEqual(prev: Record<string, unknown>, next: Record<string, unknown>): boolean {
+  for (const k of Object.keys(next)) {
+    const a = prev[k]
+    const b = next[k]
+    if (typeof a === 'function' && typeof b === 'function') continue
+    if (a !== b) return false
+  }
+  return true
+}
+
+const MessageBubble = memo(function MessageBubble({
   message,
   variantCount,
   activeVariant,
@@ -1065,6 +1075,17 @@ function MessageBubble({
   const speakingThis = useTtsStore((s) => s.playing?.messageId === message.id)
   const speakMessage = useTtsStore((s) => s.speakMessage)
   const stopSpeaking = useTtsStore((s) => s.stop)
+
+  // Editor/Planner prose is rendered plainly; only narration gets JRPG segments.
+  // Parsed once per (content, resolver) — not on every render of the list.
+  const isPlanner = message.mode === 'planner'
+  const segments = useMemo<Segment[]>(
+    () =>
+      isPlanner
+        ? [{ type: 'narration', text: message.content }]
+        : parseSegments(message.content, memberResolver),
+    [isPlanner, message.content, memberResolver],
+  )
 
   useEffect(() => {
     setEditText(message.content)
@@ -1260,11 +1281,6 @@ function MessageBubble({
   }
 
   // ── Narrator / Planner message (default for assistant) ──
-  const isPlanner = message.mode === 'planner'
-  // Editor/Planner prose is rendered plainly; only narration gets JRPG segments.
-  const segments: Segment[] = isPlanner
-    ? [{ type: 'narration', text: message.content }]
-    : parseSegments(message.content, memberResolver)
   return (
     <div className="max-w-[85%] max-lg:max-w-full mr-auto group">
       {isPlanner && (
@@ -1321,7 +1337,7 @@ function MessageBubble({
       />
     </div>
   )
-}
+}, bubblePropsEqual)
 
 // ── Persistent in-chat toasts (Chronicler notices + player item actions) ────
 
@@ -1717,6 +1733,81 @@ function ThinkingIndicator({ startedAt, isSummarizing }: { startedAt: number | n
   )
 }
 
+// Sole subscriber to the per-chunk streaming state (streamingContent, tool
+// status, thinking timer). SSE chunks arrive many times per second; keeping
+// those subscriptions out of ChatScene means each chunk re-renders only this
+// node instead of the entire message history.
+function StreamingWindow({
+  planningMode,
+  memberResolver,
+  chipEntities,
+  listRef,
+  atBottom,
+}: {
+  planningMode: boolean
+  memberResolver: Map<string, MemberLite>
+  chipEntities: ChipEntity[]
+  listRef: React.RefObject<HTMLDivElement | null>
+  atBottom: boolean
+}) {
+  const isLoading = useChatStore((s) => s.isLoading)
+  const streamingContent = useChatStore((s) => s.streamingContent)
+  const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
+  const toolStatus = useChatStore((s) => s.toolStatus)
+  const isSummarizing = useChatStore((s) => s.isSummarizing)
+
+  // Follow the stream while the user is pinned to the bottom (rAF-batched so
+  // we never force a sync reflow per chunk).
+  useEffect(() => {
+    if (!atBottom || !streamingContent || !listRef.current) return
+    const el = listRef.current
+    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    return () => cancelAnimationFrame(raf)
+  }, [streamingContent, atBottom, listRef])
+
+  const segments = useMemo<Segment[]>(
+    () =>
+      planningMode
+        ? [{ type: 'narration', text: streamingContent }]
+        : parseSegments(streamingContent, memberResolver),
+    [planningMode, streamingContent, memberResolver],
+  )
+
+  if (!isLoading) return null
+
+  // Streaming response — routed through the segmenter so dialogue boxes,
+  // dividers, etc. form live as text streams.
+  if (streamingContent) {
+    return (
+      <div className="max-w-[85%] max-lg:max-w-full mr-auto px-4 py-3">
+        <SegmentedNarration segments={segments} chipEntities={chipEntities} />
+      </div>
+    )
+  }
+
+  // Generating indicator — narrator/planner avatar with animated dots.
+  return (
+    <div className="flex items-start gap-3 mr-auto px-1 py-3">
+      <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
+        <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
+      </div>
+      <div className="pt-2">
+        {toolStatus ? (
+          <span className="font-ui text-[10px] text-gold/80 tracking-wider">
+            {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+          </span>
+        ) : planningMode ? (
+          <span className="font-ui text-[10px] text-textdim tracking-wider">
+            THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+          </span>
+        ) : (
+          <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; onClose: () => void }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -1764,15 +1855,32 @@ function formatNarration(text: string): string {
 
 export type ChipEntity = { name: string; kind: 'item' | 'member'; id: string }
 
+// The compiled name-matcher is cached per entity ARRAY IDENTITY — chipEntities
+// is useMemo'd in ChatScene, so the (expensive) escape+compile happens once per
+// catalog/party change instead of once per segment per message per render.
+const _chipMatcherCache = new WeakMap<ChipEntity[], { byName: Map<string, ChipEntity>; re: RegExp | null }>()
+
+function _chipMatcher(entities: ChipEntity[]) {
+  let m = _chipMatcherCache.get(entities)
+  if (m) return m
+  const byName = new Map(entities.filter((e) => e.name.trim()).map((e) => [e.name.toLowerCase(), e]))
+  let re: RegExp | null = null
+  if (byName.size > 0) {
+    // Longer names first so multi-word names win over substrings.
+    const names = [...byName.values()].map((e) => e.name).sort((a, b) => b.length - a.length)
+    const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    re = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  }
+  m = { byName, re }
+  _chipMatcherCache.set(entities, m)
+  return m
+}
+
 // Highlight important item and character names inline. Non-interactive — just a
 // subtle gold emphasis so they stand out in the narration (no click-to-inspect).
 function applyEntityChips(html: string, entities: ChipEntity[]): string {
-  const byName = new Map(entities.filter((e) => e.name.trim()).map((e) => [e.name.toLowerCase(), e]))
-  if (byName.size === 0) return html
-  // Longer names first so multi-word names win over substrings.
-  const names = [...byName.values()].map((e) => e.name).sort((a, b) => b.length - a.length)
-  const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const re = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  const { byName, re } = _chipMatcher(entities)
+  if (!re) return html
   return html.replace(/(<[^>]*>)|([^<]+)/g, (_, tag, text) => {
     if (tag) return tag
     return text.replace(re, (m: string) => {

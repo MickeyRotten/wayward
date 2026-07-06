@@ -7,7 +7,7 @@ import { useWorldbuildStore } from '../../state/worldbuildStore'
 
 // Primary slots on the bar; everything else lives in the More sheet.
 const BAR_TABS: TabId[] = ['home', 'items', 'lore']
-const MORE_TABS: TabId[] = ['tasks', 'suggestions', 'saves', 'config']
+const MORE_TABS: TabId[] = ['tasks', 'journal', 'suggestions', 'saves', 'config']
 
 const CHAT_ICON = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

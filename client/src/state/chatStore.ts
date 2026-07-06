@@ -6,6 +6,7 @@ import { usePartyStore } from './partyStore'
 import { useWorldbuildStore } from './worldbuildStore'
 import { useActionSuggestionsStore } from './actionSuggestionsStore'
 import { useTtsStore } from './ttsStore'
+import { useJournalStore } from './journalStore'
 import { useLoreStore } from './loreStore'
 import { useTasksStore } from './tasksStore'
 import { useNarratorStore } from './narratorStore'
@@ -414,6 +415,8 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
         if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
         if (latestTurn > 0) void useActionSuggestionsStore.getState().runForTurn(latestTurn)
         if (latestTurn > 0) void useTtsStore.getState().runForTurn(latestTurn)
+        // The turn may have advanced the auto-summary — keep the Journal fresh.
+        void useJournalStore.getState().fetch()
       }
     }
   } catch (e) {

@@ -877,6 +877,20 @@ async def update_narrator(
     return _narrator_response(n, await _narrator_has_voice(session))
 
 
+# ── Journal ("The Story So Far") ──────────────────────────────────
+
+@router.get("/journal")
+async def get_journal(session: AsyncSession = Depends(get_session)):
+    """Read-only view of the auto-maintained story summary. The narrator (or
+    the threshold summarizer) keeps StorySummary current; this just surfaces
+    it to the player as a recap."""
+    s = (await session.execute(select(StorySummary))).scalars().first()
+    return {
+        "summary": (s.content or "") if s else "",
+        "upToTurn": (s.summary_up_to_turn or 0) if s else 0,
+    }
+
+
 # ── Narrator voice sample (per-campaign TTS cloning reference) ─────
 
 @router.get("/narrator/voice")

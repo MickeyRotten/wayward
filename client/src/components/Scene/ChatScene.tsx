@@ -7,6 +7,7 @@ import { useItemsStore } from '../../state/itemsStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useActionSuggestionsStore } from '../../state/actionSuggestionsStore'
 import { useTtsStore } from '../../state/ttsStore'
+import { useJournalStore } from '../../state/journalStore'
 import { ItemCard } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
@@ -56,6 +57,9 @@ export function ChatScene() {
   const dismissPendingDeletes = useChatStore((s) => s.dismissPendingDeletes)
   const failedInput = useChatStore((s) => s.failedInput)
   const clearFailedInput = useChatStore((s) => s.clearFailedInput)
+  const recapSummary = useJournalStore((s) => s.summary)
+  const recapDismissed = useJournalStore((s) => s.bannerDismissed)
+  const dismissRecap = useJournalStore((s) => s.dismissBanner)
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
@@ -415,6 +419,27 @@ export function ChatScene() {
           onScroll={handleListScroll}
           className="flex-1 overflow-y-auto p-4 max-lg:px-3 space-y-4"
         >
+        {/* "Previously on…" — the story-so-far recap, once per adventure load */}
+        {!planningMode && recapSummary && !recapDismissed && visibleMessages.length > 0 && (
+          <div className="max-w-[85%] max-lg:max-w-full mr-auto border-l-2 border-gold/50 bg-bg2/60 rounded-r-md px-4 py-3">
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <span className="font-disp text-[12px] tracking-[0.14em] text-gold uppercase pt-[2px]">
+                Previously on your adventure
+              </span>
+              <button
+                type="button"
+                className="font-ui text-[9px] text-textdim hover:text-text"
+                onClick={dismissRecap}
+              >
+                DISMISS
+              </button>
+            </div>
+            <p className="font-body text-sm text-text2 leading-relaxed italic whitespace-pre-wrap line-clamp-6">
+              {recapSummary}
+            </p>
+          </div>
+        )}
+
         {/* Configured opening narration (drop-capped, not editable in chat) */}
         {hasFirstMessage && (
           <div className="max-w-[85%] max-lg:max-w-full mr-auto">

@@ -4,6 +4,7 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitBlock } from '../PortraitBlock'
+import { VoiceBlock } from '../VoiceBlock'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { itemFitsSlot } from '../../lib/equipSlots'
 import { ItemCard } from '../ItemCard'
@@ -86,6 +87,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
       <div className="space-y-6 p-6">
         {/* Portrait — fixed 3:4, image fills; Edit Portrait opens the crop modal. */}
         <PortraitBlock characterId={pc!.id} fullUrl={pc?.portraitFull} cropUrl={pc?.portraitCrop} onUpdated={() => void fetchAll()} />
+        <VoiceBlock characterId={pc!.id} hasVoice={pc?.hasVoice} onUpdated={() => void fetchAll()} />
 
         {/* Basic Info */}
         <Section title="Basic Info">
@@ -126,6 +128,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
     <div className="space-y-6 p-6">
       {/* Portrait */}
       <PortraitBlock characterId={pc!.id} fullUrl={pc?.portraitFull} cropUrl={pc?.portraitCrop} onUpdated={() => void fetchAll()} />
+      <VoiceBlock characterId={pc!.id} hasVoice={pc?.hasVoice} onUpdated={() => void fetchAll()} />
 
       {/* Basic Info */}
       <Section title="Basic Info">

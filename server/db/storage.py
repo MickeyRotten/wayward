@@ -48,6 +48,34 @@ def campaign_json_path(cid: str) -> Path:
     return campaign_dir(cid) / "campaign.json"
 
 
+def narrator_voice_path(cid: str) -> Path | None:
+    """The campaign's narrator TTS voice sample (any extension), or None."""
+    d = campaign_dir(cid)
+    if not d.exists():
+        return None
+    for p in sorted(d.glob("narrator-voice.*")):
+        if p.is_file():
+            return p
+    return None
+
+
+def set_narrator_voice(cid: str, data: bytes, ext: str) -> None:
+    d = campaign_dir(cid)
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob("narrator-voice.*"):
+        old.unlink(missing_ok=True)
+    ext = ext if ext.startswith(".") else f".{ext}"
+    (d / f"narrator-voice{ext or '.wav'}").write_bytes(data)
+
+
+def clear_narrator_voice(cid: str) -> None:
+    d = campaign_dir(cid)
+    if not d.exists():
+        return
+    for old in d.glob("narrator-voice.*"):
+        old.unlink(missing_ok=True)
+
+
 def adventure_dir(cid: str, aid: str) -> Path:
     return campaign_dir(cid) / "adventures" / aid
 

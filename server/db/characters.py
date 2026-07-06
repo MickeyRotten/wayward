@@ -4,6 +4,7 @@ Each character is a folder under ``DATA_DIR/characters/<id>/`` holding:
   - ``character.json`` : identity (type, basicInfo, fieldSkill)
   - ``full.<ext>``     : the original uploaded art (shown in the Inspector)
   - ``crop.jpg``       : the framed 3:4 crop (chat dialogue cards + small avatars)
+  - ``voice.<ext>``    : optional ~10s speech sample used for TTS voice cloning
 
 Identity lives on disk (not the DB) so a character is reusable across
 adventures/campaigns and shareable. Per-adventure state (equipment, in_party,
@@ -25,6 +26,7 @@ from server.db import database as db
 SCHEMA_VERSION = 1
 _CROP_NAME = "crop.jpg"
 _FULL_STEM = "full"
+_VOICE_STEM = "voice"
 _JSON_NAME = "character.json"
 
 # Identity fields carried by a character.json's basicInfo (portrait is NOT one —
@@ -93,6 +95,17 @@ def full_path(cid: str) -> Path | None:
 def crop_path(cid: str) -> Path | None:
     p = char_dir(cid) / _CROP_NAME
     return p if p.exists() else None
+
+
+def voice_path(cid: str) -> Path | None:
+    """The character's TTS voice sample (any extension), or None."""
+    d = char_dir(cid)
+    if not d.exists():
+        return None
+    for p in sorted(d.glob(f"{_VOICE_STEM}.*")):
+        if p.is_file():
+            return p
+    return None
 
 
 def exists(cid: str) -> bool:
@@ -180,7 +193,8 @@ def list_characters() -> list[dict]:
         data = read_character(child.name)
         if data:
             data = {**data, "hasFull": full_path(child.name) is not None,
-                    "hasCrop": crop_path(child.name) is not None}
+                    "hasCrop": crop_path(child.name) is not None,
+                    "hasVoice": voice_path(child.name) is not None}
             out.append(data)
     out.sort(key=lambda d: d.get("createdAt", ""))
     return out
@@ -210,6 +224,9 @@ def duplicate_character(cid: str) -> dict | None:
     cp = crop_path(cid)
     if cp:
         set_crop(new["id"], cp.read_bytes())
+    vp = voice_path(cid)
+    if vp:
+        set_voice(new["id"], vp.read_bytes(), vp.suffix)
     return new
 
 
@@ -237,6 +254,25 @@ def clear_portrait(cid: str) -> None:
     for old in d.glob(f"{_FULL_STEM}.*"):
         old.unlink(missing_ok=True)
     (d / _CROP_NAME).unlink(missing_ok=True)
+
+
+# ── Voice sample (only ever one; replacing deletes the old) ───────
+
+def set_voice(cid: str, data: bytes, ext: str) -> None:
+    d = char_dir(cid)
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob(f"{_VOICE_STEM}.*"):
+        old.unlink(missing_ok=True)
+    ext = ext if ext.startswith(".") else f".{ext}"
+    (d / f"{_VOICE_STEM}{ext or '.wav'}").write_bytes(data)
+
+
+def clear_voice(cid: str) -> None:
+    d = char_dir(cid)
+    if not d.exists():
+        return
+    for old in d.glob(f"{_VOICE_STEM}.*"):
+        old.unlink(missing_ok=True)
 
 
 # ── Portability (zip a folder; import as a new character) ─────────
@@ -275,4 +311,6 @@ def import_zip(raw: bytes) -> dict | None:
             set_full(new["id"], z.read(name), Path(base).suffix)
         elif base == _CROP_NAME:
             set_crop(new["id"], z.read(name))
+        elif base.startswith(f"{_VOICE_STEM}."):
+            set_voice(new["id"], z.read(name), Path(base).suffix)
     return new

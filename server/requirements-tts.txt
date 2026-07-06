@@ -1,0 +1,5 @@
+# Optional text-to-speech support (Chatterbox voice cloning).
+# Install on top of requirements.txt:  pip install -r server/requirements-tts.txt
+# Pulls in torch/torchaudio — a multi-GB download. CPU-only installs work but
+# synthesis is slow; a CUDA GPU is recommended.
+chatterbox-tts>=0.1.2

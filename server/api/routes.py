@@ -24,6 +24,7 @@ from server.ai.item_detection import (
     reverse_inventory_deltas,
 )
 from server.ai.narrator_agent import run_narrator_agent
+from server.ai import tts
 from server.ai.worldbuilder import apply_proposal, reverse_chronicler_effects, run_worldbuilder
 from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, run_action_suggester
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
@@ -76,6 +77,9 @@ from server.api.schemas import (
     TaskUpdate,
     ScenarioResponse,
     ScenarioUpdate,
+    TtsSpeakRequest,
+    TtsSpeakResponse,
+    TtsStatusResponse,
     WorldbuildProposalSchema,
     WorldbuildRunRequest,
 )
@@ -117,6 +121,7 @@ def _pc_to_response(pc) -> PlayerCharacterResponse:
         equipment=pc.equipment,
         portraitFull=_portrait_full_url(pc.id),
         portraitCrop=_portrait_crop_url(pc.id),
+        hasVoice=char_files.voice_path(pc.id) is not None,
     )
 
 
@@ -131,6 +136,7 @@ def _pm_to_response(pm) -> PartyMemberResponse:
         inParty=bool(pm.in_party),
         portraitFull=_portrait_full_url(pm.id),
         portraitCrop=_portrait_crop_url(pm.id),
+        hasVoice=char_files.voice_path(pm.id) is not None,
     )
 
 
@@ -393,6 +399,9 @@ async def export_campaign(cid: str, adventures: str | None = None):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("campaign.json", json.dumps(meta, ensure_ascii=False))
         z.write(storage.campaign_db_path(cid), "campaign.db")
+        nv = storage.narrator_voice_path(cid)
+        if nv:
+            z.write(nv, nv.name)
         for a in advs:
             base = f"adventures/{a['id']}"
             z.writestr(f"{base}/adventure.json", json.dumps(a, ensure_ascii=False))
@@ -472,9 +481,12 @@ async def import_campaign(file: UploadFile):
         await storage.create_adventure(new_cid, "Adventure 1")
 
     for n in names:
+        # Narrator voice sample (campaign-level TTS cloning reference).
+        if n.startswith("narrator-voice.") and "/" not in n:
+            storage.set_narrator_voice(new_cid, z.read(n), Path(n).suffix)
         # Legacy exports carried loose portraits/ files → the global dir (the
         # characters→files migration picks them up when the campaign is loaded).
-        if n.startswith("portraits/") and not n.endswith("/"):
+        elif n.startswith("portraits/") and not n.endswith("/"):
             fn = n.split("/", 1)[1]
             dest = PORTRAITS_DIR / fn
             if fn and not dest.exists():
@@ -610,8 +622,10 @@ def _character_meta(data: dict) -> dict:
         "fieldSkill": data.get("fieldSkill", {}),
         "hasFull": char_files.full_path(cid) is not None,
         "hasCrop": char_files.crop_path(cid) is not None,
+        "hasVoice": char_files.voice_path(cid) is not None,
         "fullUrl": f"/api/characters/{cid}/portrait/full" if char_files.full_path(cid) else None,
         "cropUrl": f"/api/characters/{cid}/portrait/crop" if char_files.crop_path(cid) else None,
+        "voiceUrl": f"/api/characters/{cid}/voice" if char_files.voice_path(cid) else None,
     }
 
 
@@ -643,6 +657,33 @@ async def upload_character_portrait(
     if crop is not None:
         char_files.set_crop(cid, await crop.read())
     return _character_meta(char_files.read_character(cid) or {"id": cid})
+
+
+@router.get("/characters/{cid}/voice")
+async def get_character_voice(cid: str):
+    path = char_files.voice_path(cid)
+    if path is None:
+        raise HTTPException(404, "No voice sample")
+    return FileResponse(str(path))
+
+
+@router.post("/characters/{cid}/voice")
+async def upload_character_voice(cid: str, file: UploadFile):
+    """Set a character's TTS voice sample (~10s of clean speech; replaces the old)."""
+    if not char_files.exists(cid):
+        raise HTTPException(404, "Character not found")
+    if not (file.content_type or "").startswith("audio/"):
+        raise HTTPException(400, "Voice sample must be an audio file")
+    ext = Path(file.filename or "voice.wav").suffix or ".wav"
+    char_files.set_voice(cid, await file.read(), ext)
+    return _character_meta(char_files.read_character(cid) or {"id": cid})
+
+
+@router.delete("/characters/{cid}/voice", status_code=204)
+async def delete_character_voice(cid: str):
+    if not char_files.exists(cid):
+        raise HTTPException(404, "Character not found")
+    char_files.clear_voice(cid)
 
 
 @router.post("/characters/{cid}/duplicate")
@@ -768,7 +809,7 @@ async def update_scenario(
 
 # ── Narrator Config ───────────────────────────────────────────────
 
-def _narrator_response(n: NarratorConfig) -> NarratorResponse:
+def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorResponse:
     # Fall back to the built-in defaults for the protocol blocks so Config shows
     # the effective text the narrator actually receives (and the user can edit it).
     return NarratorResponse(
@@ -780,7 +821,13 @@ def _narrator_response(n: NarratorConfig) -> NarratorResponse:
         plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
         actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
         actionSuggestionsInstructions=getattr(n, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE,
+        hasVoice=has_voice,
     )
+
+
+async def _narrator_has_voice(session: AsyncSession) -> bool:
+    cid, _ = await _active_ids(session)
+    return bool(cid and storage.narrator_voice_path(cid))
 
 
 @router.get("/narrator", response_model=NarratorResponse)
@@ -790,7 +837,7 @@ async def get_narrator(session: AsyncSession = Depends(get_session)):
         n = NarratorConfig(instructions="")
         session.add(n)
         await session.commit()
-    return _narrator_response(n)
+    return _narrator_response(n, await _narrator_has_voice(session))
 
 
 @router.put("/narrator", response_model=NarratorResponse)
@@ -819,7 +866,39 @@ async def update_narrator(
     if data.actionSuggestionsInstructions is not None:
         n.action_suggestions_instructions = data.actionSuggestionsInstructions
     await session.commit()
-    return _narrator_response(n)
+    return _narrator_response(n, await _narrator_has_voice(session))
+
+
+# ── Narrator voice sample (per-campaign TTS cloning reference) ─────
+
+@router.get("/narrator/voice")
+async def get_narrator_voice(session: AsyncSession = Depends(get_session)):
+    cid, _ = await _active_ids(session)
+    path = storage.narrator_voice_path(cid) if cid else None
+    if path is None:
+        raise HTTPException(404, "No narrator voice sample")
+    return FileResponse(str(path))
+
+
+@router.post("/narrator/voice")
+async def upload_narrator_voice(
+    file: UploadFile, session: AsyncSession = Depends(get_session)
+):
+    cid, _ = await _active_ids(session)
+    if not cid:
+        raise HTTPException(404, "No active campaign")
+    if not (file.content_type or "").startswith("audio/"):
+        raise HTTPException(400, "Voice sample must be an audio file")
+    ext = Path(file.filename or "voice.wav").suffix or ".wav"
+    storage.set_narrator_voice(cid, await file.read(), ext)
+    return {"hasVoice": True}
+
+
+@router.delete("/narrator/voice", status_code=204)
+async def delete_narrator_voice(session: AsyncSession = Depends(get_session)):
+    cid, _ = await _active_ids(session)
+    if cid:
+        storage.clear_narrator_voice(cid)
 
 
 # ── OpenRouter Settings ───────────────────────────────────────────
@@ -873,6 +952,8 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         visionUseSameKey=bool(getattr(s, "vision_use_same_key", True)),
         visionApiKeySet=bool(getattr(s, "vision_api_key", "")),
         visionInstructions=(getattr(s, "vision_instructions", "") or "").strip() or VISION_DEFAULT_INSTRUCTIONS,
+        ttsEnabled=bool(getattr(s, "tts_enabled", False)),
+        ttsAutoplay=bool(getattr(s, "tts_autoplay", True)),
         apiKeySet=bool(s.api_key),
     )
 
@@ -923,8 +1004,68 @@ async def update_openrouter_settings(
     # Storing the default text verbatim is treated as "unset" so future
     # default improvements reach users who never customized it.
     s.vision_instructions = "" if data.visionInstructions.strip() == VISION_DEFAULT_INSTRUCTIONS else data.visionInstructions
+    s.tts_enabled = data.ttsEnabled
+    s.tts_autoplay = data.ttsAutoplay
     await session.commit()
     return _or_response(s)
+
+
+# ── TTS (text-to-speech; optional Chatterbox install) ─────────────
+
+@router.get("/tts/status", response_model=TtsStatusResponse)
+async def tts_status(session: AsyncSession = Depends(get_session)):
+    s = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    return TtsStatusResponse(
+        enabled=bool(getattr(s, "tts_enabled", False)) if s else False,
+        **tts.status(),
+    )
+
+
+@router.post("/tts/speak", response_model=TtsSpeakResponse)
+async def tts_speak(
+    data: TtsSpeakRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Synthesize one chat segment. `voice` is 'narrator' (narration + NPC lines,
+    cloned from the campaign's narrator sample) or a character id (cloned from
+    that character's voice.<ext>). A missing sample falls back to the default
+    voice — never an error."""
+    if not tts.is_installed():
+        raise HTTPException(
+            503, "TTS is not installed — pip install -r server/requirements-tts.txt"
+        )
+    s = (await session.execute(select(OpenRouterSettings))).scalars().first()
+    if not s or not getattr(s, "tts_enabled", False):
+        raise HTTPException(400, "TTS is disabled in Settings")
+    text_in = (data.text or "").strip()
+    if not text_in:
+        raise HTTPException(400, "No text to speak")
+    if len(text_in) > tts.MAX_TTS_CHARS:
+        raise HTTPException(400, f"Text too long (max {tts.MAX_TTS_CHARS} chars)")
+
+    if data.voice == "narrator":
+        cid, _ = await _active_ids(session)
+        voice_path = storage.narrator_voice_path(cid) if cid else None
+    else:
+        voice_path = char_files.voice_path(data.voice)
+
+    try:
+        filename, cached = await tts.synthesize(text_in, voice_path)
+    except RuntimeError as e:
+        raise HTTPException(500, f"TTS synthesis failed: {e}")
+    return TtsSpeakResponse(url=f"/api/tts/audio/{filename}", cached=cached)
+
+
+@router.get("/tts/audio/{name}")
+async def tts_audio(name: str):
+    if not re.fullmatch(r"[0-9a-f]{64}\.wav", name):
+        raise HTTPException(404, "Not found")
+    path = tts.cache_dir() / name
+    if not path.exists():
+        raise HTTPException(404, "Not found")
+    # Content-addressed (sha256) → safe to cache aggressively client-side.
+    return FileResponse(str(path), media_type="audio/wav",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 # ── Items (unified into the lorebook — cat == "items") ─────────────

@@ -6,6 +6,7 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useActionSuggestionsStore } from '../../state/actionSuggestionsStore'
+import { useTtsStore } from '../../state/ttsStore'
 import { ItemCard } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
@@ -1058,6 +1059,12 @@ function MessageBubble({
   const [editText, setEditText] = useState(message.content)
   const editMessage = useChatStore((s) => s.editMessage)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // TTS replay: only offered on persisted narrator messages when the server
+  // has the engine installed and TTS is enabled in Settings.
+  const ttsReady = useTtsStore((s) => !!s.status?.installed) && useSettingsStore((s) => s.ttsEnabled)
+  const speakingThis = useTtsStore((s) => s.playing?.messageId === message.id)
+  const speakMessage = useTtsStore((s) => s.speakMessage)
+  const stopSpeaking = useTtsStore((s) => s.stop)
 
   useEffect(() => {
     setEditText(message.content)
@@ -1282,6 +1289,7 @@ function MessageBubble({
             segments={segments}
             chipEntities={chipEntities}
             dropCap={isFirstNarrator}
+            messageId={message.id}
           />
         )}
       </div>
@@ -1304,6 +1312,12 @@ function MessageBubble({
         onDelete={onDelete}
         onEdit={message.id > 0 ? () => setEditing(true) : undefined}
         copyText={message.content}
+        onSpeak={
+          ttsReady && !isPlanner && message.id > 0
+            ? () => (speakingThis ? stopSpeaking() : void speakMessage(message))
+            : undefined
+        }
+        speaking={speakingThis}
       />
     </div>
   )
@@ -1429,6 +1443,8 @@ function ActionsBar({
   onDelete,
   onEdit,
   copyText,
+  onSpeak,
+  speaking,
 }: {
   editing: boolean
   isUser: boolean
@@ -1440,6 +1456,8 @@ function ActionsBar({
   onDelete?: () => void
   onEdit?: () => void
   copyText?: string
+  onSpeak?: () => void
+  speaking?: boolean
 }) {
   if (editing) return null
 
@@ -1482,6 +1500,16 @@ function ActionsBar({
         </>
       )}
       <div className="flex items-center gap-2 ml-auto">
+        {onSpeak && (
+          <button
+            type="button"
+            className={`font-ui text-[9px] ${speaking ? 'text-gold' : 'text-textdim hover:text-text'}`}
+            title={speaking ? 'Stop speaking' : 'Read this message aloud'}
+            onClick={onSpeak}
+          >
+            {speaking ? '■ STOP' : '♪ SPEAK'}
+          </button>
+        )}
         {onEdit && (
           <button
             type="button"
@@ -1802,21 +1830,29 @@ function SceneHeader({ location, timeOfDay }: { location?: string | null; timeOf
 }
 
 // Renders an ordered list of parsed segments. The drop-cap (when requested) is
-// applied to the first narration segment only.
+// applied to the first narration segment only. When `messageId` is given, the
+// segment currently being read aloud gets a soft gold wash.
 function SegmentedNarration({
   segments,
   chipEntities,
   dropCap = false,
+  messageId,
 }: {
   segments: Segment[]
   chipEntities: ChipEntity[]
   dropCap?: boolean
+  messageId?: number
 }) {
   const firstNarrationIdx = dropCap ? segments.findIndex((s) => s.type === 'narration') : -1
+  const speakingIdx = useTtsStore((s) =>
+    messageId !== undefined && s.playing?.messageId === messageId ? s.playing.segmentIndex : null,
+  )
 
   return (
     <div className="space-y-3">
       {segments.map((seg, i) => {
+        const speaking = i === speakingIdx
+        const speakingWash = speaking ? ' bg-gold/5 rounded-sm' : ''
         if (seg.type === 'divider') {
           return (
             <div key={i} className="flex items-center gap-3 py-1">
@@ -1830,20 +1866,20 @@ function SegmentedNarration({
           return (
             <NarrationHtml
               key={i}
-              className="chat-prose font-body text-text2 italic border-l-2 border-gold/50 bg-bg2/60 rounded-r-md px-4 py-2 whitespace-pre-wrap"
+              className={`chat-prose font-body text-text2 italic border-l-2 border-gold/50 bg-bg2/60 rounded-r-md px-4 py-2 whitespace-pre-wrap${speaking ? ' border-gold' : ''}`}
               html={applyEntityChips(formatNarration(seg.text), chipEntities)}
             />
           )
         }
         if (seg.type === 'dialogue') {
-          return <DialogueBlock key={i} member={seg.member} text={seg.text} chipEntities={chipEntities} />
+          return <DialogueBlock key={i} member={seg.member} text={seg.text} chipEntities={chipEntities} speaking={speaking} />
         }
         // narration
         const useDropCap = i === firstNarrationIdx
         return (
           <NarrationHtml
             key={i}
-            className={`chat-prose font-body text-text2 whitespace-pre-wrap ${useDropCap ? 'first-narrator-dropcap' : ''}`}
+            className={`chat-prose font-body text-text2 whitespace-pre-wrap ${useDropCap ? 'first-narrator-dropcap' : ''}${speakingWash}`}
             html={applyEntityChips(
               useDropCap ? formatNarrationWithDropCap(seg.text) : formatNarration(seg.text),
               chipEntities,
@@ -1861,17 +1897,19 @@ function DialogueBlock({
   member,
   text,
   chipEntities,
+  speaking = false,
 }: {
   member: MemberLite
   text: string
   chipEntities: ChipEntity[]
+  speaking?: boolean
 }) {
   return (
     <div className="flex items-stretch gap-3">
       <Portrait src={member.portrait} name={member.name} borderColor="border-line2" className={CHAT_PORTRAIT_SIZE} />
       <div className="flex-1 min-w-0 flex flex-col">
         <span className="font-disp text-[14px] text-gold pt-[2px] mb-1">{member.name.split(' ')[0]}</span>
-        <div className="flex-1 border-l-2 border-gold/60 bg-gold/5 rounded-r-md px-4 py-3">
+        <div className={`flex-1 border-l-2 rounded-r-md px-4 py-3 ${speaking ? 'border-gold bg-gold/10' : 'border-gold/60 bg-gold/5'}`}>
           <NarrationHtml
             className="chat-prose font-body text-text whitespace-pre-wrap"
             html={applyEntityChips(formatNarration(text), chipEntities)}

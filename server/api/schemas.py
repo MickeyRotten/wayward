@@ -97,6 +97,7 @@ class NarratorUpdate(BaseModel):
 
 
 class NarratorResponse(BaseModel):
+    hasVoice: bool = False  # narrator TTS voice sample present for this campaign
     instructions: str
     actionInstruction: str
     spotlightRule: str
@@ -153,6 +154,8 @@ class OpenRouterSettingsUpdate(BaseModel):
     visionUseSameKey: bool = True
     visionApiKey: str | None = None  # write-only, like apiKey
     visionInstructions: str = ""     # blank => built-in default
+    ttsEnabled: bool = False
+    ttsAutoplay: bool = True
 
 
 class OpenRouterSettingsResponse(BaseModel):
@@ -178,7 +181,29 @@ class OpenRouterSettingsResponse(BaseModel):
     visionUseSameKey: bool
     visionApiKeySet: bool
     visionInstructions: str  # effective text (default filled in when unset)
+    ttsEnabled: bool
+    ttsAutoplay: bool
     apiKeySet: bool
+
+
+# --- TTS ---
+
+class TtsSpeakRequest(BaseModel):
+    text: str
+    voice: str = "narrator"  # 'narrator' or a character id
+
+
+class TtsSpeakResponse(BaseModel):
+    url: str
+    cached: bool
+
+
+class TtsStatusResponse(BaseModel):
+    installed: bool
+    enabled: bool
+    loaded: bool
+    device: str | None = None
+    error: str | None = None
 
 
 # --- Chat ---

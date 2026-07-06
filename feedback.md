@@ -5,6 +5,11 @@ This is a list of changes / new features to add into the project. Whenever you f
 
 ## FEEDBACK ITEMS
 ---
+[x] Lightweight TTS: a different voice for the Narrator (narration + NPCs) and each party member, with simple voice cloning from a small sample in the party member's folder. Plus a one-click install that also handles the model download.
+
+Done (commit fbcc0d8): Optional in-process TTS via Chatterbox (MIT, zero-shot cloning from a ~10s sample). The Narrator (narration + NPC lines) and each party member speak with distinct voices; a `voice.<ext>` sample in the character folder clones that character's voice, and a per-campaign `narrator-voice.<ext>` clones the narrator's. Samples ride along with character/campaign zip export-import and duplicate. Server: `server/ai/tts.py` (lazy load — nothing heavy imported unless installed, cuda/mps/cpu auto-pick, sentence-batched synthesis in a locked worker thread, sha256 wav cache), voice upload/serve/delete endpoints, `/tts/status` + `/tts/speak` + `/tts/audio`, and `tts_enabled`/`tts_autoplay` settings (additive migration). Client: `ttsStore` auto-plays each finished narration turn segment-by-segment (narrator voice for narration/NPCs, member voices for dialogue) with next-segment prefetch; a SPEAK/STOP button + a gold wash on the segment being read; a Config → Voice & Audio section (toggles, engine status, narrator sample); and a voice-sample block on the PC/party sheets. Missing sample → default voice; missing install → graceful 503 and hidden UI. One-click install: `Install-TTS.bat` (+ `Install-TTS.ps1`) installs the stack into the same `server\.venv` Run.bat uses, auto-detects an NVIDIA GPU to pick the CUDA vs CPU torch build, and pre-downloads the voice model so the first spoken line isn't a multi-minute wait. The base Run.bat stays lean (no torch unless you want voice).
+
+---
 [x] In config, load models by default. When I open Config, I should already be able to pick from a dropdown list of models.
 
 Done (commit e294a91): Config now fetches the OpenRouter model list automatically when the panel opens (if an API key is set), so the model dropdown is populated without clicking LOAD MODELS.

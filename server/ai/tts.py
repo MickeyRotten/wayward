@@ -60,6 +60,19 @@ def status() -> dict:
     }
 
 
+def preload() -> dict:
+    """Force the model download/load and report the outcome. Used by the
+    Install-TTS launcher to warm the Hugging Face cache up-front, so the first
+    line spoken at runtime isn't a multi-minute wait. Never raises — a failed
+    or absent install is reported through the returned status()."""
+    if is_installed():
+        try:
+            _load_model()
+        except Exception:
+            pass  # _load_error is captured inside _load_model; status() reports it
+    return status()
+
+
 def _pick_device() -> str:
     import torch
 

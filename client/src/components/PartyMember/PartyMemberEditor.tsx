@@ -4,6 +4,7 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitBlock } from '../PortraitBlock'
+import { VoiceBlock } from '../VoiceBlock'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { itemFitsSlot } from '../../lib/equipSlots'
@@ -91,6 +92,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
       <div className="space-y-6 p-6">
         {/* Portrait — fixed 3:4, image fills; Edit Portrait opens the crop modal. */}
         <PortraitBlock characterId={member.id} fullUrl={member.portraitFull} cropUrl={member.portraitCrop} onUpdated={() => void fetchAll()} />
+        <VoiceBlock characterId={member.id} hasVoice={member.hasVoice} onUpdated={() => void fetchAll()} />
 
         {/* Basic Info */}
         <Section title="Basic Info">
@@ -157,6 +159,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
 
       {/* Portrait */}
       <PortraitBlock characterId={member.id} fullUrl={member.portraitFull} cropUrl={member.portraitCrop} onUpdated={() => void fetchAll()} />
+      <VoiceBlock characterId={member.id} hasVoice={member.hasVoice} onUpdated={() => void fetchAll()} />
 
       {/* Basic Info */}
       <Section title="Basic Info">

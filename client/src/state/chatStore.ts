@@ -5,6 +5,7 @@ import { useItemsStore } from './itemsStore'
 import { usePartyStore } from './partyStore'
 import { useWorldbuildStore } from './worldbuildStore'
 import { useActionSuggestionsStore } from './actionSuggestionsStore'
+import { useTtsStore } from './ttsStore'
 import { useLoreStore } from './loreStore'
 import { useTasksStore } from './tasksStore'
 import { useNarratorStore } from './narratorStore'
@@ -214,6 +215,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteMessageAndAfter: async (id) => {
+    useTtsStore.getState().stop()
     await api.del(`/chat/messages/${id}/and-after`)
     await get().fetchHistory()
   },
@@ -225,6 +227,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearHistory: async () => {
+    useTtsStore.getState().stop()
     await api.del('/chat/messages')
     set({ messages: [], currentTurn: 0, activeVariants: {}, contextTokens: null, maxContextTokens: null })
   },
@@ -261,6 +264,7 @@ async function _handleStream(url: string, body: object) {
   _aborted = false
   set({ toolFailures: [] })  // clear any prior turn's failure notices
   useActionSuggestionsStore.getState().clear()
+  useTtsStore.getState().stop()  // a new/regenerated turn silences the old one
 
   try {
     const res = await fetch(url, {
@@ -371,6 +375,7 @@ async function _handleStream(url: string, body: object) {
         const latestTurn = threadMaxTurn(get().messages, false)
         if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
         if (latestTurn > 0) void useActionSuggestionsStore.getState().runForTurn(latestTurn)
+        if (latestTurn > 0) void useTtsStore.getState().runForTurn(latestTurn)
       }
     }
   } catch (e) {

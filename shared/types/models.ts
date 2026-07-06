@@ -71,6 +71,7 @@ export interface PlayerCharacter {
   // Character-file portrait URLs (full → Inspector, crop → chat/avatars).
   portraitFull?: string | null
   portraitCrop?: string | null
+  hasVoice?: boolean  // TTS voice-cloning sample present in the character folder
 }
 
 export interface PartyMember {
@@ -83,6 +84,7 @@ export interface PartyMember {
   inParty: boolean
   portraitFull?: string | null
   portraitCrop?: string | null
+  hasVoice?: boolean
 }
 
 // A character-library card (identity file), independent of any adventure.
@@ -93,8 +95,10 @@ export interface CharacterCard {
   fieldSkill: FieldSkill
   hasFull: boolean
   hasCrop: boolean
+  hasVoice?: boolean
   fullUrl?: string | null
   cropUrl?: string | null
+  voiceUrl?: string | null
 }
 
 export interface NarratorConfig {
@@ -127,6 +131,18 @@ export interface OpenRouterSettings {
   visionModelId: string
   visionUseSameKey: boolean
   visionInstructions: string  // effective text (server fills the default when unset)
+  // Text-to-speech (optional server-side Chatterbox install).
+  ttsEnabled: boolean
+  ttsAutoplay: boolean
+}
+
+// Server-side TTS engine availability (GET /tts/status).
+export interface TtsStatus {
+  installed: boolean
+  enabled: boolean
+  loaded: boolean
+  device?: string | null
+  error?: string | null
 }
 
 export type WorldbuildingMode = 'disabled' | 'confirmation' | 'auto'

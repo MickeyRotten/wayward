@@ -22,6 +22,7 @@ import { useScenarioStore } from './state/scenarioStore'
 import { useWorldbuildStore } from './state/worldbuildStore'
 import { useAdventuresStore } from './state/adventuresStore'
 import { useCampaignsStore } from './state/campaignsStore'
+import { useTtsStore } from './state/ttsStore'
 import { useUiStore } from './state/uiStore'
 import type { TabId } from './state/uiStore'
 import { applyChatFontSize } from './state/appearanceStore'
@@ -73,6 +74,7 @@ function App() {
   const fetchProposals = useWorldbuildStore((s) => s.fetchProposals)
   const fetchAdventures = useAdventuresStore((s) => s.fetch)
   const fetchCampaigns = useCampaignsStore((s) => s.fetch)
+  const fetchTtsStatus = useTtsStore((s) => s.fetchStatus)
   const switching = useCampaignsStore((s) => s.busy) || useAdventuresStore((s) => s.busy)
 
   useEffect(() => {
@@ -89,7 +91,8 @@ function App() {
     fetchScenario()
     fetchProposals()
     fetchAdventures()
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchTasks, fetchLoreEntries, fetchLoreConfig, fetchScenario, fetchProposals, fetchAdventures, fetchCampaigns])
+    fetchTtsStatus()
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchTasks, fetchLoreEntries, fetchLoreConfig, fetchScenario, fetchProposals, fetchAdventures, fetchCampaigns, fetchTtsStatus])
 
   const handleTabChange = (tab: TabId) => {
     prevTabRef.current = tab

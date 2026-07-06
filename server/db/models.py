@@ -79,6 +79,10 @@ class OpenRouterSettings(Base):
     vision_api_key: Mapped[str] = mapped_column(String, default="")
     # How the vision agent describes images (blank => built-in default).
     vision_instructions: Mapped[str] = mapped_column(Text, default="")
+    # Text-to-speech (optional Chatterbox install — see server/ai/tts.py).
+    # tts_autoplay: speak each finished narration turn automatically.
+    tts_enabled: Mapped[bool] = mapped_column(Integer, default=False)
+    tts_autoplay: Mapped[bool] = mapped_column(Integer, default=True)
 
 
 # ── Campaign (the world) ──────────────────────────────────────────

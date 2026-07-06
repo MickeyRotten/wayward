@@ -25,6 +25,8 @@ interface SettingsState {
   visionUseSameKey: boolean
   visionApiKeySet: boolean
   visionInstructions: string
+  ttsEnabled: boolean
+  ttsAutoplay: boolean
   apiKeySet: boolean
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
@@ -58,6 +60,8 @@ function applyResponse(s: SettingsResponse) {
     visionUseSameKey: s.visionUseSameKey,
     visionApiKeySet: s.visionApiKeySet,
     visionInstructions: s.visionInstructions,
+    ttsEnabled: s.ttsEnabled,
+    ttsAutoplay: s.ttsAutoplay,
     apiKeySet: s.apiKeySet,
   }
 }
@@ -85,6 +89,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   visionUseSameKey: true,
   visionApiKeySet: false,
   visionInstructions: '',
+  ttsEnabled: false,
+  ttsAutoplay: true,
   apiKeySet: false,
   availableModels: [],
 
@@ -117,6 +123,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       visionModelId: update.visionModelId ?? state.visionModelId,
       visionUseSameKey: update.visionUseSameKey ?? state.visionUseSameKey,
       visionInstructions: update.visionInstructions ?? state.visionInstructions,
+      ttsEnabled: update.ttsEnabled ?? state.ttsEnabled,
+      ttsAutoplay: update.ttsAutoplay ?? state.ttsAutoplay,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),
       ...(update.visionApiKey !== undefined ? { visionApiKey: update.visionApiKey } : {}),
     }

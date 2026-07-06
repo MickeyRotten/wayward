@@ -189,6 +189,8 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "vision_use_same_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_use_same_key INTEGER DEFAULT 1"),
         ("openrouter_settings", "vision_api_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_api_key VARCHAR DEFAULT ''"),
         ("openrouter_settings", "vision_instructions", "ALTER TABLE openrouter_settings ADD COLUMN vision_instructions TEXT DEFAULT ''"),
+        ("openrouter_settings", "tts_enabled", "ALTER TABLE openrouter_settings ADD COLUMN tts_enabled INTEGER DEFAULT 0"),
+        ("openrouter_settings", "tts_autoplay", "ALTER TABLE openrouter_settings ADD COLUMN tts_autoplay INTEGER DEFAULT 1"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

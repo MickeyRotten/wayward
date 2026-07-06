@@ -9,7 +9,9 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { useCampaignsStore } from '../../state/campaignsStore'
 import { useAppearanceStore, CHAT_FONT_SIZES } from '../../state/appearanceStore'
+import { useTtsStore } from '../../state/ttsStore'
 import { api } from '../../lib/api'
+import { deleteNarratorVoice, uploadNarratorVoice } from '../../lib/voice'
 import type { LoreCategory, LorebookConfig, OpenRouterModel } from '@shared/types/models'
 
 const LORE_CATEGORIES: { id: LoreCategory; label: string }[] = [
@@ -52,6 +54,8 @@ export function SettingsPanel() {
   const [visionUseSameKey, setVisionUseSameKey] = useState(settings.visionUseSameKey)
   const [visionApiKey, setVisionApiKey] = useState('')
   const [visionInstructions, setVisionInstructions] = useState(settings.visionInstructions)
+  const [ttsEnabled, setTtsEnabled] = useState(settings.ttsEnabled)
+  const [ttsAutoplay, setTtsAutoplay] = useState(settings.ttsAutoplay)
   const [showAllModels, setShowAllModels] = useState(false)
   const [instructions, setInstructions] = useState(narrator.instructions)
   const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
@@ -82,7 +86,9 @@ export function SettingsPanel() {
     setVisionModelId(settings.visionModelId)
     setVisionUseSameKey(settings.visionUseSameKey)
     setVisionInstructions(settings.visionInstructions)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions])
+    setTtsEnabled(settings.ttsEnabled)
+    setTtsAutoplay(settings.ttsAutoplay)
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -127,9 +133,13 @@ export function SettingsPanel() {
       visionModelId,
       visionUseSameKey,
       visionInstructions,
+      ttsEnabled,
+      ttsAutoplay,
       ...(visionApiKey ? { visionApiKey } : {}),
     })
     await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions })
+    // The TTS enable toggle affects server-reported availability.
+    void useTtsStore.getState().fetchStatus()
     setApiKey('')
     setVisionApiKey('')
     setSaved(true)
@@ -151,6 +161,9 @@ export function SettingsPanel() {
   }
   const resetWorld = () => {
     setInstructions(''); setSpotlightRule(''); setPostHistory(''); setPlannerInstructions('')
+  }
+  const resetVoice = () => {
+    setTtsEnabled(false); setTtsAutoplay(true)
   }
   const resetAppearance = () => {
     useAppearanceStore.getState().setChatFontSize('medium')
@@ -547,6 +560,38 @@ export function SettingsPanel() {
           </p>
         </Section>
 
+        {/* Voice & Audio */}
+        <Section title="Voice &amp; Audio" onReset={resetVoice}>
+          <TtsStatusLine />
+          <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+            <input
+              type="checkbox"
+              checked={ttsEnabled}
+              onChange={(e) => setTtsEnabled(e.target.checked)}
+            />
+            Enable text-to-speech
+          </label>
+          <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+            <input
+              type="checkbox"
+              checked={ttsAutoplay}
+              onChange={(e) => setTtsAutoplay(e.target.checked)}
+              disabled={!ttsEnabled}
+            />
+            Auto-play each finished narration turn
+          </label>
+          <span className="block text-[10px] text-textdim font-body">
+            The Narrator (narration + NPC lines) and each party member speak with their own
+            voice, cloned from a ~10&#8202;s speech sample. Without a sample, everyone shares the
+            default voice. Upload character samples on their sheets (Home tab). Synthesis runs
+            on this machine — it is slow without a GPU.
+          </span>
+
+          <SubSection title="Narrator Voice">
+            <NarratorVoiceSample />
+          </SubSection>
+        </Section>
+
         {/* Appearance */}
         <Section title="Appearance" onReset={resetAppearance}>
           <AppearanceSection />
@@ -566,6 +611,119 @@ export function SettingsPanel() {
         {/* Adventure Management */}
         <AdventureManagement />
       </div>
+    </div>
+  )
+}
+
+// Server-side TTS engine availability (install hint / device / load error).
+function TtsStatusLine() {
+  const status = useTtsStore((s) => s.status)
+  if (!status) return null
+  let text: string
+  let cls = 'text-textdim'
+  if (!status.installed) {
+    text = 'Engine not installed — run: pip install -r server/requirements-tts.txt'
+  } else if (status.error) {
+    text = `Engine error: ${status.error}`
+    cls = 'text-danger'
+  } else if (status.loaded) {
+    text = `Engine ready on ${status.device ?? 'cpu'}`
+    cls = 'text-gold'
+  } else {
+    text = 'Engine installed (model loads on first use — the first line spoken may take a while)'
+  }
+  return <span className={`block text-[10px] font-body ${cls}`}>{text}</span>
+}
+
+// Upload/play/clear the active campaign's narrator voice sample.
+function NarratorVoiceSample() {
+  const hasVoice = useNarratorStore((s) => s.hasVoice)
+  const fetchConfig = useNarratorStore((s) => s.fetchConfig)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [playing, setPlaying] = useState(false)
+
+  const handleUpload = async (file: File) => {
+    setBusy(true)
+    try {
+      if (await uploadNarratorVoice(file)) await fetchConfig()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePlay = () => {
+    if (playing) {
+      audioRef.current?.pause()
+      setPlaying(false)
+      return
+    }
+    const audio = new Audio(`/api/narrator/voice?t=${Date.now()}`)
+    audioRef.current = audio
+    audio.onended = () => setPlaying(false)
+    audio.onerror = () => setPlaying(false)
+    setPlaying(true)
+    void audio.play().catch(() => setPlaying(false))
+  }
+
+  const handleRemove = async () => {
+    audioRef.current?.pause()
+    setPlaying(false)
+    setBusy(true)
+    try {
+      if (await deleteNarratorVoice()) await fetchConfig()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          className="font-ui text-[9px] text-textdim hover:text-text border border-line px-1.5 py-0.5 disabled:opacity-40"
+          onClick={() => inputRef.current?.click()}
+        >
+          {hasVoice ? 'REPLACE SAMPLE' : 'UPLOAD SAMPLE'}
+        </button>
+        {hasVoice && (
+          <>
+            <button
+              type="button"
+              className="font-ui text-[9px] text-textdim hover:text-text border border-line px-1.5 py-0.5"
+              onClick={handlePlay}
+            >
+              {playing ? '■ STOP' : '▶ PLAY'}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="font-ui text-[9px] text-textdim hover:text-danger border border-line px-1.5 py-0.5 disabled:opacity-40"
+              onClick={() => void handleRemove()}
+            >
+              REMOVE
+            </button>
+          </>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) void handleUpload(file)
+            e.target.value = ''
+          }}
+        />
+      </div>
+      <span className="block text-[10px] text-textdim font-body">
+        ~10 seconds of clean speech for the narrator's voice, stored with this campaign
+        (included in campaign exports). Applies immediately — no save needed.
+      </span>
     </div>
   )
 }

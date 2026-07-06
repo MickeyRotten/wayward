@@ -38,8 +38,12 @@ export function ChatScene() {
   const contextTokens = useChatStore((s) => s.contextTokens)
   const maxContextTokens = useChatStore((s) => s.maxContextTokens)
   const worldbuildRunning = useWorldbuildStore((s) => s.running)
-  // Block input until the narrator AND the post-turn Chronicler are both done.
+  const worldbuildStartedAt = useWorldbuildStore((s) => s.runningStartedAt)
+  // Destructive/turn-editing actions (swipe, regenerate, delete) wait for the
+  // narrator AND the post-turn Chronicler; typing and sending only wait for
+  // the narration itself — the Chronicler records in the background.
   const busy = isLoading || worldbuildRunning
+  const inputLocked = isLoading
   const activeVariants = useChatStore((s) => s.activeVariants)
   const events = useChatStore((s) => s.events)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
@@ -50,6 +54,8 @@ export function ChatScene() {
   const pendingDeletes = useChatStore((s) => s.pendingDeletes)
   const applyPendingDeletes = useChatStore((s) => s.applyPendingDeletes)
   const dismissPendingDeletes = useChatStore((s) => s.dismissPendingDeletes)
+  const failedInput = useChatStore((s) => s.failedInput)
+  const clearFailedInput = useChatStore((s) => s.clearFailedInput)
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
@@ -123,6 +129,14 @@ export function ChatScene() {
     return () => cancelAnimationFrame(raf)
   }, [messages, atBottom])
 
+  // A failed send restores the typed text into the (now empty) input box so a
+  // generation error never eats the player's prose.
+  useEffect(() => {
+    if (!failedInput) return
+    setInput((cur) => (cur.trim() ? cur : failedInput))
+    clearFailedInput()
+  }, [failedInput, clearFailedInput])
+
   // Auto-grow the input: single row by default, expand with wrapped lines up
   // to a cap, then scroll.
   useEffect(() => {
@@ -134,7 +148,7 @@ export function ChatScene() {
 
   const handleSend = () => {
     const text = input.trim()
-    if ((!text && !pendingImage) || busy) return
+    if ((!text && !pendingImage) || inputLocked) return
     setInput('')
     const image = pendingImage
     setPendingImage(null)
@@ -337,7 +351,7 @@ export function ChatScene() {
           {/* Play / Edit mode toggle (Unity-style): lit while playing (Narration). */}
           <button
             type="button"
-            disabled={busy}
+            disabled={inputLocked}
             title={planningMode ? 'Exit Edit Mode — back to play' : 'Edit Mode — work on the world'}
             onClick={() => setPlanningMode(!planningMode)}
             className={`shrink-0 mt-[1px] w-7 h-7 flex items-center justify-center border rounded-sm transition-colors disabled:opacity-40 ${
@@ -508,7 +522,7 @@ export function ChatScene() {
             </div>
             <div className="pt-2">
               <span className="font-ui text-[10px] text-textdim tracking-wider">
-                THE CHRONICLER IS RECORDING<Elapsed startedAt={null} />
+                THE CHRONICLER IS RECORDING<Elapsed startedAt={worldbuildStartedAt} />
                 <span className="animate-pulse"> ···</span>
               </span>
             </div>
@@ -534,13 +548,13 @@ export function ChatScene() {
 
         {/* Reactive action suggestions — VN-style choices under the last beat,
             shown only when idle so they read as "what do you do?" options. */}
-        {!planningMode && !busy && actionSuggestionsEnabled && actionSuggestions.length > 0 && (
+        {!planningMode && !inputLocked && actionSuggestionsEnabled && actionSuggestions.length > 0 && (
           <div className="mr-auto w-full max-w-[85%] max-lg:max-w-full flex flex-col gap-1.5 pl-1 pt-1">
             {actionSuggestions.map((s) => (
               <button
                 key={s}
                 type="button"
-                disabled={busy || !apiKeySet}
+                disabled={inputLocked || !apiKeySet}
                 onClick={() => sendTurn(s)}
                 className="group text-left font-body text-sm text-text2 border border-line rounded-md bg-bg2/40 px-3.5 py-2 hover:border-gold hover:text-text hover:bg-gold/5 transition-colors disabled:opacity-40"
               >
@@ -635,23 +649,23 @@ export function ChatScene() {
         <div className="border-t border-line2 px-3 pt-2 pb-1 bg-bg1 flex flex-wrap items-center gap-1.5">
           <QuickActionButton
             label="Look Around"
-            disabled={busy || !apiKeySet}
+            disabled={inputLocked || !apiKeySet}
             onClick={() => sendTurn('I look around carefully.')}
           />
           <QuickActionButton
             label="Talk to Party"
-            disabled={busy || !apiKeySet}
+            disabled={inputLocked || !apiKeySet}
             onClick={() => sendTurn('I turn to talk to my party.')}
           />
           <QuickActionButton
             label="Rest"
-            disabled={busy || !apiKeySet}
+            disabled={inputLocked || !apiKeySet}
             onClick={() => sendTurn('I take a moment to rest.')}
           />
           <div className="relative flex">
             <QuickActionButton
               label="Use an Item"
-              disabled={busy || !apiKeySet || inventory.length === 0}
+              disabled={inputLocked || !apiKeySet || inventory.length === 0}
               onClick={() => setItemPickerOpen((o) => !o)}
             />
             {itemPickerOpen && (
@@ -773,7 +787,7 @@ export function ChatScene() {
             type="button"
             title="Attach an image"
             aria-label="Attach an image"
-            disabled={!apiKeySet || busy}
+            disabled={!apiKeySet || inputLocked}
             className={`shrink-0 border px-2.5 py-2 transition-colors disabled:opacity-40 ${
               pendingImage ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
             }`}
@@ -792,7 +806,7 @@ export function ChatScene() {
             rows={1}
             placeholder={!apiKeySet ? 'Set API key in Settings...' : planningMode ? 'Describe what to build or change…' : 'What do you do?'}
             value={input}
-            disabled={!apiKeySet || busy}
+            disabled={!apiKeySet || inputLocked}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -814,7 +828,7 @@ export function ChatScene() {
             <button
               type="button"
               className="shrink-0 font-ui text-[10px] bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors disabled:opacity-40"
-              disabled={!apiKeySet || (!input.trim() && !pendingImage) || busy}
+              disabled={!apiKeySet || (!input.trim() && !pendingImage) || inputLocked}
               onClick={handleSend}
             >
               SEND

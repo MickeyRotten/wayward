@@ -1606,33 +1606,34 @@ async def get_chat_image(filename: str, session: AsyncSession = Depends(get_sess
 
 # ── Chat Messages ─────────────────────────────────────────────────
 
+def _msg_response(m: ChatMessage) -> ChatMessageResponse:
+    return ChatMessageResponse(
+        id=m.id,
+        role=m.role,
+        content=m.content,
+        turnNumber=m.turn_number,
+        variant=m.variant,
+        speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
+        mode=m.mode or "narrator",
+        location=m.location,
+        timeOfDay=m.time_of_day,
+        weather=m.weather,
+        day=m.day,
+        spotlightReason=m.spotlight_reason,
+        appliedInventoryDeltas=m.applied_inventory_deltas,
+        appliedEquipmentChanges=m.applied_equipment_changes,
+        imageUrl=_image_url(m),
+        imageDescription=getattr(m, "image_description", None),
+        createdAt=m.created_at.isoformat() if m.created_at else "",
+    )
+
+
 @router.get("/chat/messages", response_model=list[ChatMessageResponse])
 async def get_chat_messages(session: AsyncSession = Depends(get_session)):
     result = await session.execute(
         select(ChatMessage).order_by(ChatMessage.id)
     )
-    return [
-        ChatMessageResponse(
-            id=m.id,
-            role=m.role,
-            content=m.content,
-            turnNumber=m.turn_number,
-            variant=m.variant,
-            speaker=m.speaker or ("narrator" if m.role == "assistant" else "player"),
-            mode=m.mode or "narrator",
-            location=m.location,
-            timeOfDay=m.time_of_day,
-            weather=m.weather,
-            day=m.day,
-            spotlightReason=m.spotlight_reason,
-            appliedInventoryDeltas=m.applied_inventory_deltas,
-            appliedEquipmentChanges=m.applied_equipment_changes,
-            imageUrl=_image_url(m),
-            imageDescription=getattr(m, "image_description", None),
-            createdAt=m.created_at.isoformat() if m.created_at else "",
-        )
-        for m in result.scalars().all()
-    ]
+    return [_msg_response(m) for m in result.scalars().all()]
 
 
 @router.get("/chat/events", response_model=list[ChatEventResponse])
@@ -2375,6 +2376,7 @@ async def chat_turn(
             variant=variant_count,
             spotlight_signals=spotlight_signals,
             summarize_hint=summarize_hint,
+            user_message_id=user_msg.id,
         )
 
     return _stream_llm_response(
@@ -2386,6 +2388,7 @@ async def chat_turn(
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
+        user_message_id=user_msg.id,
     )
 
 
@@ -2846,6 +2849,7 @@ def _stream_llm_response(
     did_summarize: bool = False,
     spotlight_signals: list[SpotlightSignal] | None = None,
     player_deltas: list[dict] | None = None,
+    user_message_id: int | None = None,
 ):
     player_deltas = player_deltas or []
 
@@ -2917,6 +2921,7 @@ def _stream_llm_response(
             log.info("LLM ACTIONS parsed: %s", json.dumps(actions, ensure_ascii=False))
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
+        saved_message: dict | None = None
 
         try:
             async with new_session() as save_session:
@@ -2993,6 +2998,8 @@ def _stream_llm_response(
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()
+                await save_session.refresh(assistant_msg)
+                saved_message = _msg_response(assistant_msg).model_dump()
         except Exception as e:
             log.exception("Failed to save response to DB")
 
@@ -3003,6 +3010,12 @@ def _stream_llm_response(
             'contextTokens': context_tokens + response_tokens,
             'maxContextTokens': max_context,
         }
+        # The persisted message rides on `done` so a plain send can append it
+        # locally instead of refetching the entire history.
+        if saved_message is not None:
+            done_payload['message'] = saved_message
+        if user_message_id is not None:
+            done_payload['userMessageId'] = user_message_id
         if combined_inv_deltas:
             done_payload['appliedInventoryDeltas'] = combined_inv_deltas
         if equip_changes:
@@ -3022,14 +3035,13 @@ def _stream_agent_response(
     variant: int,
     spotlight_signals: list[SpotlightSignal] | None = None,
     summarize_hint: bool = False,
+    user_message_id: int | None = None,
 ):
     """Drive the agentic narrator loop and stream its final narration.
 
     Tool calls mutate the DB *during* the loop (inside run_narrator_agent), so
     here we only record the accumulated deltas/scene on the ChatMessage for
     reversal — we do not re-apply them."""
-    _save_prompt_log(messages)
-
     context_tokens = estimate_prompt_tokens(messages)
     max_context = settings.max_context_tokens
 
@@ -3055,6 +3067,7 @@ def _stream_agent_response(
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
         tool_failures: list[str] = []
+        saved_message: dict | None = None
 
         try:
             async for ev in run_narrator_agent(
@@ -3123,6 +3136,8 @@ def _stream_agent_response(
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()
+                await save_session.refresh(assistant_msg)
+                saved_message = _msg_response(assistant_msg).model_dump()
         except Exception:
             log.exception("Failed to save agent response to DB")
 
@@ -3132,6 +3147,12 @@ def _stream_agent_response(
             'contextTokens': context_tokens + response_tokens,
             'maxContextTokens': max_context,
         }
+        # The persisted message rides on `done` so a plain send can append it
+        # locally instead of refetching the entire history.
+        if saved_message is not None:
+            done_payload['message'] = saved_message
+        if user_message_id is not None:
+            done_payload['userMessageId'] = user_message_id
         if inv_deltas:
             done_payload['appliedInventoryDeltas'] = inv_deltas
         if equip_changes:

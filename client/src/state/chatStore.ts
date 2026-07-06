@@ -71,6 +71,9 @@ interface ChatState {
   toolStatus: string | null
   toolFailures: string[]
   error: string | null
+  // The text of a send whose turn failed — ChatScene restores it into the
+  // input box so a generation error never eats the player's prose.
+  failedInput: string | null
   contextTokens: number | null
   maxContextTokens: number | null
   activeVariants: Record<number, number>
@@ -89,11 +92,13 @@ interface ChatState {
   applyPendingDeletes: () => Promise<void>
   dismissPendingDeletes: () => void
   clearToolFailures: () => void
+  clearFailedInput: () => void
 }
 
 let nextOptimisticId = -1
 let _activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null
 let _aborted = false
+let _lastSent: string | null = null  // most recent sendTurn text, for failedInput
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
@@ -108,6 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toolStatus: null,
   toolFailures: [],
   error: null,
+  failedInput: null,
   contextTokens: null,
   maxContextTokens: null,
   activeVariants: {},
@@ -162,7 +168,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       thinkingStartedAt: Date.now(),
     }))
 
-    await _handleStream('/api/chat/turn', { message, mode, ...(image ? { image } : {}) })
+    _lastSent = message
+    await _handleStream('/api/chat/turn', { message, mode, ...(image ? { image } : {}) }, { appendOnDone: !planning })
   },
 
   regenerate: async (guidance) => {
@@ -248,6 +255,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   dismissPendingDeletes: () => set({ pendingDeletes: [] }),
   clearToolFailures: () => set({ toolFailures: [] }),
+  clearFailedInput: () => set({ failedInput: null }),
 }))
 
 /** Refresh every panel a planner turn may have changed. */
@@ -259,12 +267,18 @@ function refreshWorldPanels() {
   useNarratorStore.getState().fetchConfig()
 }
 
-async function _handleStream(url: string, body: object) {
+async function _handleStream(url: string, body: object, opts: { appendOnDone?: boolean } = {}) {
   const { set, get } = { set: useChatStore.setState, get: useChatStore.getState }
   _aborted = false
   set({ toolFailures: [] })  // clear any prior turn's failure notices
   useActionSuggestionsStore.getState().clear()
   useTtsStore.getState().stop()  // a new/regenerated turn silences the old one
+
+  // Filled from the `done` event when the server sends the persisted message
+  // along — a plain send can then append locally instead of refetching the
+  // whole (ever-growing) history.
+  let doneMessage: ChatMessage | null = null
+  let doneUserMessageId: number | null = null
 
   try {
     const res = await fetch(url, {
@@ -322,6 +336,8 @@ async function _handleStream(url: string, body: object) {
           } else if (event.type === 'done') {
             if (event.contextTokens !== undefined) set({ contextTokens: event.contextTokens })
             if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
+            if (event.message) doneMessage = event.message as ChatMessage
+            if (event.userMessageId !== undefined) doneUserMessageId = event.userMessageId as number
             // The turn may have changed inventory (grant/consume/unequip) or
             // equipment (equip/unequip); refresh the affected panels so the UI
             // reflects the new DB state instead of going stale until reload.
@@ -341,7 +357,9 @@ async function _handleStream(url: string, body: object) {
               set({ toolFailures: event.toolFailures })
             }
           } else if (event.type === 'error') {
-            set({ error: event.content })
+            // A failed send must not eat the player's prose — surface it for
+            // ChatScene to restore into the input box.
+            set({ error: event.content, ...(opts.appendOnDone && _lastSent ? { failedInput: _lastSent } : {}) })
           }
         } catch { /* skip malformed */ }
       }
@@ -363,7 +381,27 @@ async function _handleStream(url: string, body: object) {
       } catch { /* best effort */ }
     }
 
-    await get().fetchHistory()
+    if (!_aborted && opts.appendOnDone && doneMessage) {
+      // Append the turn locally: swap the optimistic user message's temporary
+      // id for the persisted one, add the assistant reply, keep variant
+      // bookkeeping current. Events still refresh (Chronicler/item toasts).
+      const saved = doneMessage
+      set((s) => ({
+        messages: [
+          ...s.messages.map((m) =>
+            m.id < 0 && m.role === 'user' && m.turnNumber === saved.turnNumber && doneUserMessageId != null
+              ? { ...m, id: doneUserMessageId }
+              : m,
+          ),
+          saved,
+        ],
+        currentTurn: Math.max(s.currentTurn, saved.turnNumber),
+        activeVariants: { ...s.activeVariants, [saved.turnNumber]: saved.variant },
+      }))
+      void get().fetchEvents()
+    } else {
+      await get().fetchHistory()
+    }
 
     if (!_aborted) {
       if (isPlanner) {
@@ -383,7 +421,7 @@ async function _handleStream(url: string, body: object) {
       await get().fetchHistory()
     } else {
       const msg = e instanceof Error ? e.message : 'Something went wrong'
-      set({ error: msg })
+      set({ error: msg, ...(opts.appendOnDone && _lastSent ? { failedInput: _lastSent } : {}) })
     }
   } finally {
     _activeReader = null

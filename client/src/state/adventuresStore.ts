@@ -10,6 +10,7 @@ import { useTasksStore } from './tasksStore'
 import { useLoreStore } from './loreStore'
 import { useScenarioStore } from './scenarioStore'
 import { useWorldbuildStore } from './worldbuildStore'
+import { useJournalStore } from './journalStore'
 import { useUiStore } from './uiStore'
 
 interface AdventuresState {
@@ -40,6 +41,7 @@ export async function reloadAll() {
     useLoreStore.getState().fetchConfig(),
     useScenarioStore.getState().fetchScenario(),
     useWorldbuildStore.getState().fetchProposals(),
+    useJournalStore.getState().fetch(true),  // true → re-arm the "Previously on…" banner
   ])
   for (const r of results) {
     if (r.status === 'rejected') console.error('reloadAll: a store failed to refresh', r.reason)

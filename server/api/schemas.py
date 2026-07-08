@@ -94,10 +94,12 @@ class NarratorUpdate(BaseModel):
     plannerInstructions: str | None = None
     actionSuggestionsEnabled: bool | None = None
     actionSuggestionsInstructions: str | None = None
+    diceEnabled: bool | None = None
 
 
 class NarratorResponse(BaseModel):
     hasVoice: bool = False  # narrator TTS voice sample present for this campaign
+    diceEnabled: bool = True  # server-rolled d20 skill_check tool offered
     instructions: str
     actionInstruction: str
     spotlightRule: str

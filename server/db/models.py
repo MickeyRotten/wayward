@@ -112,6 +112,9 @@ class NarratorConfig(Base):
     # Custom guidance for the Action-Suggestion agent. Blank => the built-in
     # default (action_suggester.ACTION_SUGGESTIONS_GUIDANCE) is used.
     action_suggestions_instructions: Mapped[str] = mapped_column(Text, default="")
+    # Skill checks: offer the narrator a server-rolled d20 skill_check tool for
+    # uncertain, consequential actions (rendered as dice chips in chat).
+    dice_enabled: Mapped[bool] = mapped_column(Integer, default=True)
 
 
 class LorebookEntry(Base):
@@ -125,7 +128,7 @@ class LorebookEntry(Base):
     enabled: Mapped[bool] = mapped_column(Integer, default=True)
     permanent: Mapped[bool] = mapped_column(Integer, default=False)
     locked: Mapped[bool] = mapped_column(Integer, default=False)
-    cat: Mapped[str] = mapped_column(String, default="world")
+    cat: Mapped[str] = mapped_column(String, default="world", index=True)
 
     # Structured Scenario fields — only meaningful on the single Scenario row
     # (title == "Scenario", permanent=True, locked=True). Holds a dict with
@@ -228,7 +231,7 @@ class ChatMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     role: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
-    turn_number: Mapped[int] = mapped_column(Integer)
+    turn_number: Mapped[int] = mapped_column(Integer, index=True)
     variant: Mapped[int] = mapped_column(Integer, default=0)
     speaker: Mapped[str] = mapped_column(String, default="narrator")
     # Which chat thread this message belongs to: 'narrator' (the story) or
@@ -308,7 +311,7 @@ class Task(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     text: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String, default="active")  # active | completed | failed
+    status: Mapped[str] = mapped_column(String, default="active", index=True)  # active | completed | failed
     notes: Mapped[str] = mapped_column(Text, default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -349,13 +352,13 @@ class WorldbuildingProposal(Base):
     __table_args__ = ADVENTURE
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    turn_number: Mapped[int] = mapped_column(Integer, default=0)
+    turn_number: Mapped[int] = mapped_column(Integer, default=0, index=True)
     kind: Mapped[str] = mapped_column(String)          # lore | quest | quest_objective | member
     operation: Mapped[str] = mapped_column(String)     # create | update
     target_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     summary: Mapped[str] = mapped_column(String, default="")
-    status: Mapped[str] = mapped_column(String, default="pending")  # pending | accepted | rejected | failed
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending | accepted | rejected | failed
     note: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()

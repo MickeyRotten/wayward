@@ -333,16 +333,28 @@ async def _known_name_tokens(session: AsyncSession) -> set[str]:
 async def _turn_context(session: AsyncSession, turn_number: int) -> str:
     """The just-played turn (player + latest narration) plus a little prior
     context. Content is clipped to keep this second LLM pass lean."""
-    msgs = (
-        await session.execute(select(ChatMessage).order_by(ChatMessage.id))
+    turn_msgs = (
+        await session.execute(
+            select(ChatMessage)
+            .where(ChatMessage.turn_number == turn_number)
+            .order_by(ChatMessage.id)
+        )
     ).scalars().all()
 
-    player = next((m for m in msgs if m.turn_number == turn_number and m.role == "user"), None)
-    variants = [m for m in msgs if m.turn_number == turn_number and m.role == "assistant"]
+    player = next((m for m in turn_msgs if m.role == "user"), None)
+    variants = [m for m in turn_msgs if m.role == "assistant"]
     narration = max(variants, key=lambda m: m.variant).content if variants else ""
 
-    # Two prior turns for continuity, each clipped.
-    prior = [m for m in msgs if m.turn_number < turn_number][-2:]
+    # Two prior messages for continuity, each clipped (targeted query — never
+    # load the whole adventure for this second, lean LLM pass).
+    prior = list(reversed((
+        await session.execute(
+            select(ChatMessage)
+            .where(ChatMessage.turn_number < turn_number)
+            .order_by(ChatMessage.id.desc())
+            .limit(2)
+        )
+    ).scalars().all()))
     lines = ["RECENT CONTEXT:"]
     for m in prior:
         who = "Player" if m.role == "user" else "Narrator"

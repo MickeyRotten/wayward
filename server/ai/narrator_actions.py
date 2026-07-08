@@ -9,6 +9,7 @@ See CLAUDE.md > Narrator Actions for the full design.
 
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 
@@ -311,6 +312,41 @@ class ToolEffect:
     # item/character, wrong slot, …) — surfaced to the player as a graceful
     # "the world stayed safe" notice. Read-only lookups leave this True.
     ok: bool = True
+
+
+# ── Skill checks (dice) ───────────────────────────────────────────
+
+_DICE_DCS = {"easy": 8, "normal": 12, "hard": 16, "heroic": 19}
+
+
+async def tool_skill_check(args: dict, session: AsyncSession, turn_number: int = 0) -> ToolEffect:
+    """Server-rolled d20 skill check — the model narrates the outcome it is
+    GIVEN, so it can never fudge the dice. The roll is recorded as a tethered
+    ChatEvent (a dice chip in the chat) that vanishes with the turn on
+    swipe/regenerate/delete, and a fresh re-roll happens on the retelling."""
+    from server.db import events as event_ops
+
+    who = (args.get("characterName") or "").strip() or "Someone"
+    skill = (args.get("skill") or "").strip() or "a skill"
+    difficulty = (args.get("difficulty") or "normal").strip().lower()
+    dc = _DICE_DCS.get(difficulty, _DICE_DCS["normal"])
+    roll = random.randint(1, 20)
+    if roll == 20:
+        outcome = "critical success"
+    elif roll == 1:
+        outcome = "critical failure"
+    elif roll >= dc:
+        outcome = "success"
+    else:
+        outcome = "failure"
+
+    text = f"{who} — {skill}: rolled {roll} vs DC {dc} — {outcome.title()}"
+    await event_ops.add_event(
+        session, turn_number=turn_number, kind="dice", text=text, tethered=True
+    )
+    return ToolEffect(result=json.dumps({
+        "roll": roll, "dc": dc, "difficulty": difficulty, "outcome": outcome,
+    }))
 
 
 async def tool_set_scene(args: dict, session: AsyncSession) -> ToolEffect:

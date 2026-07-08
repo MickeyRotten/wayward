@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react'
 import { useChatStore } from '../../state/chatStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
 import { useSettingsStore } from '../../state/settingsStore'
@@ -7,6 +7,7 @@ import { useItemsStore } from '../../state/itemsStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useActionSuggestionsStore } from '../../state/actionSuggestionsStore'
 import { useTtsStore } from '../../state/ttsStore'
+import { useJournalStore } from '../../state/journalStore'
 import { ItemCard } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
@@ -22,10 +23,9 @@ interface PromptLogMessage {
 export function ChatScene() {
   const messages = useChatStore((s) => s.messages)
   const isLoading = useChatStore((s) => s.isLoading)
-  const isSummarizing = useChatStore((s) => s.isSummarizing)
-  const streamingContent = useChatStore((s) => s.streamingContent)
-  const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
-  const toolStatus = useChatStore((s) => s.toolStatus)
+  // NOTE: streamingContent/thinkingStartedAt/toolStatus/isSummarizing are
+  // deliberately NOT subscribed here — only <StreamingWindow/> reads them, so
+  // per-chunk SSE updates re-render that one small node, not the whole scene.
   const toolFailures = useChatStore((s) => s.toolFailures)
   const clearToolFailures = useChatStore((s) => s.clearToolFailures)
   const error = useChatStore((s) => s.error)
@@ -39,8 +39,12 @@ export function ChatScene() {
   const contextTokens = useChatStore((s) => s.contextTokens)
   const maxContextTokens = useChatStore((s) => s.maxContextTokens)
   const worldbuildRunning = useWorldbuildStore((s) => s.running)
-  // Block input until the narrator AND the post-turn Chronicler are both done.
+  const worldbuildStartedAt = useWorldbuildStore((s) => s.runningStartedAt)
+  // Destructive/turn-editing actions (swipe, regenerate, delete) wait for the
+  // narrator AND the post-turn Chronicler; typing and sending only wait for
+  // the narration itself — the Chronicler records in the background.
   const busy = isLoading || worldbuildRunning
+  const inputLocked = isLoading
   const activeVariants = useChatStore((s) => s.activeVariants)
   const events = useChatStore((s) => s.events)
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
@@ -51,6 +55,11 @@ export function ChatScene() {
   const pendingDeletes = useChatStore((s) => s.pendingDeletes)
   const applyPendingDeletes = useChatStore((s) => s.applyPendingDeletes)
   const dismissPendingDeletes = useChatStore((s) => s.dismissPendingDeletes)
+  const failedInput = useChatStore((s) => s.failedInput)
+  const clearFailedInput = useChatStore((s) => s.clearFailedInput)
+  const recapSummary = useJournalStore((s) => s.summary)
+  const recapDismissed = useJournalStore((s) => s.bannerDismissed)
+  const dismissRecap = useJournalStore((s) => s.dismissBanner)
 
   const playerCharacter = usePartyStore((s) => s.playerCharacter)
   const partyMembers = usePartyStore((s) => s.partyMembers)
@@ -114,12 +123,23 @@ export function ChatScene() {
   }
 
   // Sticky auto-scroll: follow new content only when already near the bottom, so
-  // scrolling up to read isn't yanked back down mid-turn.
+  // scrolling up to read isn't yanked back down mid-turn. (Streaming chunks are
+  // followed by StreamingWindow's own effect.) rAF batches the scrollHeight
+  // read/write after paint instead of forcing a sync reflow.
   useEffect(() => {
-    if (atBottom && listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight
-    }
-  }, [messages, streamingContent, atBottom])
+    if (!atBottom || !listRef.current) return
+    const el = listRef.current
+    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    return () => cancelAnimationFrame(raf)
+  }, [messages, atBottom])
+
+  // A failed send restores the typed text into the (now empty) input box so a
+  // generation error never eats the player's prose.
+  useEffect(() => {
+    if (!failedInput) return
+    setInput((cur) => (cur.trim() ? cur : failedInput))
+    clearFailedInput()
+  }, [failedInput, clearFailedInput])
 
   // Auto-grow the input: single row by default, expand with wrapped lines up
   // to a cap, then scroll.
@@ -132,7 +152,7 @@ export function ChatScene() {
 
   const handleSend = () => {
     const text = input.trim()
-    if ((!text && !pendingImage) || busy) return
+    if ((!text && !pendingImage) || inputLocked) return
     setInput('')
     const image = pendingImage
     setPendingImage(null)
@@ -165,15 +185,23 @@ export function ChatScene() {
   }
 
   // Restrict to the active thread: narration vs the Planning conversation.
+  // All list derivations are memoized so their identities are stable across
+  // unrelated re-renders — that's what lets React.memo(MessageBubble) hold.
   const threadMode = planningMode ? 'planner' : 'narrator'
-  const threadMessages = messages.filter((m) => (m.mode ?? 'narrator') === threadMode)
+  const threadMessages = useMemo(
+    () => messages.filter((m) => (m.mode ?? 'narrator') === threadMode),
+    [messages, threadMode],
+  )
 
   // Build the visible message list — one assistant message per turn (the active variant)
-  const visibleMessages = buildVisibleMessages(threadMessages, activeVariants)
+  const visibleMessages = useMemo(
+    () => buildVisibleMessages(threadMessages, activeVariants),
+    [threadMessages, activeVariants],
+  )
   const lastTurn = Math.max(0, ...threadMessages.map((m) => m.turnNumber))
 
   // Get variant info for each turn
-  const variantCounts = getVariantCounts(threadMessages)
+  const variantCounts = useMemo(() => getVariantCounts(threadMessages), [threadMessages])
 
   // Persistent in-chat toasts (Chronicler notices + player item actions), only
   // in the story thread. Group by their anchor turn so each renders right after
@@ -220,30 +248,36 @@ export function ChatScene() {
       )
 
   // Build a lookup for party member info by id
-  const partyMemberMap = new Map(
-    partyMembers.map((pm) => [pm.id, pm])
+  const partyMemberMap = useMemo(
+    () => new Map(partyMembers.map((pm) => [pm.id, pm])),
+    [partyMembers],
   )
 
   // Name → in-party member resolver, for parsing party dialogue out of narration.
-  const memberResolver = buildMemberResolver(partyMembers)
+  const memberResolver = useMemo(() => buildMemberResolver(partyMembers), [partyMembers])
 
   // Per-message cinematic scene header: shown above a narrator message when its
   // declared location/time differs from the last one established (a scene change).
-  const sceneHeaders = computeSceneHeaders(visibleMessages)
+  const sceneHeaders = useMemo(() => computeSceneHeaders(visibleMessages), [visibleMessages])
 
   // PC info
   const pcName = playerCharacter?.basicInfo?.name || 'Player'
   const pcPortrait = playerCharacter?.portraitCrop || ''
 
-  // Item and character names to highlight inline in the narration.
-  const chipEntities: ChipEntity[] = [
-    ...catalog.map((item) => ({ name: item.name, kind: 'item' as const, id: item.id })),
-    ...partyMembers.map((m) => ({ name: m.basicInfo?.name || '', kind: 'member' as const, id: m.id })),
-    ...(playerCharacter ? [{ name: pcName, kind: 'member' as const, id: playerCharacter.id }] : []),
-  ].filter((e) => e.name.trim() && e.name !== 'Player')
+  // Item and character names to highlight inline in the narration. Stable
+  // identity also keys applyEntityChips' compiled-regex cache.
+  const chipEntities: ChipEntity[] = useMemo(
+    () =>
+      [
+        ...catalog.map((item) => ({ name: item.name, kind: 'item' as const, id: item.id })),
+        ...partyMembers.map((m) => ({ name: m.basicInfo?.name || '', kind: 'member' as const, id: m.id })),
+        ...(playerCharacter ? [{ name: pcName, kind: 'member' as const, id: playerCharacter.id }] : []),
+      ].filter((e) => e.name.trim() && e.name !== 'Player'),
+    [catalog, partyMembers, playerCharacter, pcName],
+  )
 
   // Item id -> catalog entry, for resolving names in inventory/equipment notices
-  const catalogMap = new Map(catalog.map((item) => [item.id, item]))
+  const catalogMap = useMemo(() => new Map(catalog.map((item) => [item.id, item])), [catalog])
 
   // Resolve a character id to a display name (player character or party member)
   const resolveCharName = useCallback(
@@ -321,7 +355,7 @@ export function ChatScene() {
           {/* Play / Edit mode toggle (Unity-style): lit while playing (Narration). */}
           <button
             type="button"
-            disabled={busy}
+            disabled={inputLocked}
             title={planningMode ? 'Exit Edit Mode — back to play' : 'Edit Mode — work on the world'}
             onClick={() => setPlanningMode(!planningMode)}
             className={`shrink-0 mt-[1px] w-7 h-7 flex items-center justify-center border rounded-sm transition-colors disabled:opacity-40 ${
@@ -385,6 +419,27 @@ export function ChatScene() {
           onScroll={handleListScroll}
           className="flex-1 overflow-y-auto p-4 max-lg:px-3 space-y-4"
         >
+        {/* "Previously on…" — the story-so-far recap, once per adventure load */}
+        {!planningMode && recapSummary && !recapDismissed && visibleMessages.length > 0 && (
+          <div className="max-w-[85%] max-lg:max-w-full mr-auto border-l-2 border-gold/50 bg-bg2/60 rounded-r-md px-4 py-3">
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <span className="font-disp text-[12px] tracking-[0.14em] text-gold uppercase pt-[2px]">
+                Previously on your adventure
+              </span>
+              <button
+                type="button"
+                className="font-ui text-[9px] text-textdim hover:text-text"
+                onClick={dismissRecap}
+              >
+                DISMISS
+              </button>
+            </div>
+            <p className="font-body text-sm text-text2 leading-relaxed italic whitespace-pre-wrap line-clamp-6">
+              {recapSummary}
+            </p>
+          </div>
+        )}
+
         {/* Configured opening narration (drop-capped, not editable in chat) */}
         {hasFirstMessage && (
           <div className="max-w-[85%] max-lg:max-w-full mr-auto">
@@ -472,38 +527,15 @@ export function ChatScene() {
           </div>
         )}
 
-        {/* Streaming response — routed through the segmenter so dialogue boxes,
-            dividers, etc. form live as text streams. */}
-        {isLoading && streamingContent && (
-          <div className="max-w-[85%] max-lg:max-w-full mr-auto px-4 py-3">
-            <SegmentedNarration
-              segments={planningMode ? [{ type: 'narration', text: streamingContent }] : parseSegments(streamingContent, memberResolver)}
-              chipEntities={chipEntities}
-            />
-          </div>
-        )}
-
-        {/* Generating indicator — narrator/planner avatar with animated dots */}
-        {isLoading && !streamingContent && (
-          <div className="flex items-start gap-3 mr-auto px-1 py-3">
-            <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
-              <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
-            </div>
-            <div className="pt-2">
-              {toolStatus ? (
-                <span className="font-ui text-[10px] text-gold/80 tracking-wider">
-                  {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
-                </span>
-              ) : planningMode ? (
-                <span className="font-ui text-[10px] text-textdim tracking-wider">
-                  THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
-                </span>
-              ) : (
-                <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
-              )}
-            </div>
-          </div>
-        )}
+        {/* Live streaming text + thinking indicator — its own component so
+            per-chunk store updates re-render only this node. */}
+        <StreamingWindow
+          planningMode={planningMode}
+          memberResolver={memberResolver}
+          chipEntities={chipEntities}
+          listRef={listRef}
+          atBottom={atBottom}
+        />
 
         {/* Chronicler (world-building) indicator — runs after the narration */}
         {!isLoading && worldbuildRunning && (
@@ -515,7 +547,7 @@ export function ChatScene() {
             </div>
             <div className="pt-2">
               <span className="font-ui text-[10px] text-textdim tracking-wider">
-                THE CHRONICLER IS RECORDING<Elapsed startedAt={null} />
+                THE CHRONICLER IS RECORDING<Elapsed startedAt={worldbuildStartedAt} />
                 <span className="animate-pulse"> ···</span>
               </span>
             </div>
@@ -541,13 +573,13 @@ export function ChatScene() {
 
         {/* Reactive action suggestions — VN-style choices under the last beat,
             shown only when idle so they read as "what do you do?" options. */}
-        {!planningMode && !busy && actionSuggestionsEnabled && actionSuggestions.length > 0 && (
+        {!planningMode && !inputLocked && actionSuggestionsEnabled && actionSuggestions.length > 0 && (
           <div className="mr-auto w-full max-w-[85%] max-lg:max-w-full flex flex-col gap-1.5 pl-1 pt-1">
             {actionSuggestions.map((s) => (
               <button
                 key={s}
                 type="button"
-                disabled={busy || !apiKeySet}
+                disabled={inputLocked || !apiKeySet}
                 onClick={() => sendTurn(s)}
                 className="group text-left font-body text-sm text-text2 border border-line rounded-md bg-bg2/40 px-3.5 py-2 hover:border-gold hover:text-text hover:bg-gold/5 transition-colors disabled:opacity-40"
               >
@@ -642,23 +674,23 @@ export function ChatScene() {
         <div className="border-t border-line2 px-3 pt-2 pb-1 bg-bg1 flex flex-wrap items-center gap-1.5">
           <QuickActionButton
             label="Look Around"
-            disabled={busy || !apiKeySet}
+            disabled={inputLocked || !apiKeySet}
             onClick={() => sendTurn('I look around carefully.')}
           />
           <QuickActionButton
             label="Talk to Party"
-            disabled={busy || !apiKeySet}
+            disabled={inputLocked || !apiKeySet}
             onClick={() => sendTurn('I turn to talk to my party.')}
           />
           <QuickActionButton
             label="Rest"
-            disabled={busy || !apiKeySet}
+            disabled={inputLocked || !apiKeySet}
             onClick={() => sendTurn('I take a moment to rest.')}
           />
           <div className="relative flex">
             <QuickActionButton
               label="Use an Item"
-              disabled={busy || !apiKeySet || inventory.length === 0}
+              disabled={inputLocked || !apiKeySet || inventory.length === 0}
               onClick={() => setItemPickerOpen((o) => !o)}
             />
             {itemPickerOpen && (
@@ -780,7 +812,7 @@ export function ChatScene() {
             type="button"
             title="Attach an image"
             aria-label="Attach an image"
-            disabled={!apiKeySet || busy}
+            disabled={!apiKeySet || inputLocked}
             className={`shrink-0 border px-2.5 py-2 transition-colors disabled:opacity-40 ${
               pendingImage ? 'border-gold text-gold' : 'border-line text-textsec hover:text-text hover:border-line2'
             }`}
@@ -799,7 +831,7 @@ export function ChatScene() {
             rows={1}
             placeholder={!apiKeySet ? 'Set API key in Settings...' : planningMode ? 'Describe what to build or change…' : 'What do you do?'}
             value={input}
-            disabled={!apiKeySet || busy}
+            disabled={!apiKeySet || inputLocked}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -821,7 +853,7 @@ export function ChatScene() {
             <button
               type="button"
               className="shrink-0 font-ui text-[10px] bg-golddeep text-bg0 px-3 py-2 hover:bg-gold transition-colors disabled:opacity-40"
-              disabled={!apiKeySet || (!input.trim() && !pendingImage) || busy}
+              disabled={!apiKeySet || (!input.trim() && !pendingImage) || inputLocked}
               onClick={handleSend}
             >
               SEND
@@ -1003,6 +1035,8 @@ function Portrait({
         <img
           src={src.startsWith('/') || src.startsWith('http') ? src : `/portraits/${src}`}
           alt={name}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover object-top"
         />
       ) : (
@@ -1016,7 +1050,22 @@ function Portrait({
 
 // ── Message Bubble with speaker differentiation ────────────────────
 
-function MessageBubble({
+// Equality for React.memo: shallow-compare everything except the callback
+// props — they're fresh closures every parent render, but everything they
+// capture that affects output (variant counts, busy, ids) arrives via the
+// other, compared props. This is what stops streaming chunks / unrelated store
+// updates from re-rendering (and re-parsing) the whole message history.
+function bubblePropsEqual(prev: Record<string, unknown>, next: Record<string, unknown>): boolean {
+  for (const k of Object.keys(next)) {
+    const a = prev[k]
+    const b = next[k]
+    if (typeof a === 'function' && typeof b === 'function') continue
+    if (a !== b) return false
+  }
+  return true
+}
+
+const MessageBubble = memo(function MessageBubble({
   message,
   variantCount,
   activeVariant,
@@ -1065,6 +1114,17 @@ function MessageBubble({
   const speakingThis = useTtsStore((s) => s.playing?.messageId === message.id)
   const speakMessage = useTtsStore((s) => s.speakMessage)
   const stopSpeaking = useTtsStore((s) => s.stop)
+
+  // Editor/Planner prose is rendered plainly; only narration gets JRPG segments.
+  // Parsed once per (content, resolver) — not on every render of the list.
+  const isPlanner = message.mode === 'planner'
+  const segments = useMemo<Segment[]>(
+    () =>
+      isPlanner
+        ? [{ type: 'narration', text: message.content }]
+        : parseSegments(message.content, memberResolver),
+    [isPlanner, message.content, memberResolver],
+  )
 
   useEffect(() => {
     setEditText(message.content)
@@ -1260,11 +1320,6 @@ function MessageBubble({
   }
 
   // ── Narrator / Planner message (default for assistant) ──
-  const isPlanner = message.mode === 'planner'
-  // Editor/Planner prose is rendered plainly; only narration gets JRPG segments.
-  const segments: Segment[] = isPlanner
-    ? [{ type: 'narration', text: message.content }]
-    : parseSegments(message.content, memberResolver)
   return (
     <div className="max-w-[85%] max-lg:max-w-full mr-auto group">
       {isPlanner && (
@@ -1321,12 +1376,29 @@ function MessageBubble({
       />
     </div>
   )
-}
+}, bubblePropsEqual)
 
 // ── Persistent in-chat toasts (Chronicler notices + player item actions) ────
 
 function EventToast({ event }: { event: ChatEvent }) {
   const isChronicler = event.kind === 'chronicler'
+
+  // Dice chip — a server-rolled skill check; success glows gold, failure danger.
+  if (event.kind === 'dice') {
+    const failed = /Failure$/i.test(event.text)
+    return (
+      <div className="mr-auto max-w-[85%] max-lg:max-w-full flex items-start gap-2 px-3 py-1.5">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={`mt-[1px] flex-shrink-0 ${failed ? 'text-danger' : 'text-gold'}`}>
+          <path d="M12 2 3 7v10l9 5 9-5V7l-9-5z" />
+          <path d="M12 22V12" /><path d="M3 7l9 5 9-5" />
+        </svg>
+        <span className={`font-ui text-[10px] leading-relaxed tracking-wide ${failed ? 'text-danger/90' : 'text-gold/90'}`}>
+          {event.text}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div className="mr-auto max-w-[85%] max-lg:max-w-full flex items-start gap-2 px-3 py-1.5">
       {isChronicler ? (
@@ -1717,6 +1789,81 @@ function ThinkingIndicator({ startedAt, isSummarizing }: { startedAt: number | n
   )
 }
 
+// Sole subscriber to the per-chunk streaming state (streamingContent, tool
+// status, thinking timer). SSE chunks arrive many times per second; keeping
+// those subscriptions out of ChatScene means each chunk re-renders only this
+// node instead of the entire message history.
+function StreamingWindow({
+  planningMode,
+  memberResolver,
+  chipEntities,
+  listRef,
+  atBottom,
+}: {
+  planningMode: boolean
+  memberResolver: Map<string, MemberLite>
+  chipEntities: ChipEntity[]
+  listRef: React.RefObject<HTMLDivElement | null>
+  atBottom: boolean
+}) {
+  const isLoading = useChatStore((s) => s.isLoading)
+  const streamingContent = useChatStore((s) => s.streamingContent)
+  const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
+  const toolStatus = useChatStore((s) => s.toolStatus)
+  const isSummarizing = useChatStore((s) => s.isSummarizing)
+
+  // Follow the stream while the user is pinned to the bottom (rAF-batched so
+  // we never force a sync reflow per chunk).
+  useEffect(() => {
+    if (!atBottom || !streamingContent || !listRef.current) return
+    const el = listRef.current
+    const raf = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    return () => cancelAnimationFrame(raf)
+  }, [streamingContent, atBottom, listRef])
+
+  const segments = useMemo<Segment[]>(
+    () =>
+      planningMode
+        ? [{ type: 'narration', text: streamingContent }]
+        : parseSegments(streamingContent, memberResolver),
+    [planningMode, streamingContent, memberResolver],
+  )
+
+  if (!isLoading) return null
+
+  // Streaming response — routed through the segmenter so dialogue boxes,
+  // dividers, etc. form live as text streams.
+  if (streamingContent) {
+    return (
+      <div className="max-w-[85%] max-lg:max-w-full mr-auto px-4 py-3">
+        <SegmentedNarration segments={segments} chipEntities={chipEntities} />
+      </div>
+    )
+  }
+
+  // Generating indicator — narrator/planner avatar with animated dots.
+  return (
+    <div className="flex items-start gap-3 mr-auto px-1 py-3">
+      <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
+        <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
+      </div>
+      <div className="pt-2">
+        {toolStatus ? (
+          <span className="font-ui text-[10px] text-gold/80 tracking-wider">
+            {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+          </span>
+        ) : planningMode ? (
+          <span className="font-ui text-[10px] text-textdim tracking-wider">
+            THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+          </span>
+        ) : (
+          <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PromptLogModal({ messages, onClose }: { messages: PromptLogMessage[]; onClose: () => void }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -1764,15 +1911,32 @@ function formatNarration(text: string): string {
 
 export type ChipEntity = { name: string; kind: 'item' | 'member'; id: string }
 
+// The compiled name-matcher is cached per entity ARRAY IDENTITY — chipEntities
+// is useMemo'd in ChatScene, so the (expensive) escape+compile happens once per
+// catalog/party change instead of once per segment per message per render.
+const _chipMatcherCache = new WeakMap<ChipEntity[], { byName: Map<string, ChipEntity>; re: RegExp | null }>()
+
+function _chipMatcher(entities: ChipEntity[]) {
+  let m = _chipMatcherCache.get(entities)
+  if (m) return m
+  const byName = new Map(entities.filter((e) => e.name.trim()).map((e) => [e.name.toLowerCase(), e]))
+  let re: RegExp | null = null
+  if (byName.size > 0) {
+    // Longer names first so multi-word names win over substrings.
+    const names = [...byName.values()].map((e) => e.name).sort((a, b) => b.length - a.length)
+    const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    re = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  }
+  m = { byName, re }
+  _chipMatcherCache.set(entities, m)
+  return m
+}
+
 // Highlight important item and character names inline. Non-interactive — just a
 // subtle gold emphasis so they stand out in the narration (no click-to-inspect).
 function applyEntityChips(html: string, entities: ChipEntity[]): string {
-  const byName = new Map(entities.filter((e) => e.name.trim()).map((e) => [e.name.toLowerCase(), e]))
-  if (byName.size === 0) return html
-  // Longer names first so multi-word names win over substrings.
-  const names = [...byName.values()].map((e) => e.name).sort((a, b) => b.length - a.length)
-  const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const re = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  const { byName, re } = _chipMatcher(entities)
+  if (!re) return html
   return html.replace(/(<[^>]*>)|([^<]+)/g, (_, tag, text) => {
     if (tag) return tag
     return text.replace(re, (m: string) => {

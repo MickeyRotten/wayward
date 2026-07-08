@@ -114,37 +114,44 @@ def _to_first_person(phrase: str) -> str:
 async def _latest_scene_fields(session, turn_number: int) -> dict:
     """Latest non-null location/time/weather declared up to this turn — same
     'most recent wins' rule the client uses in lib/location.ts."""
-    msgs = (
-        await session.execute(
-            select(ChatMessage)
-            .where(ChatMessage.turn_number <= turn_number, ChatMessage.mode == "narrator")
-            .order_by(ChatMessage.id)
-        )
-    ).scalars().all()
-    location = time_of_day = weather = None
-    for m in msgs:
-        if m.location:
-            location = m.location
-        if m.time_of_day:
-            time_of_day = m.time_of_day
-        if m.weather:
-            weather = m.weather
-    return {"location": location, "timeOfDay": time_of_day, "weather": weather}
+    async def _latest(col):
+        return (
+            await session.execute(
+                select(col)
+                .where(
+                    ChatMessage.turn_number <= turn_number,
+                    ChatMessage.mode == "narrator",
+                    col.is_not(None),
+                )
+                .order_by(ChatMessage.id.desc())
+            )
+        ).scalars().first()
+
+    return {
+        "location": await _latest(ChatMessage.location),
+        "timeOfDay": await _latest(ChatMessage.time_of_day),
+        "weather": await _latest(ChatMessage.weather),
+    }
 
 
 async def _recent_exchanges(session, turn_number: int, prior_turns: int = 2) -> list[str]:
     """The last few player↔narrator exchanges (a little history for continuity),
     each clipped. Uses the active variant per turn, narrator thread only."""
+    start_turn = max(1, turn_number - prior_turns + 1)
     msgs = (
         await session.execute(
             select(ChatMessage)
-            .where(ChatMessage.turn_number <= turn_number, ChatMessage.mode == "narrator")
+            .where(
+                ChatMessage.turn_number >= start_turn,
+                ChatMessage.turn_number <= turn_number,
+                ChatMessage.mode == "narrator",
+            )
             .order_by(ChatMessage.id)
         )
     ).scalars().all()
 
     lines: list[str] = []
-    for t in range(max(1, turn_number - prior_turns + 1), turn_number + 1):
+    for t in range(start_turn, turn_number + 1):
         player = next((m for m in msgs if m.turn_number == t and m.role == "user"), None)
         variants = [m for m in msgs if m.turn_number == t and m.role == "assistant"]
         narration = max(variants, key=lambda m: m.variant).content if variants else ""

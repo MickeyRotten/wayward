@@ -130,10 +130,24 @@ def _clean_field_skill(field_skill: dict | None) -> dict:
     return {"name": fs.get("name") or "", "description": fs.get("description") or ""}
 
 
+# Identity-file cache keyed on the json's mtime — party/PC composites are
+# loaded several times per chat turn (narrator, Chronicler, suggester), and
+# each load was a disk read + json parse per member without this.
+_read_cache: dict[str, tuple[float, dict]] = {}
+
+
 def read_character(cid: str) -> dict | None:
+    path = char_json_path(cid)
     try:
-        return json.loads(char_json_path(cid).read_text(encoding="utf-8"))
+        mtime = path.stat().st_mtime
+        cached = _read_cache.get(cid)
+        if cached and cached[0] == mtime:
+            return dict(cached[1])
+        data = json.loads(path.read_text(encoding="utf-8"))
+        _read_cache[cid] = (mtime, data)
+        return dict(data)
     except (OSError, json.JSONDecodeError):
+        _read_cache.pop(cid, None)
         return None
 
 
@@ -142,6 +156,7 @@ def write_character(cid: str, data: dict) -> None:
     char_json_path(cid).write_text(
         json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    _read_cache.pop(cid, None)
 
 
 def create_character(
@@ -201,6 +216,7 @@ def list_characters() -> list[dict]:
 
 
 def delete_character(cid: str) -> bool:
+    _read_cache.pop(cid, None)
     d = char_dir(cid)
     if d.exists():
         shutil.rmtree(d, ignore_errors=True)

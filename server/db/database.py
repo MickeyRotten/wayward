@@ -40,10 +40,20 @@ def _tables_for_schema(schema: str | None):
 
 def _attach(dbapi_conn, _rec):
     cur = dbapi_conn.cursor()
+    # WAL lets the narrator's writes and the post-turn Chronicler/suggester
+    # reads run concurrently without "database is locked"; NORMAL sync skips
+    # the per-commit fsync (safe with WAL); busy_timeout covers the rest.
+    cur.execute("PRAGMA busy_timeout=5000")
+    cur.execute("PRAGMA main.journal_mode=WAL")
+    cur.execute("PRAGMA main.synchronous=NORMAL")
     if _active_campaign_path is not None:
         cur.execute("ATTACH DATABASE ? AS campaign", (_active_campaign_path.as_posix(),))
+        cur.execute("PRAGMA campaign.journal_mode=WAL")
+        cur.execute("PRAGMA campaign.synchronous=NORMAL")
     if _active_adventure_path is not None:
         cur.execute("ATTACH DATABASE ? AS adventure", (_active_adventure_path.as_posix(),))
+        cur.execute("PRAGMA adventure.journal_mode=WAL")
+        cur.execute("PRAGMA adventure.synchronous=NORMAL")
     cur.close()
 
 
@@ -211,6 +221,7 @@ async def _run_scope_migrations() -> None:
         ("campaign.lorebook_entries", "scenario_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN scenario_fields JSON"),
         ("adventure.chat_messages", "image_path", "ALTER TABLE adventure.chat_messages ADD COLUMN image_path VARCHAR"),
         ("adventure.chat_messages", "image_description", "ALTER TABLE adventure.chat_messages ADD COLUMN image_description TEXT"),
+        ("campaign.narrator_configs", "dice_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN dice_enabled INTEGER DEFAULT 1"),
     ]
     async with engine.begin() as conn:
         for qualified, column, ddl in migrations:
@@ -228,6 +239,21 @@ async def _run_scope_migrations() -> None:
                 "kind VARCHAR DEFAULT 'item', text TEXT DEFAULT '', tethered INTEGER DEFAULT 0, "
                 "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
             ))
+        # Indexes on hot filter columns (new files get these from create_all via
+        # index=True on the models; this back-fills existing files). Guarded on
+        # table existence — very old files may predate a table.
+        indexes = [
+            ("adventure", "chat_messages", "ix_chat_messages_turn_number", "turn_number"),
+            ("campaign", "lorebook_entries", "ix_lorebook_entries_cat", "cat"),
+            ("adventure", "tasks", "ix_tasks_status", "status"),
+            ("adventure", "worldbuilding_proposals", "ix_worldbuilding_proposals_status", "status"),
+            ("adventure", "worldbuilding_proposals", "ix_worldbuilding_proposals_turn_number", "turn_number"),
+        ]
+        for schema, table, name, column in indexes:
+            if (await conn.execute(text(f"PRAGMA {schema}.table_info({table})"))).fetchall():
+                await conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {schema}.{name} ON {table} ({column})"
+                ))
     await migrate_to_item_instances()
     await migrate_quests_to_tasks()
     await migrate_characters_to_files()

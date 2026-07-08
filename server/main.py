@@ -37,6 +37,8 @@ async def lifespan(app: FastAPI):
     # or seeds a fresh default scope on first run).
     await init_db()
     yield
+    from server.ai.openrouter import close_client
+    await close_client()  # shared LLM HTTP client (connection pool)
 
 
 app = FastAPI(title="Wayward", lifespan=lifespan)

@@ -12,6 +12,7 @@ interface WorldbuildState {
   proposals: WorldbuildProposal[]
   pendingCount: number
   running: boolean
+  runningStartedAt: number | null
   lastApplied: WorldbuildProposal[]  // auto-mode: changes just recorded, for a transient chat notice
   fetchProposals: () => Promise<void>
   runForTurn: (turn: number) => Promise<void>
@@ -34,6 +35,7 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
   proposals: [],
   pendingCount: 0,
   running: false,
+  runningStartedAt: null,
   lastApplied: [],
 
   fetchProposals: async () => {
@@ -44,7 +46,7 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
   runForTurn: async (turn) => {
     const mode = useSettingsStore.getState().worldbuildingMode
     if (mode === 'disabled') return
-    set({ running: true })
+    set({ running: true, runningStartedAt: Date.now() })
     try {
       const result = await api.post<WorldbuildProposal[]>('/worldbuild/run', { turn })
       await get().fetchProposals()
@@ -61,7 +63,7 @@ export const useWorldbuildStore = create<WorldbuildState>((set, get) => ({
     } catch {
       // best effort — world-building shouldn't break the turn
     } finally {
-      set({ running: false })
+      set({ running: false, runningStartedAt: null })
     }
   },
 

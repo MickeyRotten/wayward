@@ -1382,6 +1382,23 @@ const MessageBubble = memo(function MessageBubble({
 
 function EventToast({ event }: { event: ChatEvent }) {
   const isChronicler = event.kind === 'chronicler'
+
+  // Dice chip — a server-rolled skill check; success glows gold, failure danger.
+  if (event.kind === 'dice') {
+    const failed = /Failure$/i.test(event.text)
+    return (
+      <div className="mr-auto max-w-[85%] max-lg:max-w-full flex items-start gap-2 px-3 py-1.5">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={`mt-[1px] flex-shrink-0 ${failed ? 'text-danger' : 'text-gold'}`}>
+          <path d="M12 2 3 7v10l9 5 9-5V7l-9-5z" />
+          <path d="M12 22V12" /><path d="M3 7l9 5 9-5" />
+        </svg>
+        <span className={`font-ui text-[10px] leading-relaxed tracking-wide ${failed ? 'text-danger/90' : 'text-gold/90'}`}>
+          {event.text}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div className="mr-auto max-w-[85%] max-lg:max-w-full flex items-start gap-2 px-3 py-1.5">
       {isChronicler ? (

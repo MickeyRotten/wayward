@@ -206,7 +206,7 @@ export interface ChatMessage {
 export interface ChatEvent {
   id: number
   turnNumber: number
-  kind: 'chronicler' | 'item'
+  kind: 'chronicler' | 'item' | 'dice'
   text: string
   tethered: boolean
   createdAt: string

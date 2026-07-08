@@ -829,6 +829,7 @@ def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorRe
         plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
         actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
         actionSuggestionsInstructions=getattr(n, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE,
+        diceEnabled=bool(getattr(n, "dice_enabled", True)),
         hasVoice=has_voice,
     )
 
@@ -873,6 +874,8 @@ async def update_narrator(
         n.action_suggestions_enabled = data.actionSuggestionsEnabled
     if data.actionSuggestionsInstructions is not None:
         n.action_suggestions_instructions = data.actionSuggestionsInstructions
+    if data.diceEnabled is not None:
+        n.dice_enabled = data.diceEnabled
     await session.commit()
     return _narrator_response(n, await _narrator_has_voice(session))
 
@@ -2391,6 +2394,7 @@ async def chat_turn(
             spotlight_signals=spotlight_signals,
             summarize_hint=summarize_hint,
             user_message_id=user_msg.id,
+            dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
         )
 
     return _stream_llm_response(
@@ -2483,6 +2487,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
             variant=variant_count,
             spotlight_signals=spotlight_signals,
             summarize_hint=summarize_hint,
+            dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
         )
 
     return _stream_llm_response(
@@ -2590,6 +2595,7 @@ async def regenerate(
             variant=0,
             spotlight_signals=spotlight_signals,
             summarize_hint=summarize_hint,
+            dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
         )
 
     # Start fresh at variant 0 since we wiped all previous variants
@@ -3050,6 +3056,7 @@ def _stream_agent_response(
     spotlight_signals: list[SpotlightSignal] | None = None,
     summarize_hint: bool = False,
     user_message_id: int | None = None,
+    dice_enabled: bool = True,
 ):
     """Drive the agentic narrator loop and stream its final narration.
 
@@ -3089,6 +3096,7 @@ def _stream_agent_response(
                 base_messages=messages,
                 current_turn=current_turn,
                 summarize_hint=summarize_hint,
+                dice_enabled=dice_enabled,
             ):
                 etype = ev["type"]
                 if etype == "content":

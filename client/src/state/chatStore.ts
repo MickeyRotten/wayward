@@ -22,6 +22,7 @@ const TOOL_STATUS: Record<string, string> = {
   consume_item: 'Using an item',
   equip: 'Equipping gear',
   unequip: 'Stowing gear',
+  skill_check: 'Rolling the dice',
   lookup_item: 'Checking the world',
   search_items: 'Searching items',
   list_inventory: 'Checking inventory',

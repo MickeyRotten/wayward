@@ -63,6 +63,7 @@ export function SettingsPanel() {
   const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
   const [actionSuggestionsEnabled, setActionSuggestionsEnabled] = useState(narrator.actionSuggestionsEnabled)
   const [actionSuggestionsInstructions, setActionSuggestionsInstructions] = useState(narrator.actionSuggestionsInstructions)
+  const [diceEnabled, setDiceEnabled] = useState(narrator.diceEnabled)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -97,7 +98,8 @@ export function SettingsPanel() {
     setPlannerInstructions(narrator.plannerInstructions)
     setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
     setActionSuggestionsInstructions(narrator.actionSuggestionsInstructions)
-  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions])
+    setDiceEnabled(narrator.diceEnabled)
+  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions, narrator.diceEnabled])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -137,7 +139,7 @@ export function SettingsPanel() {
       ttsAutoplay,
       ...(visionApiKey ? { visionApiKey } : {}),
     })
-    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions })
+    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions, diceEnabled })
     // The TTS enable toggle affects server-reported availability.
     void useTtsStore.getState().fetchStatus()
     setApiKey('')
@@ -161,6 +163,7 @@ export function SettingsPanel() {
   }
   const resetWorld = () => {
     setInstructions(''); setSpotlightRule(''); setPostHistory(''); setPlannerInstructions('')
+    setDiceEnabled(true)
   }
   const resetVoice = () => {
     setTtsEnabled(false); setTtsAutoplay(true)
@@ -549,6 +552,22 @@ export function SettingsPanel() {
               onChange={setPlannerInstructions}
             />
             <span className="text-[10px] text-textdim font-body">Core instructions for the Editor persona (Edit Mode in chat).</span>
+          </SubSection>
+
+          <SubSection title="Skill Checks">
+            <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
+              <input
+                type="checkbox"
+                checked={diceEnabled}
+                onChange={(e) => setDiceEnabled(e.target.checked)}
+              />
+              Enable dice (d20 skill checks)
+            </label>
+            <span className="text-[10px] text-textdim font-body">
+              For uncertain, consequential actions the Narrator asks the server to roll a
+              d20 and narrates the result it's given — shown as a dice chip in chat. Per
+              campaign; needs a tool-capable model.
+            </span>
           </SubSection>
 
           <SubSection title="Lorebook Injection">

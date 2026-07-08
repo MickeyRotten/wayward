@@ -112,6 +112,9 @@ class NarratorConfig(Base):
     # Custom guidance for the Action-Suggestion agent. Blank => the built-in
     # default (action_suggester.ACTION_SUGGESTIONS_GUIDANCE) is used.
     action_suggestions_instructions: Mapped[str] = mapped_column(Text, default="")
+    # Skill checks: offer the narrator a server-rolled d20 skill_check tool for
+    # uncertain, consequential actions (rendered as dice chips in chat).
+    dice_enabled: Mapped[bool] = mapped_column(Integer, default=True)
 
 
 class LorebookEntry(Base):

@@ -23,13 +23,16 @@ The heart of the app is a **polished, agentic LLM narrative scene** — chat-bas
 - **Action Suggestions** — optional, AI-generated contextual choice buttons rendered in-chat (visual-novel style) under the latest beat, alongside fixed canned actions above the input (see "Action Suggestions").
 - **OpenRouter integration** — model list (filtered to tool-capable), sampling params, tool settings.
 - **Campaigns & Adventures** — separate worlds (campaigns) and save files (adventures), each its own SQLite file; Save/Load, campaign switching, and zip import/export for sharing (see "Campaigns & Adventures").
+- **Voice / TTS** — optional per-speaker text-to-speech with zero-shot voice cloning from ~10s samples (see "Voice / TTS").
+- **Journal** — a rail tab surfacing the auto-maintained Story So Far as a recap card + a clickable day-by-day timeline, plus a dismissible "Previously on…" chat banner on adventure load (see "Journal").
+- **Skill checks (dice)** — a server-rolled d20 `skill_check` narrator tool for uncertain, consequential actions, rendered as dice chips in chat (see "The Narrator Agent Loop"). Per-campaign toggle (`NarratorConfig.dice_enabled`, default on).
 - Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme.
 
 ## Not yet built (future vision — don't scaffold for it)
 - Grid/world navigation, towns, dungeons, the tile system.
 - JRPG battle screen, AP economy, Bond Gauge, Combat Stunts, enemy AI.
 - The player's combat-facing Skills/Stunts/Spells progression.
-- Any dice/formal skill-check resolution — **Attributes (STR/CON/…) are narrative flavor only**; the Narrator uses them as characterization context, not a mechanic.
+- **Attributes (STR/CON/…) remain narrative flavor only** — the narrative d20 `skill_check` tool (see above) is the only dice mechanic; there is no attribute-modifier math, HP, or combat resolution.
 
 ---
 
@@ -73,10 +76,11 @@ Highlights / things that have changed from the original alpha plan:
 - **Equipment** is 12 fixed slots; each value is an **instance id** (references an `ItemInstance`, not the catalog). "Equipped" is **derived** — an instance is *equipped* iff some character's `equipment[slot]` references its id, else it's *stowed* in the pack (single source of truth; no `equipped_by` column). `/inventory` returns every instance with server-derived `equippedBy`/`slot` (inventory is unbounded — no carry-slot limit).
 - **Characters are portable files, not DB rows.** Identity lives in per-character folders `server/data/characters/<id>/{character.json, full.<ext>, crop.jpg}` — `character.json` holds `type` (`persona`|`character`), `basicInfo` (name/gender/species/age/height/weight/description/likes/dislikes/personality — **no** portrait field) and `fieldSkill`; the two images are the portraits (**full** → Inspector, **crop** → chat + avatars; only ever one of each, replaced on re-upload). These are the reusable/shareable "character cards" (see [`server/db/characters.py`](server/db/characters.py)). Per-adventure state — worn **equipment**, `in_party`, `last_spoke_turn`, and `role` (`pc`|`member`) — lives in an adventure-scoped **`PartyBinding`** row referencing the character id. [`server/db/party.py`](server/db/party.py) joins the two into `RuntimeCharacter` composites (`load_pc`/`load_party`) with binding writers (`set_equipment`/`set_in_party`/`set_last_spoke`); the app still reads `.basic_info`/`.equipment`/`.field_skill`/`.in_party`/`.last_spoke_turn`/`.id` (id == character id). A `/characters` REST API lists/imports/duplicates/deletes cards, serves/uploads portraits, and zips a card for sharing. `migrate_characters_to_files` (in [`database.py`](server/db/database.py)) converts legacy `PlayerCharacter`/`PartyMember` rows (kept only for that back-fill) into files+bindings on load. Campaign zip export/import bundles the referenced character folders. (SillyTavern-compatible `.png` card import/export is a planned later parser.)
 - **Scenario** is edited as 6 structured fields, composed into a permanent, **locked** World lore entry's `content` (not its own table) — see "The Scenario". It still reaches the narrator via ordinary lore injection.
-- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `planner_instructions`, `action_suggestions_enabled`, `action_suggestions_instructions` (each text field falls back to a built-in default when blank).
-- **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`, `action_suggestions_model_id`. (The old carry-slot limit was removed — inventory is unbounded.)
+- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `planner_instructions`, `action_suggestions_enabled`, `action_suggestions_instructions` (each text field falls back to a built-in default when blank), and `dice_enabled` (offers the narrator the `skill_check` d20 tool; default on).
+- **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`, `action_suggestions_model_id`, and TTS settings `tts_enabled`/`tts_autoplay`. (The old carry-slot limit was removed — inventory is unbounded.)
 - **ChatMessage** (adventure-scoped) carries `role`, `content`, `turn_number`, `variant`, `speaker`, `mode` (`narrator`|`planner`), narrator-declared scene state (`location`, `time_of_day`, `weather`, `day`), `spotlight_reason`, and `applied_inventory_deltas`/`applied_equipment_changes` (for swipe/regenerate/delete reversal).
-- Also: `PartyBinding` (adventure-scoped character↔adventure state; identity is files — see above), `Task` (flat to-do list — replaced `Quest`+`QuestObjective`; legacy tables kept only for the one-time `migrate_quests_to_tasks` back-fill), `ItemInstance` (+ legacy `InventoryStack`), `StorySummary`, `WorldbuildingProposal` (Chronicler), `ChatEvent` (adventure-scoped persistent in-chat toasts: Chronicler notices tethered to their turn + untethered player item actions — see "Chat Rendering & Narration Formatting"), `AppState` (active campaign/adventure pointer). Legacy `PlayerCharacter`/`PartyMember` tables remain only for `migrate_characters_to_files`.
+- Also: `PartyBinding` (adventure-scoped character↔adventure state; identity is files — see above), `Task` (flat to-do list — replaced `Quest`+`QuestObjective`; legacy tables kept only for the one-time `migrate_quests_to_tasks` back-fill), `ItemInstance` (+ legacy `InventoryStack`), `StorySummary` (auto-maintained; surfaced read-only via `GET /journal` — see "Journal"), `WorldbuildingProposal` (Chronicler), `ChatEvent` (adventure-scoped persistent in-chat toasts: Chronicler notices + dice rolls tethered to their turn, untethered player item actions — kinds `chronicler`|`item`|`dice`; see "Chat Rendering & Narration Formatting"), `AppState` (active campaign/adventure pointer). Legacy `PlayerCharacter`/`PartyMember` tables remain only for `migrate_characters_to_files`.
+- **SQLite conventions:** every attached DB runs `journal_mode=WAL` + `synchronous=NORMAL` + `busy_timeout` (set in `_attach`, [`database.py`](server/db/database.py)) so the narrator's writes and the concurrent post-turn Chronicler/suggester reads never contend. Hot filter columns carry `index=True` (new files) plus `CREATE INDEX IF NOT EXISTS` back-fills in `_run_scope_migrations`. Per-turn history loads are **bounded**: the chat turn reads a `_HISTORY_WINDOW` (500) newest-message window; the Chronicler/suggester make targeted per-turn queries — never load a whole adventure.
 
 Attributes (STR/CON/…) are narrative flavor only — not currently surfaced as a hard mechanic.
 
@@ -174,6 +178,7 @@ The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](
 **Tools** (handlers in [`server/ai/narrator_actions.py`](server/ai/narrator_actions.py)):
 - *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`, `update_summary` (replaces threshold summarization — the model compresses history when nudged by a context hint).
 - *Read:* `lookup_item`, `search_items`, `list_inventory`, `get_character` — let the model validate before acting (e.g. confirm an item exists and its slot before `equip`).
+- *Dice:* `skill_check(characterName, skill, difficulty)` — offered only when `NarratorConfig.dice_enabled` (schema + `DICE_GUIDANCE` appended conditionally in `run_narrator_agent`). **The server rolls the d20** (DC map easy 8 / normal 12 / hard 16 / heroic 19, nat 1/20 = crits) and returns roll/DC/outcome, so the model narrates a result it was *given* and can't fudge. Each roll writes a **tethered `ChatEvent` (`kind='dice'`)** rendered as a gold/red dice chip in chat; being tethered, it vanishes with the turn on swipe/regenerate/delete and the retelling re-rolls fresh. Agentic path only (no legacy `<<<ACTIONS>>>` equivalent).
 
 The item tools operate on **instances**: `grant`/`equip` reuse a stowed instance or mint one; `unequip` just clears the slot (the instance becomes stowed — no inventory delta); `remove`/`consume` delete a stowed instance or decrement a stackable. Equipment inventory deltas and equipment changes carry **instance ids** so reversal restores the exact copy.
 
@@ -217,6 +222,23 @@ Two surfaces in Play mode: always-available fixed buttons in a row above the cha
 - **AI-contextual suggestions**: 3-4 short, scene-specific phrases (e.g. "Ask Tifa about the ruins") from a lightweight one-shot agent ([`server/ai/action_suggester.py`](server/ai/action_suggester.py)) modeled on the Chronicler but much smaller — one tool call (`suggest_actions`), no DB persistence, no accept/reject; a transient list regenerated every turn and lost on refresh. Rendered as elegant choice buttons at the bottom of the chat (only when idle), not above the input.
 - Gated by `NarratorConfig.action_suggestions_enabled` (**per-campaign**, default off — an extra LLM call per turn when on) with an optional model override `OpenRouterSettings.action_suggestions_model_id` (blank → main model), both editable in Config → Agents & Tools.
 - Fire-and-forget from `chatStore` after each narrator turn completes (`POST /action-suggestions/run`) — the same pattern as the Chronicler's `worldbuildStore.runForTurn`, so it never blocks the chat UI. Fixed buttons and AI suggestions alike just call the existing `sendTurn` with canned text — no special submission path.
+
+---
+
+## Voice / TTS
+
+Optional per-speaker text-to-speech via **Chatterbox** (MIT; zero-shot voice cloning from ~10s samples), wrapped in [`server/ai/tts.py`](server/ai/tts.py). The heavy stack (torch/chatterbox) is an **optional install** (`server/requirements-tts.txt`, one-click via `Install-TTS.bat` → `Install-TTS.ps1`, which reuses Run.bat's `server\.venv`, auto-detects an NVIDIA GPU for the CUDA torch build, and pre-warms the model with `tts.preload()`); **nothing heavy is imported unless installed** — keep it that way (lazy imports inside `_load_model`/`_synthesize_sync` only).
+
+- **Voices**: the Narrator (narration + NPC lines) clones from a per-campaign `narrator-voice.<ext>` in the campaign folder; each character clones from a `voice.<ext>` sibling in their character folder (managed via a VoiceBlock on the PC/member sheets; narrator sample in Config → Voice & Audio). Samples ride along with character/campaign zips + duplicates automatically. No sample → Chatterbox default voice, never an error.
+- **Engine**: device auto-pick (cuda→mps→cpu); sentence-batched synthesis (≤300 chars/generation) in a lock-serialized worker thread (`asyncio.to_thread` — the event loop/SSE never blocks); content-addressed wav cache under `server/data/tts-cache/` (key = model + voice-sample hash + text) so replays/swiped variants are free.
+- **REST**: `GET /tts/status` (installed/loaded/device/error), `POST /tts/speak {text, voice: 'narrator'|characterId}` → `{url, cached}` (JSON-with-URL so the client can prefetch), `GET /tts/audio/<sha256>.wav` (immutable-cached), plus `POST/GET/DELETE /characters/{id}/voice` and `/narrator/voice`; `hasVoice` on PC/member/character/narrator responses.
+- **Client** ([`ttsStore`](client/src/state/ttsStore.ts)): after a narration turn, the segmenter output plays in order — narrator voice for narration/blockquotes (NPC lines stay narration), member voices for dialogue blocks — with next-segment prefetch; ♪ SPEAK/■ STOP per message, a gold wash on the segment being read, `tts_enabled`/`tts_autoplay` toggles. Playback stops on new turn/swipe/delete. Player messages are never voiced.
+
+---
+
+## Journal ("The Story So Far")
+
+The auto-maintained `StorySummary` is surfaced to the player. `GET /journal` returns `{summary, upToTurn}` (read-only — the summarizer/`update_summary` tool still own the row). The **Journal rail tab** ([`JournalPanel`](client/src/components/Journal/JournalPanel.tsx), [`journalStore`](client/src/state/journalStore.ts)) shows a recap card plus a **day-by-day timeline** derived client-side from narrator-declared scene changes + `ChatEvent`s (latest-wins day/location carry-forward, same rule as `lib/location.ts`); clicking an entry scrolls the chat to that message. A dismissible **"Previously on your adventure"** banner appears above the chat when an adventure with a recap loads — re-armed only by `journalStore.fetch(true)` (boot + adventure switch), not by the quiet post-turn refresh.
 
 ---
 
@@ -301,7 +323,11 @@ A narrow **icon rail** + left panel, a middle chat, and a right **Inspector** �
 └──┴─────────────┴────────────────────────┴──────────────┘
 ```
 
-Rail tabs: **Home** (PC + party), **Items**, **Tasks**, **Lore**, **Ideas** (Chronicler suggestions, with a pending badge), **Saves** (adventures), **Config**. The right Inspector shows whatever is selected; its view/edit state follows the chat's Edit Mode (see "Edit Mode"). No HP/MP/AP/Bond display — there's no combat yet; don't add it preemptively.
+Rail tabs: **Home** (PC + party), **Items**, **Tasks**, **Lore**, **Journal** (Story So Far recap + day timeline), **Ideas** (Chronicler suggestions, with a pending badge), **Saves** (adventures), **Config**. The right Inspector shows whatever is selected; its view/edit state follows the chat's Edit Mode (see "Edit Mode"). No HP/MP/AP/Bond display — there's no combat yet; don't add it preemptively.
+
+**Turn-loop responsiveness:** typing/sending is gated only on `isLoading` (the narration itself); the post-turn Chronicler runs in the background with a live elapsed timer and does **not** lock input (`inputLocked` vs `busy` in [`ChatScene.tsx`](client/src/components/Scene/ChatScene.tsx) — destructive turn edits like swipe/regenerate/delete still wait for both). A failed send restores the typed text via `chatStore.failedInput`; plain sends **append** the persisted turn from the stream's `done` event (which carries the saved message + user-message id) instead of refetching the whole history.
+
+**Client render conventions (keep these invariants):** per-chunk streaming state (`streamingContent`/`toolStatus`/thinking) is subscribed **only** inside `StreamingWindow` — never in `ChatScene` proper; `MessageBubble` is `React.memo`'d with a callback-tolerant comparator, so every derived prop passed to it (`memberResolver`, `chipEntities`, `catalogMap`, `sceneHeaders`, `visibleMessages`, …) must stay `useMemo`'d; `applyEntityChips` caches its compiled regex by `chipEntities` identity.
 
 ---
 
@@ -338,14 +364,18 @@ wayward/
 │   │   ├── ItemsPanel/, LorePanel/, TasksPanel/   left panels
 │   │   ├── LorePanel/ScenarioEditor.tsx    the Scenario tab's 6-field form
 │   │   ├── Suggestions/SuggestionsPanel.tsx  Chronicler proposals ("Ideas")
+│   │   ├── Journal/JournalPanel.tsx        Story So Far recap + day timeline
 │   │   ├── SaveLoad/SaveLoadView.tsx       adventures Save/Load
-│   │   ├── Settings/SettingsPanel.tsx      Config (campaign, API/model, narration…)
+│   │   ├── Settings/SettingsPanel.tsx      Config (campaign, API/model, narration, voice…)
+│   │   ├── VoiceBlock.tsx                  voice-sample upload/play/remove (PC/member sheets)
 │   │   ├── IconRail/, Layout/, common/ExpandableTextarea.tsx, ConfirmDialog.tsx
 │   ├── state/   chatStore, partyStore, narratorStore, settingsStore, itemsStore,
 │   │            tasksStore, loreStore, scenarioStore, worldbuildStore,
-│   │            actionSuggestionsStore, adventuresStore, campaignsStore, uiStore   (Zustand)
+│   │            actionSuggestionsStore, adventuresStore, campaignsStore, uiStore,
+│   │            ttsStore (playback queue), journalStore   (Zustand)
 │   ├── lib/     api.ts, location.ts (scene-banner derivation), narration.ts
-│   │            (JRPG chat segmenter), equipSlots.ts (item↔slot fit)
+│   │            (JRPG chat segmenter), equipSlots.ts (item↔slot fit),
+│   │            voice.ts (voice-sample upload helpers)
 │   ├── theme.css / edit-theme.css / index.css   design tokens + Tailwind mapping
 │
 ├── server/
@@ -361,6 +391,7 @@ wayward/
 │   │   ├── action_suggester.py lightweight one-shot contextual quick-action suggestions
 │   │   ├── scenario.py         Scenario field composition (structured fields → derived content)
 │   │   ├── planner.py          the Editor (Edit Mode agent)
+│   │   ├── tts.py              optional Chatterbox TTS (lazy load, synth cache, preload)
 │   │   └── item_detection.py   legacy deterministic item-use (non-tool path)
 │   ├── db/
 │   │   ├── models.py    SQLAlchemy (schema-tagged: app / campaign / adventure)
@@ -371,7 +402,11 @@ wayward/
 │   │   └── seed.py      default demo content (Seraphine + Tifa + Rosalina + world)
 │   ├── api/routes.py    all REST + /chat/turn (+ swipe/regenerate) + agents + zip I/O
 │   ├── main.py          FastAPI app, lifespan → init_db, wayward stdout logger
-│   └── data/            (gitignored) per-campaign/per-adventure SQLite + json
+│   ├── requirements-tts.txt   optional voice deps (chatterbox-tts + torch)
+│   └── data/            (gitignored) per-campaign/per-adventure SQLite + json + tts-cache
+│
+├── Run.bat / Run.ps1 (+ -Remote / -Tailscale variants)   one-click setup & launch
+├── Install-TTS.bat / Install-TTS.ps1   one-click optional voice install (GPU auto-detect + model pre-warm)
 │
 └── shared/types/models.ts   TS types mirroring the server models
 ```

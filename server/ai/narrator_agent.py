@@ -29,6 +29,7 @@ from server.ai.narrator_actions import (
     tool_remove_item,
     tool_search_items,
     tool_set_scene,
+    tool_skill_check,
     tool_unequip,
 )
 from server.ai.openrouter import chat_completion_agent_turn
@@ -47,6 +48,9 @@ TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them 
   - Only grant_item when the party GAINS an item (found, bought, looted, received as a gift). Handing between party members changes nothing — the party still owns it.
 - Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
 - Most turns need no tools at all — just narrate."""
+
+# Appended to the tool guidance only when the campaign has dice enabled.
+DICE_GUIDANCE = """- skill_check: when the player or a party member attempts something meaningfully UNCERTAIN and CONSEQUENTIAL (leaping a chasm, picking a lock, persuading a hostile guard, spotting an ambush), call skill_check BEFORE narrating the outcome, then narrate the result you were given — a failure must actually fail. Pick the skill label from the action or the character's Field Skill. Choose difficulty honestly: easy / normal / hard / heroic. NEVER roll for trivial or guaranteed actions, for ordinary conversation, or more than once per player action."""
 
 # Always injected, so the narration renders nicely in the JRPG-styled chat even
 # if the user cleared their editable narrator instructions. The conventions here
@@ -213,6 +217,30 @@ TOOL_SCHEMAS: list[dict] = [
     },
 ]
 
+# Offered only when the campaign has dice enabled (NarratorConfig.dice_enabled).
+SKILL_CHECK_SCHEMA: dict = {
+    "type": "function",
+    "function": {
+        "name": "skill_check",
+        "description": (
+            "Roll a d20 skill check for a meaningfully uncertain, consequential "
+            "action. The SERVER rolls the die and returns roll/DC/outcome — "
+            "narrate the outcome you are given, never invent your own. Call it "
+            "before narrating; at most one check per player action."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "characterName": {"type": "string", "description": "Who attempts it (first name; the player character or a party member)."},
+                "skill": {"type": "string", "description": "Short skill label, e.g. 'Athletics', 'Lockpicking', 'Persuasion' — from the action or the character's Field Skill."},
+                "difficulty": {"type": "string", "enum": ["easy", "normal", "hard", "heroic"], "default": "normal"},
+                "reason": {"type": "string", "description": "One short clause: what is at stake."},
+            },
+            "required": ["characterName", "skill"],
+        },
+    },
+}
+
 _HANDLERS = {
     "set_scene": tool_set_scene,
     "grant_item": tool_grant_item,
@@ -243,6 +271,7 @@ async def run_narrator_agent(
     base_messages: list[dict],
     current_turn: int,
     summarize_hint: bool = False,
+    dice_enabled: bool = True,
 ) -> AsyncGenerator[dict, None]:
     """Drive the agentic narrator loop for one turn.
 
@@ -258,10 +287,12 @@ async def run_narrator_agent(
     # unused — history summarisation is handled deterministically server-side.)
     messages = list(base_messages)
     insert_at = 1 if messages and messages[0].get("role") == "system" else 0
+    guidance = TOOL_GUIDANCE + ("\n" + DICE_GUIDANCE if dice_enabled else "")
     messages[insert_at:insert_at] = [
-        {"role": "system", "content": TOOL_GUIDANCE},
+        {"role": "system", "content": guidance},
         {"role": "system", "content": FORMATTING_GUIDE},
     ]
+    tool_schemas = TOOL_SCHEMAS + ([SKILL_CHECK_SCHEMA] if dice_enabled else [])
 
     inv_deltas: list[dict] = []
     equip_changes: list[dict] = []
@@ -294,7 +325,7 @@ async def run_narrator_agent(
                 messages=messages,
                 temperature=settings.temperature,
                 max_tokens=full_max_tokens,
-                tools=TOOL_SCHEMAS if offer_tools else None,
+                tools=tool_schemas if offer_tools else None,
                 top_p=settings.top_p,
                 min_p=settings.min_p,
                 top_k=settings.top_k,
@@ -334,7 +365,7 @@ async def run_narrator_agent(
             for tc in tool_calls:
                 name = tc["name"]
                 args = _parse_args(tc["arguments"])
-                effect = await _execute_tool(name, args, agent_session)
+                effect = await _execute_tool(name, args, agent_session, current_turn)
                 inv_deltas.extend(effect.inv_deltas)
                 equip_changes.extend(effect.equip_changes)
                 scene.update(effect.scene)
@@ -362,7 +393,10 @@ async def run_narrator_agent(
     }
 
 
-async def _execute_tool(name: str, args: dict, session) -> ToolEffect:
+async def _execute_tool(name: str, args: dict, session, current_turn: int = 0) -> ToolEffect:
+    if name == "skill_check":
+        # Needs the turn to tether its dice ChatEvent (removed on swipe/delete).
+        return await tool_skill_check(args, session, current_turn)
     handler = _HANDLERS.get(name)
     if not handler:
         return ToolEffect(result=f"Unknown tool '{name}'.")

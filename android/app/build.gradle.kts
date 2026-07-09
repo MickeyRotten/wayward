@@ -64,7 +64,7 @@ chaquopy {
             install("fastapi==0.115.12")
             install("uvicorn==0.30.6")
             install("sqlalchemy==2.0.36")
-            install("greenlet==3.1.1")
+            install("greenlet==3.0.1") // newest Android build in Chaquopy's repo
             install("aiosqlite==0.20.0")
             install("httpx==0.28.1")
             install("python-multipart==0.0.9")

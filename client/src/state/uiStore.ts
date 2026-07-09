@@ -8,6 +8,7 @@ export type SelectionKind =
   | { kind: 'item'; id: string; instanceId?: string }  // instanceId: a specific owned copy
   | { kind: 'task'; id: string }
   | { kind: 'lore'; id: string }
+  | { kind: 'scenario'; id: string }  // a Scenario field key (or 'firstMessage')
   | null
 
 /** Mobile-only: which full-screen view the MobileShell shows. Desktop ignores it. */

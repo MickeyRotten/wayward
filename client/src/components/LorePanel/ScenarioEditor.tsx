@@ -1,114 +1,76 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useChatStore } from '../../state/chatStore'
+import { useUiStore } from '../../state/uiStore'
 import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
-import { ExpandableTextarea } from '../common/ExpandableTextarea'
-import type { ScenarioFields } from '@shared/types/models'
+import { SelectionBar } from '../SelectionBar'
+import { CategoryIcon } from '../CategoryIcon'
+import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID } from '../../lib/scenarioFields'
 
-const FIELD_DEFS: { key: keyof ScenarioFields; label: string }[] = [
-  { key: 'setting', label: 'Setting' },
-  { key: 'historyBrief', label: 'History (Brief)' },
-  { key: 'species', label: 'Species' },
-  { key: 'geography', label: 'Geography' },
-  { key: 'techAndMagic', label: 'Technology & Magic' },
-  { key: 'other', label: 'Other' },
-]
-
+/* The Scenario tab — the 6 structured fields rendered as lorebook-style cards.
+   Clicking a card opens that field in the right-hand Inspector (view in Play,
+   edit in Edit Mode), exactly like every other lore entry. The underlying
+   storage/save logic is unchanged: fields still save via PUT /scenario and
+   compose into the locked World entry. */
 export function ScenarioEditor() {
-  const editMode = useChatStore((s) => s.planningMode)
   const scenario = useScenarioStore((s) => s)
-  const save = useScenarioStore((s) => s.save)
+  const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const selection = useUiStore((s) => s.selection)
+  const select = useUiStore((s) => s.select)
 
-  const draft = useRef<Partial<ScenarioFields>>({})
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-  const flush = useCallback(() => {
-    clearTimeout(timer.current)
-    if (Object.keys(draft.current).length === 0) return
-    const toSave = draft.current
-    draft.current = {}
-    save(toSave)
-  }, [save])
-
-  const scheduleFlush = useCallback(() => {
-    clearTimeout(timer.current)
-    timer.current = setTimeout(flush, 600)
-  }, [flush])
-
-  const update = (key: keyof ScenarioFields, value: string, immediate?: boolean) => {
-    draft.current = { ...draft.current, [key]: value }
-    if (immediate) flush()
-    else scheduleFlush()
-  }
-
-  if (!editMode) {
-    return (
-      <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-5">
-        {FIELD_DEFS.map(({ key, label }) => (
-          <div key={key}>
-            <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">{label}</span>
-            <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap mt-1">
-              {scenario[key] || <span className="text-textdim">(empty)</span>}
-            </p>
-          </div>
-        ))}
-        <FirstMessageField editable={false} />
-      </div>
-    )
-  }
+  const isSelected = (id: string) => selection?.kind === 'scenario' && selection.id === id
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-4">
-      {FIELD_DEFS.map(({ key, label }) => (
-        <label key={key} className="block space-y-1">
-          <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">{label}</span>
-          <ExpandableTextarea
+    <div className="flex-1 overflow-y-auto px-3 pb-3">
+      <div className="space-y-1.5">
+        {SCENARIO_FIELD_DEFS.map(({ key, label }) => (
+          <ScenarioCard
+            key={key}
             label={label}
-            className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
-            rows={4}
-            value={scenario[key]}
-            onChange={(v) => update(key, v)}
-            onBlur={(v) => update(key, v, true)}
+            empty={!(scenario[key] || '').trim()}
+            selected={isSelected(key)}
+            onClick={() => select({ kind: 'scenario', id: key })}
           />
-        </label>
-      ))}
-      <FirstMessageField editable />
+        ))}
+      </div>
+
+      {/* The opening narration. It lives on the NarratorConfig (not the
+          Scenario) but is surfaced here on the Scenario tab — clearly separated. */}
+      <div className="pt-3 mt-3 border-t border-line space-y-1.5">
+        <ScenarioCard
+          label="First Message"
+          empty={!(firstMessage || '').trim()}
+          selected={isSelected(FIRST_MESSAGE_ID)}
+          onClick={() => select({ kind: 'scenario', id: FIRST_MESSAGE_ID })}
+        />
+        <span className="block text-[10px] text-textdim font-body px-1">
+          The drop-capped opening message, included in context. Not part of the Scenario.
+        </span>
+      </div>
     </div>
   )
 }
 
-// The opening narration. It lives on the NarratorConfig (not the Scenario), but
-// it's edited here on the Scenario tab as a convenience — clearly separated.
-function FirstMessageField({ editable }: { editable: boolean }) {
-  const firstMessage = useNarratorStore((s) => s.firstMessage)
-  const save = useNarratorStore((s) => s.save)
-  const [value, setValue] = useState(firstMessage)
-
-  useEffect(() => { setValue(firstMessage) }, [firstMessage])
-
-  const commit = (v: string) => { if (v !== firstMessage) save({ firstMessage: v }) }
-
+/* Same card layout as the generic LoreCard (icon + title, bordered, gold
+   selection bar) so the Scenario fields read as ordinary lore entries. */
+function ScenarioCard({ label, empty, selected, onClick }: {
+  label: string
+  empty: boolean
+  selected: boolean
+  onClick: () => void
+}) {
   return (
-    <div className="pt-4 mt-2 border-t border-line space-y-1">
-      <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">First Message</span>
-      {editable ? (
-        <ExpandableTextarea
-          label="First Message"
-          className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
-          rows={4}
-          value={value}
-          placeholder="The opening narration shown before the player's first turn."
-          onChange={setValue}
-          onBlur={commit}
-        />
-      ) : (
-        <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap mt-1">
-          {firstMessage || <span className="text-textdim">(empty)</span>}
-        </p>
-      )}
-      <span className="block text-[10px] text-textdim font-body">
-        The drop-capped opening message, included in context. Not part of the Scenario.
-      </span>
-    </div>
+    <button
+      type="button"
+      className={`group relative w-full text-left border rounded-md overflow-hidden transition-colors pl-3 pr-3 py-1.5 ${
+        selected ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
+      }`}
+      onClick={onClick}
+    >
+      <SelectionBar show={selected} />
+      <div className="flex items-center gap-2.5">
+        <CategoryIcon cat="world" className="text-gold shrink-0" />
+        <span className="font-body text-sm text-text truncate flex-1 min-w-0">{label}</span>
+        {empty && <span className="font-ui text-[9px] tracking-wider text-textdim shrink-0">EMPTY</span>}
+      </div>
+    </button>
   )
 }

@@ -3,12 +3,15 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useTasksStore } from '../../state/tasksStore'
 import { useLoreStore } from '../../state/loreStore'
+import { useScenarioStore } from '../../state/scenarioStore'
+import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
+import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID } from '../../lib/scenarioFields'
 import type { ItemCatalogEntry, ItemType, Rarity, Task, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
 
 export function PartyInspector() {
@@ -58,7 +61,11 @@ export function PartyInspector() {
     : undefined
   const selIsLore = !!selLore
 
-  const hasSelection = selIsPC || selIsMember || selIsItem || selIsTask || selIsLore
+  // Scenario field selection (a Scenario tab card — field key or firstMessage)
+  const selScenarioId = selection?.kind === 'scenario' ? selection.id : undefined
+  const selIsScenario = !!selScenarioId
+
+  const hasSelection = selIsPC || selIsMember || selIsItem || selIsTask || selIsLore || selIsScenario
 
   // Derive entity name for the header
   const entityName = selIsPC
@@ -71,7 +78,11 @@ export function PartyInspector() {
           ? (selTask!.text || 'Untitled Task')
           : selIsLore
             ? (selLore!.title || 'Untitled Entry')
-            : ''
+            : selIsScenario
+              ? (selScenarioId === FIRST_MESSAGE_ID
+                  ? 'First Message'
+                  : SCENARIO_FIELD_DEFS.find((d) => d.key === selScenarioId)?.label ?? 'Scenario')
+              : ''
 
   const entityLabel = selIsPC
     ? 'PLAYER CHARACTER'
@@ -83,7 +94,9 @@ export function PartyInspector() {
           ? 'TASK'
           : selIsLore
             ? 'LOREBOOK ENTRY'
-            : ''
+            : selIsScenario
+              ? (selScenarioId === FIRST_MESSAGE_ID ? 'OPENING NARRATION' : 'SCENARIO')
+              : ''
 
   return (
     <div className="flex flex-col h-full">
@@ -151,6 +164,8 @@ export function PartyInspector() {
           <TaskInspector key={selTask!.id} task={selTask!} mode={mode} />
         ) : selIsLore ? (
           <LoreInspector key={selLore!.id} entry={selLore!} mode={mode} />
+        ) : selIsScenario ? (
+          <ScenarioFieldInspector key={selScenarioId} fieldKey={selScenarioId!} mode={mode} />
         ) : (
           <EmptyState />
         )}
@@ -1296,6 +1311,87 @@ function LoreTextArea({ value, onChange, onBlur, placeholder }: {
       onChange={onChange}
       onBlur={onBlur ?? onChange}
     />
+  )
+}
+
+// ── Scenario Field Inspector ────────────────────────────────────
+// A Scenario tab card opens here — view in Play, edit in Edit Mode, like any
+// other lore entry. The save path is unchanged: fields go through the same
+// debounced partial PUT /scenario the old inline tab editor used (composing
+// into the locked World entry), and First Message saves on the NarratorConfig.
+
+function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'view' | 'edit' }) {
+  const isFirstMessage = fieldKey === FIRST_MESSAGE_ID
+  const def = SCENARIO_FIELD_DEFS.find((d) => d.key === fieldKey)
+  const scenarioValue = useScenarioStore((s) => (def ? s[def.key] : ''))
+  const saveScenario = useScenarioStore((s) => s.save)
+  const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const saveNarrator = useNarratorStore((s) => s.save)
+  const setEditDirty = useUiStore((s) => s.setEditDirty)
+
+  const stored = isFirstMessage ? firstMessage : scenarioValue
+  const label = isFirstMessage ? 'First Message' : def?.label ?? 'Scenario'
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  const commit = useCallback((v: string) => {
+    clearTimeout(timer.current)
+    setEditDirty(false)
+    if (isFirstMessage) void saveNarrator({ firstMessage: v })
+    else if (def) void saveScenario({ [def.key]: v })
+  }, [isFirstMessage, def, saveNarrator, saveScenario, setEditDirty])
+
+  const scheduleCommit = (v: string) => {
+    setEditDirty(true)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => commit(v), 600)
+  }
+
+  const note = isFirstMessage
+    ? 'The drop-capped opening message, included in context. Not part of the Scenario.'
+    : 'Part of the Scenario — composed into the permanent, locked World entry and always injected into the narration.'
+
+  if (mode === 'view') {
+    return (
+      <div className="space-y-6 p-6">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold">
+            {isFirstMessage ? 'NARRATOR CONFIG' : 'SCENARIO'}
+          </span>
+          {!isFirstMessage && (
+            <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold2">
+              LOCKED
+            </span>
+          )}
+        </div>
+        <LoreSection title={label}>
+          {stored ? (
+            <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{stored}</p>
+          ) : (
+            <p className="text-[12px] text-textdim font-body">(empty)</p>
+          )}
+        </LoreSection>
+        <span className="block text-[10px] text-textdim font-body">{note}</span>
+      </div>
+    )
+  }
+
+  // Edit mode — uncontrolled save-on-blur textarea, same pattern (and the same
+  // debounce cadence) the Scenario tab's inline editor used before the cards.
+  return (
+    <div className="space-y-3 p-6">
+      <LoreSection title={label}>
+        <ExpandableTextarea
+          label={label}
+          className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[160px]"
+          rows={10}
+          value={stored}
+          placeholder={isFirstMessage ? "The opening narration shown before the player's first turn." : undefined}
+          onChange={scheduleCommit}
+          onBlur={commit}
+        />
+      </LoreSection>
+      <span className="block text-[10px] text-textdim font-body">{note}</span>
+    </div>
   )
 }
 

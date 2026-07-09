@@ -1,7 +1,7 @@
 # Wayward feedback list
 
 ## INSTRUCTIONS
-This is a list of changes / new features to add into the project. Whenever you finish a task, mark it done and write under the task what was done, commit, and push. Mention the ID of the commit also.
+This is a list of changes / new features to add into the project. Whenever you finish a task, mark it done and write under the task what was done, commit, and push. Mention the ID of the commit also. Newest tasks at the bottom.
 
 ## FEEDBACK ITEMS
 ---
@@ -757,5 +757,19 @@ Done (4 commits): **Performance** — SQLite WAL + busy_timeout on all attached 
 [x] Lightweight TTS: a different voice for the Narrator (narration + NPCs) and each party member, with simple voice cloning from a small sample in the party member's folder. Plus a one-click install that also handles the model download.
 
 Done (commit fbcc0d8): Optional in-process TTS via Chatterbox (MIT, zero-shot cloning from a ~10s sample). The Narrator (narration + NPC lines) and each party member speak with distinct voices; a `voice.<ext>` sample in the character folder clones that character's voice, and a per-campaign `narrator-voice.<ext>` clones the narrator's. Samples ride along with character/campaign zip export-import and duplicate. Server: `server/ai/tts.py` (lazy load — nothing heavy imported unless installed, cuda/mps/cpu auto-pick, sentence-batched synthesis in a locked worker thread, sha256 wav cache), voice upload/serve/delete endpoints, `/tts/status` + `/tts/speak` + `/tts/audio`, and `tts_enabled`/`tts_autoplay` settings (additive migration). Client: `ttsStore` auto-plays each finished narration turn segment-by-segment (narrator voice for narration/NPCs, member voices for dialogue) with next-segment prefetch; a SPEAK/STOP button + a gold wash on the segment being read; a Config → Voice & Audio section (toggles, engine status, narrator sample); and a voice-sample block on the PC/party sheets. Missing sample → default voice; missing install → graceful 503 and hidden UI. One-click install: `Install-TTS.bat` (+ `Install-TTS.ps1`) installs the stack into the same `server\.venv` Run.bat uses, auto-detects an NVIDIA GPU to pick the CUDA vs CPU torch build, and pre-downloads the voice model so the first spoken line isn't a multi-minute wait. The base Run.bat stays lean (no torch unless you want voice).
+
+---
+[x] Make the fields in Scenario into cards (same as other lore entries), but don't change the functionality or underlying logic.
+
+Done (commit a9efa30): the Scenario tab's 6 fields — and the First Message, kept under its divider with the "not part of the Scenario" note — now render as lorebook-style cards (same layout as the generic LoreCard: bordered, category icon, gold selection bar; an EMPTY tag marks unfilled fields). Clicking a card opens that field in the right-hand Inspector, exactly like any other lore entry: read-only in Play, editable in Edit Mode (new `scenario` selection kind in uiStore + a ScenarioFieldInspector). Functionality and underlying logic untouched — fields save through the same debounced partial PUT /scenario and compose into the permanent locked World entry; First Message still saves on the NarratorConfig. Verified live (user-tested) + client tsc/build clean.
+
+---
+[x] Let's give Chat a backdrop art. Make the chat's background semi-transparent, and show an image as a backdrop. Backdrops are saved in server/backdrops - currently only has forest_day.png.
+
+In Config, under Appearance, I should be able to adjust the transparency.
+
+Future functionality, you can already build the foundations: Narrator should pick a suitable backdrop from the ones available, e.g. "city, day" -> city_day.png, etc. Default to forest_day.png.
+
+Done (commit b96fa68): the chat's message area now shows backdrop art with the dark chat background rendered as a semi-transparent wash over it. Server: `GET /api/backdrops` lists the images in server/backdrops (png/jpg/webp) and `GET /api/backdrops/{file}` serves them (traversal-guarded, cached) — smoke-tested. Client: ChatScene layers the picked image + a `var(--chat-bg)` overlay behind the message list (Play mode only; Edit Mode stays solid indigo). Config → Appearance gains a "Chat Background Opacity" slider (0–100%, default 85%) — device-local like the font size (localStorage → `--chat-overlay-opacity` CSS var, applies instantly, included in the section's Reset). Foundations for the narrator pick built as a deterministic matcher (lib/backdrops.ts): each filename's tokens ("city_day" → city + day) are scored against the narrator-declared location words + time of day (Morning/Day/Afternoon → day, Evening/Night → night), best match wins, no match falls back to forest_day.png — so dropping new images into server/backdrops makes scenes start matching automatically, no narrator changes needed. Verified live (user-tested).
 
 ---

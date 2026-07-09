@@ -29,19 +29,38 @@ function applyVar(size: ChatFontSize) {
   document.documentElement.style.setProperty('--chat-font-size', `${SIZE_PX[size]}px`)
 }
 
-/** Read the stored size and set the CSS var. Call once on app init so the
- *  preference is applied before the chat renders. */
+// Chat background opacity — how strongly the chat's dark wash covers the
+// backdrop art (percent; 100 = solid like before backdrops existed).
+const OPACITY_KEY = 'wayward.chatBgOpacity'
+export const DEFAULT_CHAT_BG_OPACITY = 85
+
+function readStoredOpacity(): number {
+  const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(OPACITY_KEY) : null
+  const n = raw === null ? NaN : Number(raw)
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : DEFAULT_CHAT_BG_OPACITY
+}
+
+function applyOpacityVar(pct: number) {
+  document.documentElement.style.setProperty('--chat-overlay-opacity', String(pct / 100))
+}
+
+/** Read the stored size + opacity and set the CSS vars. Call once on app init
+ *  so the preferences are applied before the chat renders. */
 export function applyChatFontSize() {
   applyVar(readStored())
+  applyOpacityVar(readStoredOpacity())
 }
 
 interface AppearanceState {
   chatFontSize: ChatFontSize
+  chatBgOpacity: number
   setChatFontSize: (size: ChatFontSize) => void
+  setChatBgOpacity: (pct: number) => void
 }
 
 export const useAppearanceStore = create<AppearanceState>((set) => ({
   chatFontSize: readStored(),
+  chatBgOpacity: readStoredOpacity(),
   setChatFontSize: (size) => {
     try {
       localStorage.setItem(STORAGE_KEY, size)
@@ -50,5 +69,15 @@ export const useAppearanceStore = create<AppearanceState>((set) => ({
     }
     applyVar(size)
     set({ chatFontSize: size })
+  },
+  setChatBgOpacity: (pct) => {
+    const clamped = Math.min(100, Math.max(0, Math.round(pct)))
+    try {
+      localStorage.setItem(OPACITY_KEY, String(clamped))
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    applyOpacityVar(clamped)
+    set({ chatBgOpacity: clamped })
   },
 }))

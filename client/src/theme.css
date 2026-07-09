@@ -21,6 +21,10 @@
      Appearance setting). Default = 0.875rem, i.e. Tailwind text-sm. */
   --chat-font-size: 0.875rem;
 
+  /* How opaque the chat's dark wash is over the backdrop art (device-local;
+     overridden at runtime by the Appearance setting). 1 = solid, no backdrop. */
+  --chat-overlay-opacity: 0.85;
+
   /* Surfaces */
   --bg0: #100e0a;
   --bg1: #17140e;

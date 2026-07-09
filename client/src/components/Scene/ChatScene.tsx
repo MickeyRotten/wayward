@@ -12,6 +12,7 @@ import { ItemCard } from '../ItemCard'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveSceneBanner } from '../../lib/location'
+import { fetchBackdrops, pickBackdrop, type Backdrop } from '../../lib/backdrops'
 import { parseSegments, buildMemberResolver, type Segment, type MemberLite } from '../../lib/narration'
 import type { ChatEvent, ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
 
@@ -292,6 +293,20 @@ export function ChatScene() {
 
   const banner = deriveSceneBanner(visibleMessages)
 
+  // Backdrop art behind the messages — picked deterministically from the
+  // declared scene (location + time of day), defaulting to forest_day.png.
+  // The dark wash over it is --chat-overlay-opacity (Config → Appearance).
+  const [backdrops, setBackdrops] = useState<Backdrop[]>([])
+  useEffect(() => {
+    let alive = true
+    void fetchBackdrops().then((list) => { if (alive) setBackdrops(list) })
+    return () => { alive = false }
+  }, [])
+  const backdrop = useMemo(
+    () => (planningMode ? null : pickBackdrop(backdrops, banner.location, banner.timeOfDay)),
+    [backdrops, planningMode, banner.location, banner.timeOfDay],
+  )
+
   // Message search — ids of visible messages whose content matches the query.
   const q = searchQuery.trim().toLowerCase()
   const searchMatches = q
@@ -403,6 +418,17 @@ export function ChatScene() {
 
       {/* Messages */}
       <div className="relative flex-1 min-h-0 flex flex-col">
+        {/* Backdrop art + the semi-transparent dark wash over it. The message
+            list below is `relative`, so it paints above these layers. */}
+        {backdrop && (
+          <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+            <img src={backdrop.url} alt="" className="w-full h-full object-cover" />
+            <div
+              className="absolute inset-0"
+              style={{ background: 'var(--chat-bg)', opacity: 'var(--chat-overlay-opacity, 0.85)' }}
+            />
+          </div>
+        )}
         {searchOpen && (
           <SearchBar
             query={searchQuery}
@@ -417,7 +443,7 @@ export function ChatScene() {
         <div
           ref={listRef}
           onScroll={handleListScroll}
-          className="flex-1 overflow-y-auto p-4 max-lg:px-3 space-y-4"
+          className="relative flex-1 overflow-y-auto p-4 max-lg:px-3 space-y-4"
         >
         {/* "Previously on…" — the story-so-far recap, once per adventure load */}
         {!planningMode && recapSummary && !recapDismissed && visibleMessages.length > 0 && (

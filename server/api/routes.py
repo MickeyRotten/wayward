@@ -17,6 +17,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 PORTRAITS_DIR = Path(__file__).resolve().parent.parent / "portraits"
+BACKDROPS_DIR = Path(__file__).resolve().parent.parent / "backdrops"
 
 from server.ai.narrator_actions import ACTION_INSTRUCTION, execute_actions, parse_action_block, reverse_equipment_changes
 from server.ai.item_detection import (
@@ -640,6 +641,38 @@ async def list_characters():
 # ETag/Last-Modified revalidation keeps re-renders off the network without
 # pinning stale art.
 _MEDIA_CACHE = {"Cache-Control": "private, max-age=300"}
+
+
+# ── Chat Backdrops ──────────────────────────────────────────────
+# Static scene art in server/backdrops (repo-shipped, not per-campaign). The
+# client picks one deterministically from the declared scene — location +
+# time-of-day tokens matched against the filename (city_day.png, …), defaulting
+# to forest_day.png (see client lib/backdrops.ts). This doubles as the
+# foundation for a future narrator-driven pick: drop in more images and they
+# start matching, no narrator changes needed.
+
+_BACKDROP_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+@router.get("/backdrops")
+async def list_backdrops():
+    if not BACKDROPS_DIR.is_dir():
+        return []
+    return [
+        {"file": p.name, "url": f"/api/backdrops/{p.name}"}
+        for p in sorted(BACKDROPS_DIR.iterdir(), key=lambda p: p.name.lower())
+        if p.is_file() and p.suffix.lower() in _BACKDROP_EXTS
+    ]
+
+
+@router.get("/backdrops/{filename}")
+async def get_backdrop(filename: str):
+    if Path(filename).name != filename:
+        raise HTTPException(400, "Bad filename")
+    path = BACKDROPS_DIR / filename
+    if not path.is_file() or path.suffix.lower() not in _BACKDROP_EXTS:
+        raise HTTPException(404, "No such backdrop")
+    return FileResponse(str(path), headers=_MEDIA_CACHE)
 
 
 @router.get("/characters/{cid}/portrait/{which}")

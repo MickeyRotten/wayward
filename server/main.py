@@ -59,3 +59,17 @@ app.mount("/portraits", StaticFiles(directory=str(PORTRAITS_DIR)), name="portrai
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Serve the production-built client (vite build → client/dist) when present, so
+# a single uvicorn process is the whole app (Android APK, self-hosted deploys).
+# Dev setups without a dist/ are untouched — Vite keeps serving the client.
+# Mounted last: Starlette matches in registration order, so /api, /portraits
+# and /health always win over the catch-all.
+import os
+
+_client_dist = Path(
+    os.environ.get("WAYWARD_CLIENT_DIST", Path(__file__).resolve().parent.parent / "client" / "dist")
+)
+if _client_dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(_client_dist), html=True), name="client")

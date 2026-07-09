@@ -1,5 +1,10 @@
 from pydantic import BaseModel
 
+# The Android build (Chaquopy) runs pydantic v1 — its Rust-cored v2 has no
+# Android wheels. Alias model_dump onto v1 so call sites work on both.
+if not hasattr(BaseModel, "model_dump"):  # pydantic v1
+    BaseModel.model_dump = BaseModel.dict  # type: ignore[attr-defined]
+
 
 class BasicInfoSchema(BaseModel):
     name: str = ""

@@ -288,7 +288,8 @@ Constraints to keep in mind:
 - `greenlet` (required by async SQLAlchemy) comes from Chaquopy's own wheel repo — the pin must match what `chaquo.com/pypi-13.1` actually publishes for the chosen Python version (3.0.1 currently).
 - TTS is excluded on Android (torch doesn't run on-device); it's optional anyway, so nothing breaks.
 - [`server/main.py`](server/main.py) serves `client/dist` statically when it exists (`WAYWARD_CLIENT_DIST` env overrides the path) — this is also how single-process self-hosted deploys work. Dev setups without a `dist/` are untouched (Vite keeps serving the client).
-- CI: [`.github/workflows/android.yml`](.github/workflows/android.yml) builds the client + debug APK on pushes touching `android/`/`server/`/`client/`/`shared/` and uploads it as the `wayward-debug-apk` artifact (Actions → Android APK → run → Artifacts).
+- CI: [`.github/workflows/android.yml`](.github/workflows/android.yml) builds the client + a **signed release APK** on pushes touching `android/`/`server/`/`client/`/`shared/`, uploads it as the `wayward-apk` artifact, and on **master** pushes also publishes it as a GitHub Release (`v0.1.<run_number>`) so phones can self-update via Obtainium.
+- **Signing:** every build (debug and release) is signed with the committed keystore `android/signing/wayward-release.keystore` (env-overridable — see `signingConfigs` in `build.gradle.kts`), so any build installs over any other without uninstalling and user data survives updates. `versionCode` = 1 + the Actions run number. Don't regenerate the keystore — a new key breaks in-place updates for existing installs.
 
 ---
 

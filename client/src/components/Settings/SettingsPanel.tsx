@@ -171,6 +171,7 @@ export function SettingsPanel() {
   const resetAppearance = () => {
     useAppearanceStore.getState().setChatFontSize('medium')
     useAppearanceStore.getState().setChatBgOpacity(DEFAULT_CHAT_BG_OPACITY)
+    useAppearanceStore.getState().setWeatherFx(true)
   }
 
   return (
@@ -753,6 +754,8 @@ function AppearanceSection() {
   const setChatFontSize = useAppearanceStore((s) => s.setChatFontSize)
   const chatBgOpacity = useAppearanceStore((s) => s.chatBgOpacity)
   const setChatBgOpacity = useAppearanceStore((s) => s.setChatBgOpacity)
+  const weatherFx = useAppearanceStore((s) => s.weatherFx)
+  const setWeatherFx = useAppearanceStore((s) => s.setWeatherFx)
   return (
     <div className="space-y-4">
       <label className="block">
@@ -797,6 +800,22 @@ function AppearanceSection() {
         <span className="mt-1 block text-[10px] text-textdim font-body">
           How strongly the chat's dark background covers the backdrop art — lower shows more
           of the scene. Applies instantly and is remembered on this device.
+        </span>
+      </label>
+
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={weatherFx}
+          onChange={(e) => setWeatherFx(e.target.checked)}
+          className="mt-0.5 accent-gold"
+        />
+        <span>
+          <span className="block text-[11px] text-text font-body">Weather Effects</span>
+          <span className="block text-[10px] text-textdim font-body">
+            Animate the declared weather over the backdrop — rain, snow, drifting fog, and
+            lightning in storms. Remembered on this device.
+          </span>
         </span>
       </label>
     </div>

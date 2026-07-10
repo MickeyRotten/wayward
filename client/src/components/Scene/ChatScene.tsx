@@ -13,6 +13,9 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { api } from '../../lib/api'
 import { deriveSceneBanner } from '../../lib/location'
 import { fetchBackdrops, pickBackdrop, type Backdrop } from '../../lib/backdrops'
+import { weatherKind } from '../../lib/weather'
+import { WeatherEffects } from './WeatherEffects'
+import { useAppearanceStore } from '../../state/appearanceStore'
 import { parseSegments, buildMemberResolver, type Segment, type MemberLite } from '../../lib/narration'
 import type { ChatEvent, ChatMessage, ItemCatalogEntry, InventoryDelta, EquipmentChange } from '@shared/types/models'
 
@@ -307,6 +310,17 @@ export function ChatScene() {
     [backdrops, planningMode, banner.location, banner.timeOfDay],
   )
 
+  // Ambient weather over the backdrop, from the narrator-declared weather —
+  // shown even when no backdrop art matches (the weather belongs to the scene,
+  // not the art). `wayward.weatherOverride` in localStorage forces a kind
+  // (debug/testing). Never in Edit Mode.
+  const weatherFxOn = useAppearanceStore((s) => s.weatherFx)
+  const weatherFx = useMemo(() => {
+    if (planningMode || !weatherFxOn) return null
+    const override = typeof localStorage !== 'undefined' ? localStorage.getItem('wayward.weatherOverride') : null
+    return weatherKind(override || banner.weather)
+  }, [planningMode, weatherFxOn, banner.weather])
+
   // Message search — ids of visible messages whose content matches the query.
   const q = searchQuery.trim().toLowerCase()
   const searchMatches = q
@@ -420,13 +434,18 @@ export function ChatScene() {
       <div className="relative flex-1 min-h-0 flex flex-col">
         {/* Backdrop art + the semi-transparent dark wash over it. The message
             list below is `relative`, so it paints above these layers. */}
-        {backdrop && (
+        {(backdrop || weatherFx) && (
           <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-            <img src={backdrop.url} alt="" className="w-full h-full object-cover" />
-            <div
-              className="absolute inset-0"
-              style={{ background: 'var(--chat-bg)', opacity: 'var(--chat-overlay-opacity, 0.85)' }}
-            />
+            {backdrop && (
+              <>
+                <img src={backdrop.url} alt="" className="w-full h-full object-cover" />
+                <div
+                  className="absolute inset-0"
+                  style={{ background: 'var(--chat-bg)', opacity: 'var(--chat-overlay-opacity, 0.85)' }}
+                />
+              </>
+            )}
+            {weatherFx && <WeatherEffects kind={weatherFx} />}
           </div>
         )}
         {searchOpen && (

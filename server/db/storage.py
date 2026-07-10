@@ -218,10 +218,10 @@ def write_campaign_meta(cid: str, meta: dict) -> None:
     _write_json(campaign_json_path(cid), meta)
 
 
-async def create_default_scope() -> tuple[str, str]:
-    """Create the empty default Campaign + Adventure structure. Data (seed or
+async def create_default_scope(name: str = "Default Campaign") -> tuple[str, str]:
+    """Create the empty default Campaign + Adventure structure. Data (template or
     legacy migration) is loaded by the caller after the DBs are attached."""
-    cid = await create_campaign("Default Campaign")
+    cid = await create_campaign(name)
     aid = await create_adventure(cid, "Adventure 1")
     log.info("Created default scope: campaign=%s adventure=%s", cid, aid)
     return cid, aid

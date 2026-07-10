@@ -156,8 +156,10 @@ async def init_db() -> None:
     if not valid:
         # Create the empty default campaign + adventure structure (folders, db
         # files with tables, json sidecars). Data is loaded after we attach.
-        campaign_id, adventure_id = await storage.create_default_scope()
         source = "legacy" if LEGACY_DB_PATH.exists() else "fresh"
+        campaign_id, adventure_id = await storage.create_default_scope(
+            "Default Campaign" if source == "legacy" else "Fantasy"
+        )
         async with async_session() as s:
             st = (await s.execute(select(AppState))).scalars().first()
             if not st:
@@ -177,8 +179,9 @@ async def init_db() -> None:
     if source == "legacy":
         await storage.migrate_legacy()
     elif source == "fresh":
-        from server.db.seed import seed_defaults
-        await seed_defaults()
+        # First run: the default campaign is the Fantasy template.
+        from server.db import templates as tpl
+        await tpl.apply_template("fantasy")
 
     # Convert any catalog-id equipment + inventory stacks (from seed/legacy) into
     # non-stacking item instances. Idempotent — safe on already-migrated data.

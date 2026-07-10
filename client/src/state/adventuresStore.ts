@@ -60,24 +60,28 @@ export const useAdventuresStore = create<AdventuresState>((set, get) => ({
 
   create: async (name) => {
     set({ busy: true })
+    useUiStore.getState().setScopeLoading('Creating adventure…')
     try {
       await api.post('/adventures', { name: name ?? 'New Adventure' })
       await reloadAll()
       await get().fetch()
     } finally {
       set({ busy: false })
+      useUiStore.getState().setScopeLoading(null)
     }
   },
 
   load: async (id) => {
     if (id === get().activeId) return
     set({ busy: true })
+    useUiStore.getState().setScopeLoading('Loading adventure…')
     try {
       await api.post(`/adventures/${id}/load`, {})
       await reloadAll()
       await get().fetch()
     } finally {
       set({ busy: false })
+      useUiStore.getState().setScopeLoading(null)
     }
   },
 
@@ -88,12 +92,14 @@ export const useAdventuresStore = create<AdventuresState>((set, get) => ({
 
   remove: async (id) => {
     set({ busy: true })
+    useUiStore.getState().setScopeLoading('Loading adventure…')
     try {
       await api.del(`/adventures/${id}`)
       await reloadAll() // harmless if we didn't switch; refreshes if we did
       await get().fetch()
     } finally {
       set({ busy: false })
+      useUiStore.getState().setScopeLoading(null)
     }
   },
 }))

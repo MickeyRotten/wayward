@@ -78,7 +78,7 @@ function App() {
   const fetchCampaigns = useCampaignsStore((s) => s.fetch)
   const fetchTtsStatus = useTtsStore((s) => s.fetchStatus)
   const fetchJournal = useJournalStore((s) => s.fetch)
-  const switching = useCampaignsStore((s) => s.busy) || useAdventuresStore((s) => s.busy)
+  const scopeLoading = useUiStore((s) => s.scopeLoading)
 
   useEffect(() => {
     fetchCampaigns()
@@ -126,29 +126,32 @@ function App() {
     }
   }
 
-  return (
-    <>
-      {isMobile ? (
-        <MobileShell
-          main={mobileView === 'chat' ? <ChatScene /> : panelFor(mobileView)}
-          inspector={<PartyInspector />}
-        />
-      ) : (
-        <AppShell
-          iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
-          left={panelFor(activeTab)}
-          middle={<ChatScene />}
-          right={<PartyInspector />}
-        />
-      )}
-      {switching && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-bg0/85">
-          <span className="font-disp text-[20px] text-gold pt-[3px]">
-            Loading<span className="animate-pulse"> …</span>
-          </span>
-        </div>
-      )}
-    </>
+  // While a campaign/adventure switch reloads every store, unmount the panes
+  // entirely — rendering them against half-swapped state is what used to blank
+  // the app — and show a proper loading screen instead.
+  if (scopeLoading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg0">
+        <span className="font-disp text-[22px] text-gold pt-[3px]">
+          {scopeLoading}<span className="animate-pulse"> …</span>
+        </span>
+        <span className="font-ui text-[11px] tracking-wider text-textdim">PREPARING THE WORLD</span>
+      </div>
+    )
+  }
+
+  return isMobile ? (
+    <MobileShell
+      main={mobileView === 'chat' ? <ChatScene /> : panelFor(mobileView)}
+      inspector={<PartyInspector />}
+    />
+  ) : (
+    <AppShell
+      iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
+      left={panelFor(activeTab)}
+      middle={<ChatScene />}
+      right={<PartyInspector />}
+    />
   )
 }
 

@@ -3,6 +3,7 @@ import type { Campaign } from '@shared/types/models'
 import { api } from '../lib/api'
 import { reloadAll, useAdventuresStore } from './adventuresStore'
 import { useChatStore } from './chatStore'
+import { useUiStore } from './uiStore'
 
 interface CampaignsState {
   campaigns: Campaign[]
@@ -33,6 +34,7 @@ export const useCampaignsStore = create<CampaignsState>((set, get) => ({
 
   create: async (name, template) => {
     set({ busy: true })
+    useUiStore.getState().setScopeLoading('Creating campaign…')
     try {
       await api.post('/campaigns', { name: name ?? 'New Campaign', template: template ?? 'empty' })
       await afterSwitch()
@@ -40,17 +42,20 @@ export const useCampaignsStore = create<CampaignsState>((set, get) => ({
       useChatStore.getState().setPlanningMode(true)
     } finally {
       set({ busy: false })
+      useUiStore.getState().setScopeLoading(null)
     }
   },
 
   load: async (id) => {
     if (id === get().activeId) return
     set({ busy: true })
+    useUiStore.getState().setScopeLoading('Loading campaign…')
     try {
       await api.post(`/campaigns/${id}/load`, {})
       await afterSwitch()
     } finally {
       set({ busy: false })
+      useUiStore.getState().setScopeLoading(null)
     }
   },
 
@@ -61,11 +66,13 @@ export const useCampaignsStore = create<CampaignsState>((set, get) => ({
 
   remove: async (id) => {
     set({ busy: true })
+    useUiStore.getState().setScopeLoading('Loading campaign…')
     try {
       await api.del(`/campaigns/${id}`)
       await afterSwitch()
     } finally {
       set({ busy: false })
+      useUiStore.getState().setScopeLoading(null)
     }
   },
 }))

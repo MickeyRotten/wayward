@@ -18,6 +18,12 @@ interface UiState {
   activeTab: TabId
   setActiveTab: (tab: TabId) => void
 
+  // True while a campaign/adventure switch is reloading every store. App.tsx
+  // unmounts the panes and shows a loading screen so nothing renders against
+  // half-swapped state.
+  scopeLoading: string | null  // the loading-screen label, null when idle
+  setScopeLoading: (label: string | null) => void
+
   mobileView: MobileView
   setMobileView: (view: MobileView) => void
 
@@ -45,6 +51,9 @@ function selectionKey(sel: SelectionKind): string | null {
 export const useUiStore = create<UiState>((set, get) => ({
   activeTab: 'home',
   setActiveTab: (tab) => set({ activeTab: tab }),
+
+  scopeLoading: null,
+  setScopeLoading: (label) => set({ scopeLoading: label }),
 
   mobileView: 'chat',
   setMobileView: (view) => set({ mobileView: view }),

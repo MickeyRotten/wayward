@@ -25,6 +25,10 @@ val bundleWaywardAssets = tasks.register<Zip>("bundleWaywardAssets") {
     }
 }
 
+// CI stamps every build with a monotonically increasing version (the Actions
+// run number) so the Android installer and Obtainium recognise newer builds.
+val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+
 android {
     namespace = "app.wayward"
     compileSdk = 34
@@ -33,9 +37,31 @@ android {
         applicationId = "app.wayward"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 1 + ciRunNumber
+        versionName = "0.1.$ciRunNumber"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+    }
+
+    // One persistent key signs every build (debug and release), so any build
+    // installs over any other without uninstalling — updates keep user data.
+    // The keystore is committed (private personal repo); env vars can override
+    // if it's ever moved to a CI secret.
+    signingConfigs {
+        create("wayward") {
+            storeFile = file(System.getenv("WAYWARD_KEYSTORE") ?: "${rootProject.projectDir}/signing/wayward-release.keystore")
+            storePassword = System.getenv("WAYWARD_KEYSTORE_PASS") ?: "wayward-release"
+            keyAlias = System.getenv("WAYWARD_KEY_ALIAS") ?: "wayward"
+            keyPassword = System.getenv("WAYWARD_KEY_PASS") ?: "wayward-release"
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("wayward")
+        }
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("wayward")
+        }
     }
 
     androidResources {

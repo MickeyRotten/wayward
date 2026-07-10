@@ -14,6 +14,9 @@ on:
       - "shared/**"
       - ".github/workflows/android.yml"
 
+permissions:
+  contents: write # create releases on master builds
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,11 +44,28 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
-        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Build signed release APK
+        run: gradle -p android :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk wayward.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wayward-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: wayward-apk
+          path: wayward.apk
           if-no-files-found: error
+
+      # Every master build becomes a GitHub Release so the phone (via
+      # Obtainium) can discover and install updates itself.
+      - name: Publish release
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Wayward 0.1.${{ github.run_number }}
+          body: |
+            Automated build from `${{ github.sha }}`.
+
+            ${{ github.event.head_commit.message }}
+          files: wayward.apk

@@ -51,16 +51,26 @@ export function applyChatFontSize() {
   applyOpacityVar(readStoredOpacity())
 }
 
+// Ambient weather effects (rain/snow/fog animation over the backdrop).
+const WEATHER_FX_KEY = 'wayward.weatherFx'
+
+function readStoredWeatherFx(): boolean {
+  return (typeof localStorage !== 'undefined' ? localStorage.getItem(WEATHER_FX_KEY) : null) !== 'off'
+}
+
 interface AppearanceState {
   chatFontSize: ChatFontSize
   chatBgOpacity: number
+  weatherFx: boolean
   setChatFontSize: (size: ChatFontSize) => void
   setChatBgOpacity: (pct: number) => void
+  setWeatherFx: (on: boolean) => void
 }
 
 export const useAppearanceStore = create<AppearanceState>((set) => ({
   chatFontSize: readStored(),
   chatBgOpacity: readStoredOpacity(),
+  weatherFx: readStoredWeatherFx(),
   setChatFontSize: (size) => {
     try {
       localStorage.setItem(STORAGE_KEY, size)
@@ -79,5 +89,13 @@ export const useAppearanceStore = create<AppearanceState>((set) => ({
     }
     applyOpacityVar(clamped)
     set({ chatBgOpacity: clamped })
+  },
+  setWeatherFx: (on) => {
+    try {
+      localStorage.setItem(WEATHER_FX_KEY, on ? 'on' : 'off')
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+    set({ weatherFx: on })
   },
 }))

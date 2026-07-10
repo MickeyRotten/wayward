@@ -26,7 +26,8 @@ The heart of the app is a **polished, agentic LLM narrative scene** — chat-bas
 - **Voice / TTS** — optional per-speaker text-to-speech with zero-shot voice cloning from ~10s samples (see "Voice / TTS").
 - **Journal** — a rail tab surfacing the auto-maintained Story So Far as a recap card + a clickable day-by-day timeline, plus a dismissible "Previously on…" chat banner on adventure load (see "Journal").
 - **Skill checks (dice)** — a server-rolled d20 `skill_check` narrator tool for uncertain, consequential actions, rendered as dice chips in chat (see "The Narrator Agent Loop"). Per-campaign toggle (`NarratorConfig.dice_enabled`, default on).
-- Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme.
+- Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme. Below 1024px the app swaps to a single-pane **mobile layout** (`useIsMobile` → [`MobileShell`](client/src/components/Layout/MobileShell.tsx) + `MobileNav`).
+- **Android app (APK)** — a self-contained Chaquopy build under `android/` that embeds the backend on the phone (see "Android App (APK)").
 
 ## Not yet built (future vision — don't scaffold for it)
 - Grid/world navigation, towns, dungeons, the tile system.
@@ -278,6 +279,19 @@ Storage is **modular, per-world, shareable**. A **Campaign** is a world; an **Ad
 
 ---
 
+## Android App (APK)
+
+Wayward ships as a self-contained Android app: [`android/`](android/) is a Chaquopy 17 project (Python 3.12) embedding the whole backend. The `server/` package plus the production-built client (`client/dist`) are bundled into the APK as `assets/wayward.zip` (the `bundleWaywardAssets` Gradle task) and extracted to app storage on first launch by `WaywardApp.kt` — **`server/data` and `server/portraits` are preserved across app updates; only code is refreshed**. `serverhost.py` boots uvicorn on `127.0.0.1:8000` in a daemon thread; `MainActivity` is a WebView that polls `/health`, then loads the app (file chooser wired up for portrait uploads).
+
+Constraints to keep in mind:
+- **pydantic is v1 on Android** — v2's Rust core has no Android wheels. The pins live in [`android/app/build.gradle.kts`](android/app/build.gradle.kts); [`server/api/schemas.py`](server/api/schemas.py) carries the v1 shim (aliases `model_dump` onto v1's `dict`). **Don't introduce pydantic v2-only APIs in server code.**
+- `greenlet` (required by async SQLAlchemy) comes from Chaquopy's own wheel repo — the pin must match what `chaquo.com/pypi-13.1` actually publishes for the chosen Python version (3.0.1 currently).
+- TTS is excluded on Android (torch doesn't run on-device); it's optional anyway, so nothing breaks.
+- [`server/main.py`](server/main.py) serves `client/dist` statically when it exists (`WAYWARD_CLIENT_DIST` env overrides the path) — this is also how single-process self-hosted deploys work. Dev setups without a `dist/` are untouched (Vite keeps serving the client).
+- CI: [`.github/workflows/android.yml`](.github/workflows/android.yml) builds the client + debug APK on pushes touching `android/`/`server/`/`client/`/`shared/` and uploads it as the `wayward-debug-apk` artifact (Actions → Android APK → run → Artifacts).
+
+---
+
 ## Prompt Assembly
 
 One isolated function — [`build_prompt`](server/ai/prompt_builder.py) — assembles every narration call, roughly in order:
@@ -325,6 +339,8 @@ A narrow **icon rail** + left panel, a middle chat, and a right **Inspector** �
 
 Rail tabs: **Home** (PC + party), **Items**, **Tasks**, **Lore**, **Journal** (Story So Far recap + day timeline), **Ideas** (Chronicler suggestions, with a pending badge), **Saves** (adventures), **Config**. The right Inspector shows whatever is selected; its view/edit state follows the chat's Edit Mode (see "Edit Mode"). No HP/MP/AP/Bond display — there's no combat yet; don't add it preemptively.
 
+**Mobile layout (<1024px):** `useIsMobile` ([`client/src/lib/useIsMobile.ts`](client/src/lib/useIsMobile.ts)) swaps `AppShell` for [`MobileShell`](client/src/components/Layout/MobileShell.tsx) — one full-screen view at a time over a bottom tab bar ([`MobileNav`](client/src/components/Layout/MobileNav.tsx); primary tabs + a "More" sheet), with the Inspector as a full-screen slide-over that opens on selection and closes via its Back header. Same stores/components either way — only the shell differs.
+
 **Turn-loop responsiveness:** typing/sending is gated only on `isLoading` (the narration itself); the post-turn Chronicler runs in the background with a live elapsed timer and does **not** lock input (`inputLocked` vs `busy` in [`ChatScene.tsx`](client/src/components/Scene/ChatScene.tsx) — destructive turn edits like swipe/regenerate/delete still wait for both). A failed send restores the typed text via `chatStore.failedInput`; plain sends **append** the persisted turn from the stream's `done` event (which carries the saved message + user-message id) instead of refetching the whole history.
 
 **Client render conventions (keep these invariants):** per-chunk streaming state (`streamingContent`/`toolStatus`/thinking) is subscribed **only** inside `StreamingWindow` — never in `ChatScene` proper; `MessageBubble` is `React.memo`'d with a callback-tolerant comparator, so every derived prop passed to it (`memberResolver`, `chipEntities`, `catalogMap`, `sceneHeaders`, `visibleMessages`, …) must stay `useMemo`'d; `applyEntityChips` caches its compiled regex by `chipEntities` identity.
@@ -368,14 +384,15 @@ wayward/
 │   │   ├── SaveLoad/SaveLoadView.tsx       adventures Save/Load
 │   │   ├── Settings/SettingsPanel.tsx      Config (campaign, API/model, narration, voice…)
 │   │   ├── VoiceBlock.tsx                  voice-sample upload/play/remove (PC/member sheets)
-│   │   ├── IconRail/, Layout/, common/ExpandableTextarea.tsx, ConfirmDialog.tsx
+│   │   ├── IconRail/, Layout/ (AppShell + MobileShell/MobileNav), common/ExpandableTextarea.tsx, ConfirmDialog.tsx
 │   ├── state/   chatStore, partyStore, narratorStore, settingsStore, itemsStore,
 │   │            tasksStore, loreStore, scenarioStore, worldbuildStore,
 │   │            actionSuggestionsStore, adventuresStore, campaignsStore, uiStore,
 │   │            ttsStore (playback queue), journalStore   (Zustand)
 │   ├── lib/     api.ts, location.ts (scene-banner derivation), narration.ts
 │   │            (JRPG chat segmenter), equipSlots.ts (item↔slot fit),
-│   │            voice.ts (voice-sample upload helpers)
+│   │            voice.ts (voice-sample upload helpers), useIsMobile.ts
+│   │            (mobile/desktop shell switch)
 │   ├── theme.css / edit-theme.css / index.css   design tokens + Tailwind mapping
 │
 ├── server/
@@ -404,6 +421,10 @@ wayward/
 │   ├── main.py          FastAPI app, lifespan → init_db, wayward stdout logger
 │   ├── requirements-tts.txt   optional voice deps (chatterbox-tts + torch)
 │   └── data/            (gitignored) per-campaign/per-adventure SQLite + json + tts-cache
+│
+├── android/                 self-contained APK: Chaquopy embeds server + built client
+│                            (see "Android App (APK)")
+├── .github/workflows/android.yml   CI — builds + uploads the wayward-debug-apk artifact
 │
 ├── Run.bat / Run.ps1 (+ -Remote / -Tailscale variants)   one-click setup & launch
 ├── Install-TTS.bat / Install-TTS.ps1   one-click optional voice install (GPU auto-detect + model pre-warm)

@@ -10,6 +10,8 @@ interface NarratorConfigResponse {
   plannerInstructions: string
   actionSuggestionsEnabled: boolean
   actionSuggestionsInstructions: string
+  actionOptionRules: string[]
+  firstMessageOptions: string[]
   diceEnabled: boolean
   hasVoice: boolean
 }
@@ -23,6 +25,8 @@ interface NarratorState {
   plannerInstructions: string
   actionSuggestionsEnabled: boolean
   actionSuggestionsInstructions: string
+  actionOptionRules: string[]
+  firstMessageOptions: string[]
   diceEnabled: boolean
   hasVoice: boolean
   fetchConfig: () => Promise<void>
@@ -38,6 +42,8 @@ export const useNarratorStore = create<NarratorState>((set) => ({
   plannerInstructions: '',
   actionSuggestionsEnabled: false,
   actionSuggestionsInstructions: '',
+  actionOptionRules: [],
+  firstMessageOptions: [],
   diceEnabled: true,
   hasVoice: false,
 
@@ -52,6 +58,8 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       plannerInstructions: n.plannerInstructions,
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
+      actionOptionRules: n.actionOptionRules,
+      firstMessageOptions: n.firstMessageOptions,
       diceEnabled: n.diceEnabled,
       hasVoice: n.hasVoice,
     })
@@ -68,6 +76,8 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       plannerInstructions: n.plannerInstructions,
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
+      actionOptionRules: n.actionOptionRules,
+      firstMessageOptions: n.firstMessageOptions,
       diceEnabled: n.diceEnabled,
       hasVoice: n.hasVoice,
     })

@@ -6,29 +6,40 @@ import { useNarratorStore } from './narratorStore'
 interface ActionSuggestionsState {
   suggestions: string[]
   loading: boolean
-  runForTurn: (turn: number) => Promise<void>
+  lastTurn: number | null
+  // null → the server targets the latest turn (used by reroll after a refresh,
+  // when the client no longer knows which turn it's on).
+  runForTurn: (turn: number | null) => Promise<void>
+  regenerate: () => Promise<void>  // reroll the options for the same turn
   clear: () => void
 }
 
-export const useActionSuggestionsStore = create<ActionSuggestionsState>((set) => ({
+export const useActionSuggestionsStore = create<ActionSuggestionsState>((set, get) => ({
   suggestions: [],
   loading: false,
+  lastTurn: null,
 
   runForTurn: async (turn) => {
     if (!useNarratorStore.getState().actionSuggestionsEnabled) {
-      set({ suggestions: [] })
+      set({ suggestions: [], lastTurn: turn })
       return
     }
-    set({ loading: true })
+    set({ loading: true, lastTurn: turn })
     try {
       const result = await api.post<ActionSuggestionsResponse>('/action-suggestions/run', { turn })
-      set({ suggestions: result.suggestions || [] })
+      // A newer turn may have started while we waited — don't clobber it.
+      if (get().lastTurn === turn) set({ suggestions: result.suggestions || [] })
     } catch {
       // best effort — suggestions shouldn't break the turn
-      set({ suggestions: [] })
+      if (get().lastTurn === turn) set({ suggestions: [] })
     } finally {
-      set({ loading: false })
+      if (get().lastTurn === turn) set({ loading: false })
     }
+  },
+
+  regenerate: async () => {
+    if (get().loading) return
+    await get().runForTurn(get().lastTurn)
   },
 
   clear: () => set({ suggestions: [] }),

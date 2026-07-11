@@ -70,7 +70,11 @@ export function ChatScene() {
   const catalog = useItemsStore((s) => s.catalog)
   const inventory = useItemsStore((s) => s.inventory)
   const actionSuggestionsEnabled = useNarratorStore((s) => s.actionSuggestionsEnabled)
+  const actionOptionRules = useNarratorStore((s) => s.actionOptionRules)
+  const firstMessageOptions = useNarratorStore((s) => s.firstMessageOptions)
   const actionSuggestions = useActionSuggestionsStore((s) => s.suggestions)
+  const actionSuggestionsLoading = useActionSuggestionsStore((s) => s.loading)
+  const rerollSuggestions = useActionSuggestionsStore((s) => s.regenerate)
 
   const [input, setInput] = useState('')
   const [itemPickerOpen, setItemPickerOpen] = useState(false)
@@ -245,6 +249,17 @@ export function ChatScene() {
   // Find first narrator message index for drop-cap. When a configured First
   // Message is shown, IT carries the drop-cap, so real messages never do.
   const hasFirstMessage = !planningMode && !!firstMessage.trim()
+
+  // The unified text-adventure action panel: numbered choice options (scripted
+  // on the opening beat, AI-generated afterwards) + the fixed actions. Shown
+  // whenever the player could act — idle after a narrator beat, or on a fresh
+  // adventure showing only the First Message.
+  const isOpening = !visibleMessages.some((m) => m.role === 'user')
+  const panelOptions = isOpening
+    ? (hasFirstMessage ? firstMessageOptions : [])
+    : (actionSuggestionsEnabled ? actionSuggestions : [])
+  const showActionPanel =
+    !planningMode && !inputLocked && (showWhatDoYouDo || visibleMessages.length === 0)
   const firstNarratorIdx = hasFirstMessage
     ? -1
     : visibleMessages.findIndex(
@@ -363,11 +378,18 @@ export function ChatScene() {
       } else if (e.key === 'ArrowUp') {
         const lastUser = [...visibleMessages].reverse().find((m) => m.role === 'user')
         if (lastUser && lastUser.id > 0) { e.preventDefault(); setEditTargetId(lastUser.id) }
+      } else if (e.key >= '1' && e.key <= '9') {
+        // Text-adventure style: number keys pick the matching panel option.
+        const idx = Number(e.key) - 1
+        if (showActionPanel && apiKeySet && idx < panelOptions.length) {
+          e.preventDefault()
+          sendTurn(panelOptions[idx])
+        }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [visibleMessages, variantCounts, activeVariants, setActiveVariant])
+  }, [visibleMessages, variantCounts, activeVariants, setActiveVariant, showActionPanel, apiKeySet, panelOptions, sendTurn])
 
   return (
     <div className="flex flex-col h-full">
@@ -616,21 +638,93 @@ export function ChatScene() {
           </button>
         )}
 
-        {/* Reactive action suggestions — VN-style choices under the last beat,
-            shown only when idle so they read as "what do you do?" options. */}
-        {!planningMode && !inputLocked && actionSuggestionsEnabled && actionSuggestions.length > 0 && (
+        {/* The action panel — the primary text-adventure interaction. Numbered
+            choice options (scripted on the opening beat, AI-generated after
+            each narrator beat) over the always-available fixed actions. */}
+        {showActionPanel && (
           <div className="mr-auto w-full max-w-[85%] max-lg:max-w-full flex flex-col gap-1.5 pl-1 pt-1">
-            {actionSuggestions.map((s) => (
+            {!isOpening && actionSuggestionsEnabled && actionSuggestionsLoading && (
+              <span className="font-ui text-[10px] tracking-wider text-textdim animate-pulse px-1 py-1">
+                WEIGHING YOUR OPTIONS ···
+              </span>
+            )}
+            {!actionSuggestionsLoading && panelOptions.map((s, i) => (
               <button
-                key={s}
+                key={`${i}-${s}`}
                 type="button"
                 disabled={inputLocked || !apiKeySet}
                 onClick={() => sendTurn(s)}
+                title={!isOpening ? actionOptionRules[i] : undefined}
                 className="group text-left font-body text-sm text-text2 border border-line rounded-md bg-bg2/40 px-3.5 py-2 hover:border-gold hover:text-text hover:bg-gold/5 transition-colors disabled:opacity-40"
               >
-                <span className="text-golddeep group-hover:text-gold mr-2">›</span>{s}
+                <span className="text-golddeep group-hover:text-gold mr-2 font-ui text-[12px]">{i + 1}.</span>{s}
               </button>
             ))}
+
+            {/* Fixed actions — always available, part of the same panel */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <QuickActionButton
+                label="Continue"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I wait and let the scene unfold.')}
+              />
+              <QuickActionButton
+                label="Look Around"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I look around carefully.')}
+              />
+              <QuickActionButton
+                label="Talk to Party"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I turn to talk to my party.')}
+              />
+              <QuickActionButton
+                label="Rest"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I take a moment to rest.')}
+              />
+              <div className="relative flex">
+                <QuickActionButton
+                  label="Use an Item"
+                  disabled={inputLocked || !apiKeySet || inventory.length === 0}
+                  onClick={() => setItemPickerOpen((o) => !o)}
+                />
+                {itemPickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setItemPickerOpen(false)} />
+                    <div className="absolute bottom-full left-0 mb-2 w-64 max-h-72 overflow-y-auto bg-bg2 border border-line2 rounded-md z-20 p-1.5 space-y-1">
+                      {inventory.length === 0 ? (
+                        <p className="text-[11px] text-textdim font-body px-2 py-1.5">No items.</p>
+                      ) : (
+                        inventory.map((stack) => stack.item ? (
+                          <ItemCard
+                            key={stack.itemId}
+                            item={stack.item}
+                            selected={false}
+                            count={stack.count}
+                            onClick={() => {
+                              setItemPickerOpen(false)
+                              sendTurn(`I use the ${stack.item!.name}.`)
+                            }}
+                          />
+                        ) : null)
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+              {!isOpening && actionSuggestionsEnabled && (
+                <button
+                  type="button"
+                  title="Reroll the generated options"
+                  disabled={inputLocked || !apiKeySet || actionSuggestionsLoading}
+                  onClick={() => void rerollSuggestions()}
+                  className="font-ui text-[10px] tracking-wider text-textdim border border-line rounded-sm px-2 py-1 hover:text-gold hover:border-gold/50 transition-colors disabled:opacity-40"
+                >
+                  ↻ REROLL
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -714,59 +808,13 @@ export function ChatScene() {
         </div>
       )}
 
-      {/* Quick actions */}
-      {!planningMode && (
-        <div className="border-t border-line2 px-3 pt-2 pb-1 bg-bg1 flex flex-wrap items-center gap-1.5">
-          <QuickActionButton
-            label="Look Around"
-            disabled={inputLocked || !apiKeySet}
-            onClick={() => sendTurn('I look around carefully.')}
-          />
-          <QuickActionButton
-            label="Talk to Party"
-            disabled={inputLocked || !apiKeySet}
-            onClick={() => sendTurn('I turn to talk to my party.')}
-          />
-          <QuickActionButton
-            label="Rest"
-            disabled={inputLocked || !apiKeySet}
-            onClick={() => sendTurn('I take a moment to rest.')}
-          />
-          <div className="relative flex">
-            <QuickActionButton
-              label="Use an Item"
-              disabled={inputLocked || !apiKeySet || inventory.length === 0}
-              onClick={() => setItemPickerOpen((o) => !o)}
-            />
-            {itemPickerOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setItemPickerOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-2 w-64 max-h-72 overflow-y-auto bg-bg2 border border-line2 rounded-md z-20 p-1.5 space-y-1">
-                  {inventory.length === 0 ? (
-                    <p className="text-[11px] text-textdim font-body px-2 py-1.5">No items.</p>
-                  ) : (
-                    inventory.map((stack) => stack.item ? (
-                      <ItemCard
-                        key={stack.itemId}
-                        item={stack.item}
-                        selected={false}
-                        count={stack.count}
-                        onClick={() => {
-                          setItemPickerOpen(false)
-                          sendTurn(`I use the ${stack.item!.name}.`)
-                        }}
-                      />
-                    ) : null)
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Input */}
+      {/* Input — the freeform escape hatch under the action panel */}
       <div className="border-t border-line2 p-3 bg-bg1">
+        {!planningMode && (
+          <span className="block font-ui text-[10px] tracking-wider text-textdim mb-1.5">
+            OR DO SOMETHING ELSE:
+          </span>
+        )}
         {/* Pending image preview — attached to the next message */}
         {pendingImage && (
           <div className="flex items-center gap-2 mb-2">
@@ -874,7 +922,7 @@ export function ChatScene() {
             ref={inputRef}
             className="flex-1 border border-line bg-bg0 px-3 py-2 text-sm font-body text-text outline-none focus:border-line2 transition-colors resize-none max-h-[160px] overflow-y-auto"
             rows={1}
-            placeholder={!apiKeySet ? 'Set API key in Settings...' : planningMode ? 'Describe what to build or change…' : 'What do you do?'}
+            placeholder={!apiKeySet ? 'Set API key in Settings...' : planningMode ? 'Describe what to build or change…' : 'Type your own action…'}
             value={input}
             disabled={!apiKeySet || inputLocked}
             onChange={(e) => setInput(e.target.value)}

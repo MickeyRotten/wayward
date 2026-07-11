@@ -28,7 +28,7 @@ from server.ai.item_detection import (
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai import tts
 from server.ai.worldbuilder import apply_proposal, reverse_chronicler_effects, run_worldbuilder
-from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, run_action_suggester
+from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, normalize_option_rules, run_action_suggester
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
@@ -862,6 +862,8 @@ def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorRe
         plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
         actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
         actionSuggestionsInstructions=getattr(n, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE,
+        actionOptionRules=normalize_option_rules(getattr(n, "action_option_rules", None)),
+        firstMessageOptions=[str(o) for o in (getattr(n, "first_message_options", None) or [])],
         diceEnabled=bool(getattr(n, "dice_enabled", True)),
         hasVoice=has_voice,
     )
@@ -907,6 +909,12 @@ async def update_narrator(
         n.action_suggestions_enabled = data.actionSuggestionsEnabled
     if data.actionSuggestionsInstructions is not None:
         n.action_suggestions_instructions = data.actionSuggestionsInstructions
+    if data.actionOptionRules is not None:
+        # Store exactly what the player configured; blanks are dropped and the
+        # defaults kick in when the list ends up empty (mirrors read path).
+        n.action_option_rules = [r.strip() for r in data.actionOptionRules if r.strip()]
+    if data.firstMessageOptions is not None:
+        n.first_message_options = [o.strip() for o in data.firstMessageOptions if o.strip()]
     if data.diceEnabled is not None:
         n.dice_enabled = data.diceEnabled
     await session.commit()

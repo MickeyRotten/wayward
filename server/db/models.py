@@ -105,13 +105,19 @@ class NarratorConfig(Base):
     # Core instructions for the Planner persona (Planning mode). Editable in
     # Config; falls back to the built-in default when blank.
     planner_instructions: Mapped[str] = mapped_column(Text, default="")
-    # Action Suggestions: AI-generated contextual quick-action buttons above
-    # the chat input. Opt-in (off by default) since it's an extra LLM call
-    # per turn. Fixed/canned buttons (Look Around, Rest, etc.) are unaffected.
-    action_suggestions_enabled: Mapped[bool] = mapped_column(Integer, default=False)
+    # Action Suggestions: AI-generated choice options rendered in-chat — the
+    # primary text-adventure interaction. Default on for new campaigns (an
+    # extra small LLM call per turn; existing campaigns keep their setting).
+    action_suggestions_enabled: Mapped[bool] = mapped_column(Integer, default=True)
     # Custom guidance for the Action-Suggestion agent. Blank => the built-in
     # default (action_suggester.ACTION_SUGGESTIONS_GUIDANCE) is used.
     action_suggestions_instructions: Mapped[str] = mapped_column(Text, default="")
+    # One generated option per rule, in order (each editable in Config). Null/
+    # empty => action_suggester.DEFAULT_OPTION_RULES (good/neutral/dark/wildcard).
+    action_option_rules = mapped_column(JSON, nullable=True)
+    # Scripted choice options shown with the First Message (turn 0), where the
+    # suggester can't run — authored alongside the first message itself.
+    first_message_options = mapped_column(JSON, nullable=True)
     # Skill checks: offer the narrator a server-rolled d20 skill_check tool for
     # uncertain, consequential actions (rendered as dice chips in chat).
     dice_enabled: Mapped[bool] = mapped_column(Integer, default=True)

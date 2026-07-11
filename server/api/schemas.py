@@ -99,6 +99,8 @@ class NarratorUpdate(BaseModel):
     plannerInstructions: str | None = None
     actionSuggestionsEnabled: bool | None = None
     actionSuggestionsInstructions: str | None = None
+    actionOptionRules: list[str] | None = None
+    firstMessageOptions: list[str] | None = None
     diceEnabled: bool | None = None
 
 
@@ -113,6 +115,8 @@ class NarratorResponse(BaseModel):
     plannerInstructions: str
     actionSuggestionsEnabled: bool
     actionSuggestionsInstructions: str
+    actionOptionRules: list[str]
+    firstMessageOptions: list[str]
 
 
 # --- Scenario ---

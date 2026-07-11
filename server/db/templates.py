@@ -157,6 +157,8 @@ async def apply_template(name: str) -> bool:
             planner_instructions=nar.get("plannerInstructions") or PLANNER_GUIDANCE,
             post_history_instructions=nar.get("postHistoryInstructions", ""),
             first_message=nar.get("firstMessage", ""),
+            action_option_rules=nar.get("actionOptionRules") or None,
+            first_message_options=nar.get("firstMessageOptions") or None,
         ))
 
         # --- Lorebook injection config (campaign scope) ---

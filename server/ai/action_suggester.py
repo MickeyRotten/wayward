@@ -29,39 +29,64 @@ log = logging.getLogger("wayward.action_suggester")
 # arguments blob is unparseable and used to drop the whole set (suggestions
 # "cut off" or vanishing entirely). _extract_actions also salvages a clipped tail.
 _MAX_TOKENS = 700
-_MAX_SUGGESTIONS = 4
+_MAX_OPTION_RULES = 6
 
-ACTION_SUGGESTIONS_GUIDANCE = """You suggest short, concrete actions the player could try next, based on the current scene.
+# One generated option per rule, in order — the text-adventure choice spread.
+# NarratorConfig.action_option_rules (Config → Agents & Tools) overrides these;
+# blank/missing falls back here.
+DEFAULT_OPTION_RULES: list[str] = [
+    "A good-hearted, selfless, or merciful course of action.",
+    "A neutral, practical, or cautious course of action.",
+    "A self-serving, ruthless, or morally grey course of action.",
+    "A bold, unexpected, or creative wildcard — any morality.",
+]
 
-Call suggest_actions with 0-4 phrases. Each phrase should:
+ACTION_SUGGESTIONS_GUIDANCE = """You write the player's choices for a text adventure: short, concrete actions they could take next, based on the current scene.
+
+Call suggest_actions with EXACTLY one phrase per OPTION RULE listed below, in that order. Each phrase must:
 - Be written in the FIRST PERSON, starting with "I" — the player speaking as their character ("I push open the heavy door", "I ask Tifa about the ruins").
-- Be short — under 8 words.
+- Be short — 10 words or fewer.
 - Be grounded in something specific just mentioned in the narration (an object, a person, a place, a choice) — not generic.
-- Never duplicate these already-available buttons: looking around, resting, talking to the party, or using an item. Don't suggest attacking or fighting — there is no combat system.
+- Follow its own OPTION RULE — the rules exist so the choices feel meaningfully different from each other.
+- Not duplicate the always-available actions: waiting/continuing, looking around, resting, talking to the party, or using an item. Don't suggest attacking or fighting — there is no combat system.
 
-If the scene doesn't support any good specific suggestions, call suggest_actions with an empty list. Always call the tool — never reply with prose."""
+Always call the tool — never reply with prose."""
 
-TOOL_SCHEMA: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "suggest_actions",
-            "description": "Propose short, scene-specific action phrases for the player to choose from.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "actions": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "maxItems": _MAX_SUGGESTIONS,
-                        "description": "0-4 short first-person action phrases starting with 'I', e.g. 'I ask Tifa about the ruins'.",
+
+def normalize_option_rules(raw) -> list[str]:
+    """Player-configured rules → a clean list (non-blank, capped), falling back
+    to the defaults."""
+    rules = [str(r).strip() for r in raw if str(r).strip()] if isinstance(raw, list) else []
+    return rules[:_MAX_OPTION_RULES] or list(DEFAULT_OPTION_RULES)
+
+
+def _rules_block(rules: list[str]) -> str:
+    return "\n".join(f"OPTION {i + 1} must be: {r}" for i, r in enumerate(rules))
+
+
+def _tool_schema(n: int) -> list[dict]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "suggest_actions",
+                "description": "Propose the player's next choices — one short action phrase per option rule, in order.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "actions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": n,
+                            "maxItems": n,
+                            "description": f"Exactly {n} short first-person action phrases starting with 'I', option i following option rule i.",
+                        },
                     },
+                    "required": ["actions"],
                 },
-                "required": ["actions"],
             },
         },
-    },
-]
+    ]
 
 
 def _extract_actions(raw: str) -> list[str]:
@@ -211,8 +236,11 @@ async def run_action_suggester(turn_number: int) -> list[str]:
             return []
 
         model_id = settings.action_suggestions_model_id or settings.model_id
-        # Custom guidance (Config → Agents & Tools) overrides the built-in default.
-        guidance = getattr(narrator, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE
+        # Custom guidance (Config → Agents & Tools) overrides the built-in
+        # preamble; the per-slot OPTION RULES are always appended after it.
+        preamble = getattr(narrator, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE
+        rules = normalize_option_rules(getattr(narrator, "action_option_rules", None))
+        guidance = f"{preamble}\n\nOPTION RULES:\n{_rules_block(rules)}"
         context = await _build_context(session, turn_number)
 
         messages = [
@@ -230,7 +258,7 @@ async def run_action_suggester(turn_number: int) -> list[str]:
                 messages=messages,
                 temperature=0.9,
                 max_tokens=_MAX_TOKENS,
-                tools=TOOL_SCHEMA,
+                tools=_tool_schema(len(rules)),
             ):
                 if ev["type"] == "result":
                     tool_calls = ev["tool_calls"]
@@ -244,7 +272,7 @@ async def run_action_suggester(turn_number: int) -> list[str]:
             actions = _extract_actions(tc["arguments"])
             cleaned = [_to_first_person(a) for a in actions if a.strip()]
             if cleaned:
-                return cleaned[:_MAX_SUGGESTIONS]
+                return cleaned[: len(rules)]
 
         log.info("ACTION-SUGGEST no usable tool call turn=%s | model=%s", turn_number, model_id)
         return []

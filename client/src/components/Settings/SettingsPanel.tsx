@@ -63,6 +63,7 @@ export function SettingsPanel() {
   const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
   const [actionSuggestionsEnabled, setActionSuggestionsEnabled] = useState(narrator.actionSuggestionsEnabled)
   const [actionSuggestionsInstructions, setActionSuggestionsInstructions] = useState(narrator.actionSuggestionsInstructions)
+  const [actionOptionRules, setActionOptionRules] = useState<string[]>(narrator.actionOptionRules)
   const [diceEnabled, setDiceEnabled] = useState(narrator.diceEnabled)
   const [saved, setSaved] = useState(false)
 
@@ -98,8 +99,9 @@ export function SettingsPanel() {
     setPlannerInstructions(narrator.plannerInstructions)
     setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
     setActionSuggestionsInstructions(narrator.actionSuggestionsInstructions)
+    setActionOptionRules(narrator.actionOptionRules)
     setDiceEnabled(narrator.diceEnabled)
-  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions, narrator.diceEnabled])
+  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions, narrator.actionOptionRules, narrator.diceEnabled])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -139,7 +141,7 @@ export function SettingsPanel() {
       ttsAutoplay,
       ...(visionApiKey ? { visionApiKey } : {}),
     })
-    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions, diceEnabled })
+    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions, actionOptionRules, diceEnabled })
     // The TTS enable toggle affects server-reported availability.
     void useTtsStore.getState().fetchStatus()
     setApiKey('')
@@ -423,7 +425,7 @@ export function SettingsPanel() {
               Show AI-suggested actions in the chat
             </label>
             <span className="text-[10px] text-textdim font-body">
-              After each narration, generates a few short scene-specific action buttons (e.g. "Push open the heavy door"), shown as choices under the latest beat. Off by default — an extra small LLM call per turn when enabled. Fixed buttons (Look Around, Rest, Use an Item, Talk to Party) always show regardless of this setting.
+              After each narration, generates the numbered choice options in the chat's action panel — one option per rule below. The primary text-adventure interaction (an extra small LLM call per turn). The fixed actions (Continue, Look Around, Rest, Use an Item, Talk to Party) always show regardless.
             </span>
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Action Suggestions Model</span>
@@ -450,6 +452,52 @@ export function SettingsPanel() {
                 Guides how the AI picks suggestions (tone, length, what to favor or avoid). Leave blank to use the built-in default.
               </span>
             </label>
+            <div className="block">
+              <span className="text-[11px] text-textdim font-body">Option Rules — one generated option per rule, in order</span>
+              <div className="mt-1 space-y-1.5">
+                {actionOptionRules.map((rule, i) => (
+                  <div key={i} className="flex items-start gap-1.5">
+                    <span className="font-ui text-[10px] text-golddeep pt-2 w-4 text-right shrink-0">{i + 1}.</span>
+                    <textarea
+                      className="flex-1 border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[34px]"
+                      rows={1}
+                      value={rule}
+                      onChange={(e) => setActionOptionRules(actionOptionRules.map((r, j) => (j === i ? e.target.value : r)))}
+                    />
+                    <button
+                      type="button"
+                      title="Remove this option slot"
+                      disabled={actionOptionRules.length <= 1}
+                      className="font-ui text-[11px] text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors disabled:opacity-30"
+                      onClick={() => setActionOptionRules(actionOptionRules.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1.5 flex gap-2">
+                <button
+                  type="button"
+                  disabled={actionOptionRules.length >= 6}
+                  className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors disabled:opacity-30"
+                  onClick={() => setActionOptionRules([...actionOptionRules, ''])}
+                >
+                  + ADD OPTION
+                </button>
+                <button
+                  type="button"
+                  className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
+                  onClick={() => void narrator.save({ actionOptionRules: [] })}
+                  title="Restore the built-in good / neutral / dark / wildcard spread"
+                >
+                  RESET TO DEFAULTS
+                </button>
+              </div>
+              <span className="mt-1 block text-[10px] text-textdim font-body">
+                Each rule shapes one option — by default they differ morally (good / neutral / dark) plus a wildcard. 1-6 options; saved with SAVE (reset applies immediately).
+              </span>
+            </div>
           </SubSection>
 
           <SubSection title="Vision">

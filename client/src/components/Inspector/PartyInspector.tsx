@@ -1326,8 +1326,17 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
   const scenarioValue = useScenarioStore((s) => (def ? s[def.key] : ''))
   const saveScenario = useScenarioStore((s) => s.save)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const firstMessageOptions = useNarratorStore((s) => s.firstMessageOptions)
   const saveNarrator = useNarratorStore((s) => s.save)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
+
+  // Scripted opening options, edited alongside the First Message itself.
+  const [options, setOptions] = useState<string[]>(firstMessageOptions)
+  useEffect(() => { setOptions(firstMessageOptions) }, [firstMessageOptions])
+  const commitOptions = (next: string[]) => {
+    setOptions(next)
+    void saveNarrator({ firstMessageOptions: next })
+  }
 
   const stored = isFirstMessage ? firstMessage : scenarioValue
   const label = isFirstMessage ? 'First Message' : def?.label ?? 'Scenario'
@@ -1370,6 +1379,17 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
             <p className="text-[12px] text-textdim font-body">(empty)</p>
           )}
         </LoreSection>
+        {isFirstMessage && firstMessageOptions.length > 0 && (
+          <LoreSection title="Opening Options">
+            <div className="space-y-1">
+              {firstMessageOptions.map((opt, i) => (
+                <p key={i} className="font-body text-sm text-text2 leading-relaxed">
+                  <span className="font-ui text-[11px] text-golddeep mr-2">{i + 1}.</span>{opt}
+                </p>
+              ))}
+            </div>
+          </LoreSection>
+        )}
         <span className="block text-[10px] text-textdim font-body">{note}</span>
       </div>
     )
@@ -1390,6 +1410,43 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
           onBlur={commit}
         />
       </LoreSection>
+      {isFirstMessage && (
+        <LoreSection title="Opening Options">
+          <div className="space-y-1.5">
+            {options.map((opt, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="font-ui text-[10px] text-golddeep w-4 text-right shrink-0">{i + 1}.</span>
+                <input
+                  className="flex-1 border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                  value={opt}
+                  placeholder="I step into the shadow of the trees."
+                  onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
+                  onBlur={() => commitOptions(options)}
+                />
+                <button
+                  type="button"
+                  title="Remove this option"
+                  className="font-ui text-[11px] text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors"
+                  onClick={() => commitOptions(options.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              disabled={options.length >= 6}
+              className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors disabled:opacity-30"
+              onClick={() => setOptions([...options, ''])}
+            >
+              + ADD OPTION
+            </button>
+          </div>
+          <span className="mt-1 block text-[10px] text-textdim font-body">
+            Scripted choices shown with the First Message, before the player's first turn — the AI generates options only after real turns begin.
+          </span>
+        </LoreSection>
+      )}
       <span className="block text-[10px] text-textdim font-body">{note}</span>
     </div>
   )

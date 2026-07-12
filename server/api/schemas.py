@@ -18,6 +18,9 @@ class BasicInfoSchema(BaseModel):
     likes: str = ""
     dislikes: str = ""
     personality: str = ""
+    # What pushes the character forward — their goal, want, or need. Shown on
+    # the PC sheet and a major signal for the action suggester.
+    drive: str = ""
 
 
 class EquipmentSchema(BaseModel):

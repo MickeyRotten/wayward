@@ -48,6 +48,7 @@ Call suggest_actions with EXACTLY one phrase per OPTION RULE listed below, in th
 - Be short — 10 words or fewer.
 - Be grounded in something specific just mentioned in the narration (an object, a person, a place, a choice) — not generic.
 - Follow its own OPTION RULE — the rules exist so the choices feel meaningfully different from each other.
+- Sound like THIS player character: when a PLAYER CHARACTER personality and drive are given, the options are that person's impulses — phrase them in their voice, and when the scene allows, let one speak to their drive.
 - Not duplicate the always-available actions: waiting/continuing, looking around, resting, talking to the party, or using an item. Don't suggest attacking or fighting — there is no combat system.
 
 Always call the tool — never reply with prose."""
@@ -64,7 +65,7 @@ INLINE_OPTIONS_MARKER = "<<<OPTIONS>>>"
 
 
 def build_inline_options_guidance(rules: list[str]) -> str:
-    return f"""ACTION OPTIONS: End your reply with one final line containing exactly {INLINE_OPTIONS_MARKER} immediately followed by a JSON array of {len(rules)} short choice phrases for the player — one per OPTION RULE below, in order. Each phrase: FIRST PERSON starting with "I", 10 words or fewer, grounded in what you just narrated, never attacking or fighting, and never duplicating the always-available actions (waiting, looking around, resting, talking to the party, using an item).
+    return f"""ACTION OPTIONS: End your reply with one final line containing exactly {INLINE_OPTIONS_MARKER} immediately followed by a JSON array of {len(rules)} short choice phrases for the player — one per OPTION RULE below, in order. Each phrase: FIRST PERSON starting with "I", 10 words or fewer, grounded in what you just narrated, never attacking or fighting, and never duplicating the always-available actions (waiting, looking around, resting, talking to the party, using an item). The options are the PLAYER CHARACTER's impulses — phrase them in that character's voice, shaped by their Personality and Drive, and when the scene allows, let one speak to their drive.
 
 OPTION RULES:
 {_rules_block(rules)}
@@ -246,7 +247,22 @@ async def _build_context(session, turn_number: int) -> str:
     ).scalars().all()
     task_texts = [t.text for t in tasks if t.text]
 
-    lines = ["CURRENT SCENE:"]
+    # The PC's personality and drive are MAJOR context — options are the
+    # character's impulses, so they should sound like this specific person.
+    lines: list[str] = []
+    pc = await party_ops.load_pc(session)
+    if pc is not None:
+        info = pc.basic_info or {}
+        pc_lines = [f"PLAYER CHARACTER: {info.get('name') or 'Unknown'}"]
+        if info.get("personality"):
+            pc_lines.append(f"  Personality: {info['personality']}")
+        if info.get("drive"):
+            pc_lines.append(f"  Drive (what pushes them forward): {info['drive']}")
+        if len(pc_lines) > 1:
+            lines.extend(pc_lines)
+            lines.append("")
+
+    lines.append("CURRENT SCENE:")
     if scene["location"]:
         lines.append(f"  Location: {scene['location']}")
     if scene["timeOfDay"]:

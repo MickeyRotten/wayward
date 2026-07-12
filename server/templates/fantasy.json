@@ -157,7 +157,9 @@
       "age": 22,
       "heightCm": 178,
       "weightKg": 74,
-      "description": "A young adventurer setting out to make a name. Brown hair, an honest face, and more courage than experience. Whatever they lack in skill, they make up for in stubbornness."
+      "description": "A young adventurer setting out to make a name. Brown hair, an honest face, and more courage than experience. Whatever they lack in skill, they make up for in stubbornness.",
+      "personality": "Curious and good-hearted, with a stubborn streak — quicker to help a stranger than to weigh the cost.",
+      "drive": "Prove myself beyond the village I came from — and find out why the forest roads keep going quiet."
     },
     "equipment": {
       "rightHand": "sword",

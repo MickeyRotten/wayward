@@ -101,13 +101,17 @@ def build_prompt(
 
     equip_str = _format_equipment(pc_equip, catalog_lookup)
 
-    pc_summary = (
+    pc_lines = [
         f"PLAYER CHARACTER: {pc_info.get('name', 'Unknown')}, "
         f"a {pc_info.get('species', 'unknown')} {pc_info.get('gender', '').lower()}. "
-        f"{pc_info.get('description', '')}\n"
-        f"Carrying: {equip_str}"
-    )
-    messages.append({"role": "system", "content": pc_summary})
+        f"{pc_info.get('description', '')}"
+    ]
+    if pc_info.get('personality'):
+        pc_lines.append(f"Personality: {pc_info['personality']}")
+    if pc_info.get('drive'):
+        pc_lines.append(f"Drive (what pushes them forward): {pc_info['drive']}")
+    pc_lines.append(f"Carrying: {equip_str}")
+    messages.append({"role": "system", "content": "\n".join(pc_lines)})
 
     # 4. Party roster
     if party_members:

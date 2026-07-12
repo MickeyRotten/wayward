@@ -28,7 +28,13 @@ from server.ai.item_detection import (
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai import tts
 from server.ai.worldbuilder import apply_proposal, reverse_chronicler_effects, run_worldbuilder
-from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, normalize_option_rules, run_action_suggester
+from server.ai.action_suggester import (
+    ACTION_SUGGESTIONS_GUIDANCE,
+    build_inline_options_guidance,
+    normalize_option_rules,
+    parse_inline_options,
+    run_action_suggester,
+)
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models
@@ -862,6 +868,7 @@ def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorRe
         plannerInstructions=getattr(n, "planner_instructions", "") or PLANNER_GUIDANCE,
         actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
         actionSuggestionsInstructions=getattr(n, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE,
+        actionSuggestionsMode=getattr(n, "action_suggestions_mode", "separate") or "separate",
         actionOptionRules=normalize_option_rules(getattr(n, "action_option_rules", None)),
         firstMessageOptions=[str(o) for o in (getattr(n, "first_message_options", None) or [])],
         diceEnabled=bool(getattr(n, "dice_enabled", True)),
@@ -909,6 +916,8 @@ async def update_narrator(
         n.action_suggestions_enabled = data.actionSuggestionsEnabled
     if data.actionSuggestionsInstructions is not None:
         n.action_suggestions_instructions = data.actionSuggestionsInstructions
+    if data.actionSuggestionsMode is not None and data.actionSuggestionsMode in ("separate", "inline"):
+        n.action_suggestions_mode = data.actionSuggestionsMode
     if data.actionOptionRules is not None:
         # Store exactly what the player configured; blanks are dropped and the
         # defaults kick in when the list ends up empty (mirrors read path).
@@ -2436,6 +2445,7 @@ async def chat_turn(
             summarize_hint=summarize_hint,
             user_message_id=user_msg.id,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
+            inline_option_rules=_inline_option_rules(narrator),
         )
 
     return _stream_llm_response(
@@ -2448,6 +2458,7 @@ async def chat_turn(
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
         user_message_id=user_msg.id,
+        inline_option_rules=_inline_option_rules(narrator),
     )
 
 
@@ -2529,6 +2540,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
             spotlight_signals=spotlight_signals,
             summarize_hint=summarize_hint,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
+            inline_option_rules=_inline_option_rules(narrator),
         )
 
     return _stream_llm_response(
@@ -2540,6 +2552,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
+        inline_option_rules=_inline_option_rules(narrator),
     )
 
 
@@ -2637,6 +2650,7 @@ async def regenerate(
             spotlight_signals=spotlight_signals,
             summarize_hint=summarize_hint,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
+            inline_option_rules=_inline_option_rules(narrator),
         )
 
     # Start fresh at variant 0 since we wiped all previous variants
@@ -2649,6 +2663,7 @@ async def regenerate(
         did_summarize=did_summarize,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
+        inline_option_rules=_inline_option_rules(narrator),
     )
 
 
@@ -2901,6 +2916,16 @@ async def planner_apply_deletes(
 
 # ── Shared streaming helper ───────────────────────────────────────
 
+def _inline_option_rules(narrator) -> list[str] | None:
+    """The option rules when suggestions ride the main narration call
+    (action_suggestions_mode == 'inline'), else None."""
+    if not getattr(narrator, "action_suggestions_enabled", False):
+        return None
+    if (getattr(narrator, "action_suggestions_mode", "separate") or "separate") != "inline":
+        return None
+    return normalize_option_rules(getattr(narrator, "action_option_rules", None))
+
+
 def _stream_llm_response(
     messages: list[dict],
     settings: OpenRouterSettings,
@@ -2911,8 +2936,12 @@ def _stream_llm_response(
     spotlight_signals: list[SpotlightSignal] | None = None,
     player_deltas: list[dict] | None = None,
     user_message_id: int | None = None,
+    inline_option_rules: list[str] | None = None,
 ):
     player_deltas = player_deltas or []
+    if inline_option_rules:
+        # Suggestions ride this call: teach the <<<OPTIONS>>> ending.
+        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
 
     context_tokens = estimate_prompt_tokens(messages)
     api_key = settings.api_key
@@ -2980,6 +3009,10 @@ def _stream_llm_response(
         clean_text, actions = parse_action_block(full_text)
         if actions:
             log.info("LLM ACTIONS parsed: %s", json.dumps(actions, ensure_ascii=False))
+        inline_suggestions: list[str] = []
+        if inline_option_rules:
+            clean_text, inline_suggestions = parse_inline_options(clean_text)
+            log.info("LLM INLINE OPTIONS parsed: %s", json.dumps(inline_suggestions, ensure_ascii=False))
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
         saved_message: dict | None = None
@@ -3081,6 +3114,8 @@ def _stream_llm_response(
             done_payload['appliedInventoryDeltas'] = combined_inv_deltas
         if equip_changes:
             done_payload['appliedEquipmentChanges'] = equip_changes
+        if inline_suggestions:
+            done_payload['suggestions'] = inline_suggestions
         yield f"data: {json.dumps(done_payload)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
@@ -3098,12 +3133,16 @@ def _stream_agent_response(
     summarize_hint: bool = False,
     user_message_id: int | None = None,
     dice_enabled: bool = True,
+    inline_option_rules: list[str] | None = None,
 ):
     """Drive the agentic narrator loop and stream its final narration.
 
     Tool calls mutate the DB *during* the loop (inside run_narrator_agent), so
     here we only record the accumulated deltas/scene on the ChatMessage for
     reversal — we do not re-apply them."""
+    if inline_option_rules:
+        # Suggestions ride this call: teach the <<<OPTIONS>>> ending.
+        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
     context_tokens = estimate_prompt_tokens(messages)
     max_context = settings.max_context_tokens
 
@@ -3161,6 +3200,11 @@ def _stream_agent_response(
             "LLM AGENT RESPONSE turn=%s variant=%s (%d chars) | scene=%s | inv_deltas=%s | equip_changes=%s",
             current_turn, variant, len(final_content), scene, inv_deltas, equip_changes,
         )
+
+        inline_suggestions: list[str] = []
+        if inline_option_rules:
+            final_content, inline_suggestions = parse_inline_options(final_content)
+            log.info("LLM INLINE OPTIONS parsed: %s", json.dumps(inline_suggestions, ensure_ascii=False))
 
         try:
             async with new_session() as save_session:
@@ -3222,6 +3266,8 @@ def _stream_agent_response(
             done_payload['appliedEquipmentChanges'] = equip_changes
         if tool_failures:
             done_payload['toolFailures'] = tool_failures
+        if inline_suggestions:
+            done_payload['suggestions'] = inline_suggestions
         yield f"data: {json.dumps(done_payload)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")

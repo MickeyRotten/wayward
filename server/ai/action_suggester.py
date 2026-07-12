@@ -250,29 +250,37 @@ async def run_action_suggester(turn_number: int) -> list[str]:
 
         log.info("ACTION-SUGGEST REQUEST turn=%s | model=%s", turn_number, model_id)
 
-        tool_calls: list[dict] = []
-        try:
-            async for ev in chat_completion_agent_turn(
-                api_key=settings.api_key,
-                model_id=model_id,
-                messages=messages,
-                temperature=0.9,
-                max_tokens=_MAX_TOKENS,
-                tools=_tool_schema(len(rules)),
-            ):
-                if ev["type"] == "result":
-                    tool_calls = ev["tool_calls"]
-        except Exception:
-            log.exception("Action-suggester call failed")
-            return []
-
-        for tc in tool_calls:
-            if tc["name"] != "suggest_actions":
+        # The panel is the primary interaction, so a flaky response (no tool
+        # call, empty list) gets one automatic retry at a lower temperature
+        # before we give up and let the client's REROLL take over.
+        for attempt, temperature in enumerate((0.9, 0.7)):
+            tool_calls: list[dict] = []
+            try:
+                async for ev in chat_completion_agent_turn(
+                    api_key=settings.api_key,
+                    model_id=model_id,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=_MAX_TOKENS,
+                    tools=_tool_schema(len(rules)),
+                ):
+                    if ev["type"] == "result":
+                        tool_calls = ev["tool_calls"]
+            except Exception:
+                log.exception("Action-suggester call failed (attempt %s)", attempt + 1)
                 continue
-            actions = _extract_actions(tc["arguments"])
-            cleaned = [_to_first_person(a) for a in actions if a.strip()]
-            if cleaned:
-                return cleaned[: len(rules)]
 
-        log.info("ACTION-SUGGEST no usable tool call turn=%s | model=%s", turn_number, model_id)
+            for tc in tool_calls:
+                if tc["name"] != "suggest_actions":
+                    continue
+                actions = _extract_actions(tc["arguments"])
+                cleaned = [_to_first_person(a) for a in actions if a.strip()]
+                if cleaned:
+                    return cleaned[: len(rules)]
+
+            log.info(
+                "ACTION-SUGGEST no usable tool call turn=%s | model=%s | attempt=%s",
+                turn_number, model_id, attempt + 1,
+            )
+
         return []

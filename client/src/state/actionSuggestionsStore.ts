@@ -42,5 +42,8 @@ export const useActionSuggestionsStore = create<ActionSuggestionsState>((set, ge
     await get().runForTurn(get().lastTurn)
   },
 
-  clear: () => set({ suggestions: [] }),
+  // lastTurn: null = "no attempt for the current chat state" — ChatScene's
+  // self-healing effect fetches whenever the panel is visible in that state
+  // (covers boot, refresh, adventure/campaign switches, aborts, and errors).
+  clear: () => set({ suggestions: [], lastTurn: null }),
 }))

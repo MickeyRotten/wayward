@@ -74,6 +74,8 @@ export function ChatScene() {
   const firstMessageOptions = useNarratorStore((s) => s.firstMessageOptions)
   const actionSuggestions = useActionSuggestionsStore((s) => s.suggestions)
   const actionSuggestionsLoading = useActionSuggestionsStore((s) => s.loading)
+  const actionSuggestionsTurn = useActionSuggestionsStore((s) => s.lastTurn)
+  const runSuggestionsForTurn = useActionSuggestionsStore((s) => s.runForTurn)
   const rerollSuggestions = useActionSuggestionsStore((s) => s.regenerate)
 
   const [input, setInput] = useState('')
@@ -260,6 +262,18 @@ export function ChatScene() {
     : (actionSuggestionsEnabled ? actionSuggestions : [])
   const showActionPanel =
     !planningMode && !inputLocked && (showWhatDoYouDo || visibleMessages.length === 0)
+
+  // Self-healing fetch: whenever the panel is visible mid-adventure and no
+  // attempt has been made for the current chat state (boot, refresh, save/
+  // campaign switches, aborted or failed turns), fetch the options. Loop-safe:
+  // runForTurn stamps lastTurn immediately, so an empty result doesn't retrigger
+  // — retrying an empty roll stays manual (↻ REROLL).
+  useEffect(() => {
+    if (!showActionPanel || isOpening || !actionSuggestionsEnabled || !apiKeySet) return
+    if (actionSuggestionsLoading || actionSuggestionsTurn !== null) return
+    const latestTurn = lastVisibleMsg?.turnNumber
+    if (latestTurn && latestTurn > 0) void runSuggestionsForTurn(latestTurn)
+  }, [showActionPanel, isOpening, actionSuggestionsEnabled, apiKeySet, actionSuggestionsLoading, actionSuggestionsTurn, lastVisibleMsg, runSuggestionsForTurn])
   const firstNarratorIdx = hasFirstMessage
     ? -1
     : visibleMessages.findIndex(
@@ -646,6 +660,12 @@ export function ChatScene() {
             {!isOpening && actionSuggestionsEnabled && actionSuggestionsLoading && (
               <span className="font-ui text-[10px] tracking-wider text-textdim animate-pulse px-1 py-1">
                 WEIGHING YOUR OPTIONS ···
+              </span>
+            )}
+            {!isOpening && actionSuggestionsEnabled && !actionSuggestionsLoading &&
+              panelOptions.length === 0 && actionSuggestionsTurn !== null && (
+              <span className="font-ui text-[10px] tracking-wider text-textdim px-1 py-1">
+                NO OPTIONS CAME THROUGH — ↻ REROLL TO TRY AGAIN
               </span>
             )}
             {!actionSuggestionsLoading && panelOptions.map((s, i) => (

@@ -816,3 +816,8 @@ Done: a per-campaign **Generation Mode** for the action options (`NarratorConfig
 Done: `basicInfo` gains a **drive** field ("what pushes them forward"), and the PC sheet now edits/shows **Personality** (which existed in the schema but was never surfaced for the PC) and **Drive** — with teaching placeholders, view + edit modes, additive and migration-free (character.json just gains a key; `_BASIC_KEYS` whitelist extended). Both fields flow into the narrator's PLAYER CHARACTER summary (`prompt_builder`), and are **major context for the options**: the suggester's context now leads with a PLAYER CHARACTER block (name + personality + drive) and both guidance texts (separate-call and inline `<<<OPTIONS>>>`) instruct that options are the character's impulses, phrased in their voice, with one speaking to their drive when the scene allows. The fantasy template's Hero ships with both filled in. Verified: PUT round-trip persists drive (caught + fixed the `_BASIC_KEYS` whitelist dropping it), `_build_context` leads with the PC block, PC sheet renders both fields (Playwright), tsc + build clean.
 
 ---
+[x] Does the Editor also have access to the new fields?
+
+It could read them (get_character returns the full basicInfo) but not write them — update_pc's tool schema and handler had a fixed field list without `drive`. Fixed: update_pc now accepts `drive` (with a description telling the Editor it shapes the generated options) and the handler copies it through. Verified with a direct _exec_tool call: drive persists to the character file. (Members deliberately unchanged — their sheets/roster don't surface drive yet.)
+
+---

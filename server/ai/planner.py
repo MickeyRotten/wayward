@@ -159,6 +159,7 @@ TOOL_SCHEMAS: list[dict] = [
         {"name": {"type": "string"}, "species": {"type": "string"}, "gender": {"type": "string"},
          "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
          "description": {"type": "string"}, "personality": {"type": "string"},
+         "drive": {"type": "string", "description": "What pushes the character forward — their goal, want, or need. Shapes the generated action options."},
          "likes": {"type": "string"}, "dislikes": {"type": "string"}}, []),
     _fn(
         "set_scenario",
@@ -417,7 +418,7 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return "No player character exists.", None
         bi = dict(pc.basic_info)
         for k in ("name", "species", "gender", "age", "heightCm", "weightKg",
-                  "description", "personality", "likes", "dislikes"):
+                  "description", "personality", "drive", "likes", "dislikes"):
             if args.get(k) is not None:
                 bi[k] = args[k]
         await party_ops.set_pc_identity(session, bi)

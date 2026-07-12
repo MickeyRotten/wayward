@@ -64,6 +64,7 @@ export function SettingsPanel() {
   const [actionSuggestionsEnabled, setActionSuggestionsEnabled] = useState(narrator.actionSuggestionsEnabled)
   const [actionSuggestionsInstructions, setActionSuggestionsInstructions] = useState(narrator.actionSuggestionsInstructions)
   const [actionOptionRules, setActionOptionRules] = useState<string[]>(narrator.actionOptionRules)
+  const [actionSuggestionsMode, setActionSuggestionsMode] = useState(narrator.actionSuggestionsMode)
   const [diceEnabled, setDiceEnabled] = useState(narrator.diceEnabled)
   const [saved, setSaved] = useState(false)
 
@@ -100,8 +101,9 @@ export function SettingsPanel() {
     setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
     setActionSuggestionsInstructions(narrator.actionSuggestionsInstructions)
     setActionOptionRules(narrator.actionOptionRules)
+    setActionSuggestionsMode(narrator.actionSuggestionsMode)
     setDiceEnabled(narrator.diceEnabled)
-  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions, narrator.actionOptionRules, narrator.diceEnabled])
+  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions, narrator.actionOptionRules, narrator.actionSuggestionsMode, narrator.diceEnabled])
 
   // Load the model list automatically when Config opens. OpenRouter's model
   // list is public, so this works even before an API key is entered — the
@@ -141,7 +143,7 @@ export function SettingsPanel() {
       ttsAutoplay,
       ...(visionApiKey ? { visionApiKey } : {}),
     })
-    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions, actionOptionRules, diceEnabled })
+    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions, actionOptionRules, actionSuggestionsMode, diceEnabled })
     // The TTS enable toggle affects server-reported availability.
     void useTtsStore.getState().fetchStatus()
     setApiKey('')
@@ -427,6 +429,31 @@ export function SettingsPanel() {
             <span className="text-[10px] text-textdim font-body">
               After each narration, generates the numbered choice options in the chat's action panel — one option per rule below. The primary text-adventure interaction (an extra small LLM call per turn). The fixed actions (Continue, Look Around, Rest, Use an Item, Talk to Party) always show regardless.
             </span>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Generation Mode</span>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                {([
+                  { value: 'separate', label: 'Separate call' },
+                  { value: 'inline', label: 'With the narration' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setActionSuggestionsMode(opt.value)}
+                    className={`font-ui text-[10px] tracking-wider uppercase px-2 py-1.5 border rounded transition-colors ${
+                      actionSuggestionsMode === opt.value
+                        ? 'border-gold text-gold bg-gold/10'
+                        : 'border-line2 text-textdim hover:text-text hover:border-line'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <span className="mt-1 block text-[10px] text-textdim font-body">
+                Separate call: options come from their own small LLM call after the turn (can use a cheaper model below). With the narration: the narrator writes the options at the end of its own reply — faster and no extra call, but ties them to the main model. Reroll always uses the separate call.
+              </span>
+            </label>
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Action Suggestions Model</span>
               <ModelPicker

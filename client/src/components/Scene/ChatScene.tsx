@@ -1934,12 +1934,20 @@ function StreamingWindow({
     return () => cancelAnimationFrame(raf)
   }, [streamingContent, atBottom, listRef])
 
+  // Inline suggestions mode: the narration ends with a machine-read
+  // <<<OPTIONS>>> block — never show it (or a partial prefix of the marker
+  // mid-chunk) while streaming; the server strips it before persisting.
+  const displayContent = useMemo(() => {
+    const idx = streamingContent.indexOf('<<<')
+    return idx === -1 ? streamingContent : streamingContent.slice(0, idx)
+  }, [streamingContent])
+
   const segments = useMemo<Segment[]>(
     () =>
       planningMode
-        ? [{ type: 'narration', text: streamingContent }]
-        : parseSegments(streamingContent, memberResolver),
-    [planningMode, streamingContent, memberResolver],
+        ? [{ type: 'narration', text: displayContent }]
+        : parseSegments(displayContent, memberResolver),
+    [planningMode, displayContent, memberResolver],
   )
 
   if (!isLoading) return null

@@ -222,6 +222,7 @@ async def _run_scope_migrations() -> None:
         ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
         ("campaign.narrator_configs", "action_suggestions_instructions", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_instructions TEXT DEFAULT ''"),
         ("campaign.narrator_configs", "action_option_rules", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_option_rules JSON"),
+        ("campaign.narrator_configs", "action_suggestions_mode", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_mode TEXT DEFAULT 'separate'"),
         ("campaign.narrator_configs", "first_message_options", "ALTER TABLE campaign.narrator_configs ADD COLUMN first_message_options JSON"),
         ("campaign.lorebook_entries", "scenario_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN scenario_fields JSON"),
         ("adventure.chat_messages", "image_path", "ALTER TABLE adventure.chat_messages ADD COLUMN image_path VARCHAR"),

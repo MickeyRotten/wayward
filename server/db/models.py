@@ -112,6 +112,10 @@ class NarratorConfig(Base):
     # Custom guidance for the Action-Suggestion agent. Blank => the built-in
     # default (action_suggester.ACTION_SUGGESTIONS_GUIDANCE) is used.
     action_suggestions_instructions: Mapped[str] = mapped_column(Text, default="")
+    # 'separate' (default): the options come from their own small LLM call after
+    # the turn. 'inline': the narrator appends a machine-read <<<OPTIONS>>> line
+    # to its narration — no extra call; reroll still uses the separate agent.
+    action_suggestions_mode: Mapped[str] = mapped_column(Text, default="separate")
     # One generated option per rule, in order (each editable in Config). Null/
     # empty => action_suggester.DEFAULT_OPTION_RULES (good/neutral/dark/wildcard).
     action_option_rules = mapped_column(JSON, nullable=True)

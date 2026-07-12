@@ -10,6 +10,7 @@ interface NarratorConfigResponse {
   plannerInstructions: string
   actionSuggestionsEnabled: boolean
   actionSuggestionsInstructions: string
+  actionSuggestionsMode: string
   actionOptionRules: string[]
   firstMessageOptions: string[]
   diceEnabled: boolean
@@ -25,6 +26,7 @@ interface NarratorState {
   plannerInstructions: string
   actionSuggestionsEnabled: boolean
   actionSuggestionsInstructions: string
+  actionSuggestionsMode: string
   actionOptionRules: string[]
   firstMessageOptions: string[]
   diceEnabled: boolean
@@ -42,6 +44,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
   plannerInstructions: '',
   actionSuggestionsEnabled: false,
   actionSuggestionsInstructions: '',
+  actionSuggestionsMode: 'separate',
   actionOptionRules: [],
   firstMessageOptions: [],
   diceEnabled: true,
@@ -58,6 +61,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       plannerInstructions: n.plannerInstructions,
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
+      actionSuggestionsMode: n.actionSuggestionsMode,
       actionOptionRules: n.actionOptionRules,
       firstMessageOptions: n.firstMessageOptions,
       diceEnabled: n.diceEnabled,
@@ -76,6 +80,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       plannerInstructions: n.plannerInstructions,
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
+      actionSuggestionsMode: n.actionSuggestionsMode,
       actionOptionRules: n.actionOptionRules,
       firstMessageOptions: n.firstMessageOptions,
       diceEnabled: n.diceEnabled,

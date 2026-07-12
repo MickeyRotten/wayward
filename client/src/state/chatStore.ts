@@ -281,6 +281,7 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
   // whole (ever-growing) history.
   let doneMessage: ChatMessage | null = null
   let doneUserMessageId: number | null = null
+  let doneSuggestions: string[] | null = null  // inline-mode options riding the turn
 
   try {
     const res = await fetch(url, {
@@ -340,6 +341,7 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
             if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
             if (event.message) doneMessage = event.message as ChatMessage
             if (event.userMessageId !== undefined) doneUserMessageId = event.userMessageId as number
+            if (Array.isArray(event.suggestions)) doneSuggestions = event.suggestions as string[]
             // The turn may have changed inventory (grant/consume/unequip) or
             // equipment (equip/unequip); refresh the affected panels so the UI
             // reflects the new DB state instead of going stale until reload.
@@ -414,7 +416,14 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
         // disabled). Fire-and-forget so it never blocks the chat UI.
         const latestTurn = threadMaxTurn(get().messages, false)
         if (latestTurn > 0) void useWorldbuildStore.getState().runForTurn(latestTurn)
-        if (latestTurn > 0) void useActionSuggestionsStore.getState().runForTurn(latestTurn)
+        // Inline mode: the options rode the narration call itself. When absent
+        // (separate mode, or the inline block failed to parse), fall back to
+        // the separate suggester call.
+        if (doneSuggestions && doneSuggestions.length > 0) {
+          useActionSuggestionsStore.setState({ suggestions: doneSuggestions, lastTurn: latestTurn, loading: false })
+        } else if (latestTurn > 0) {
+          void useActionSuggestionsStore.getState().runForTurn(latestTurn)
+        }
         if (latestTurn > 0) void useTtsStore.getState().runForTurn(latestTurn)
         // The turn may have advanced the auto-summary — keep the Journal fresh.
         void useJournalStore.getState().fetch()

@@ -56,6 +56,8 @@ export interface BasicInfo {
   likes?: string
   dislikes?: string
   personality?: string
+  /** What pushes the character forward — goal, want, or need. */
+  drive?: string
 }
 
 export interface FieldSkill {

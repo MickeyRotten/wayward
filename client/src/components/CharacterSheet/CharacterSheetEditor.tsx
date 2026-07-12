@@ -102,6 +102,12 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
             {d.basicInfo.description && (
               <p className="font-body text-sm text-text2 leading-relaxed mt-2">{d.basicInfo.description}</p>
             )}
+            {d.basicInfo.personality && (
+              <ViewField label="Personality" value={d.basicInfo.personality} />
+            )}
+            {d.basicInfo.drive && (
+              <ViewField label="Drive" value={d.basicInfo.drive} />
+            )}
           </div>
         </Section>
 
@@ -144,6 +150,20 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
             <NumField label="Weight (kg)" value={d.basicInfo.weightKg} onChange={(v) => updateBasic('weightKg', v)} onBlur={(v) => updateBasic('weightKg', v, true)} />
           </div>
           <TextArea label="Description" value={d.basicInfo.description} onChange={(v) => updateBasic('description', v)} onBlur={(v) => updateBasic('description', v, true)} />
+          <TextArea
+            label="Personality"
+            value={d.basicInfo.personality ?? ''}
+            onChange={(v) => updateBasic('personality', v)}
+            onBlur={(v) => updateBasic('personality', v, true)}
+            placeholder="e.g. Curious to a fault, quick to joke, slow to trust"
+          />
+          <TextArea
+            label="Drive"
+            value={d.basicInfo.drive ?? ''}
+            onChange={(v) => updateBasic('drive', v)}
+            onBlur={(v) => updateBasic('drive', v, true)}
+            placeholder="What pushes them forward — e.g. Find my missing sister, whatever it costs"
+          />
         </div>
       </Section>
 
@@ -220,8 +240,8 @@ function NumField({ label, value, onChange, onBlur }: {
   )
 }
 
-function TextArea({ label, value, onChange, onBlur }: {
-  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void
+function TextArea({ label, value, onChange, onBlur, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
 }) {
   return (
     <label className="block">
@@ -231,6 +251,7 @@ function TextArea({ label, value, onChange, onBlur }: {
         className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
         rows={3}
         value={value}
+        placeholder={placeholder}
         onChange={onChange}
         onBlur={onBlur ?? onChange}
       />

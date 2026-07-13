@@ -227,6 +227,7 @@ async def _run_scope_migrations() -> None:
         ("campaign.lorebook_entries", "scenario_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN scenario_fields JSON"),
         ("adventure.chat_messages", "image_path", "ALTER TABLE adventure.chat_messages ADD COLUMN image_path VARCHAR"),
         ("adventure.chat_messages", "image_description", "ALTER TABLE adventure.chat_messages ADD COLUMN image_description TEXT"),
+        ("adventure.chat_messages", "editor_actions", "ALTER TABLE adventure.chat_messages ADD COLUMN editor_actions JSON"),
         ("campaign.narrator_configs", "dice_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN dice_enabled INTEGER DEFAULT 1"),
     ]
     async with engine.begin() as conn:

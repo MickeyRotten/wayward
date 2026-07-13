@@ -821,3 +821,20 @@ Done: `basicInfo` gains a **drive** field ("what pushes them forward"), and the 
 It could read them (get_character returns the full basicInfo) but not write them — update_pc's tool schema and handler had a fixed field list without `drive`. Fixed: update_pc now accepts `drive` (with a description telling the Editor it shapes the generated options) and the handler copies it through. Verified with a direct _exec_tool call: drive persists to the character file. (Members deliberately unchanged — their sheets/roster don't surface drive yet.)
 
 ---
+[x] Maybe CLAUDE.md wasn't updated, but there is a responsive mobile UI already.
+
+Correct — the `<1024px` MobileShell/MobileNav layout (single full-screen view over a bottom tab bar, Inspector as a slide-over, `useIsMobile` switch) was built but undocumented. CLAUDE.md updated: "What's built" bullet, a Mobile layout paragraph in UI Layout, and the project tree.
+
+---
+[x] Update feedback.md with everything done in this session that isn't on there yet, as well as CLAUDE.md.
+
+Done — feedback.md was already current for every feature (APK, signing/Releases self-update, campaign-switch loading screen, Fantasy default, weather effects, the text-adventure action panel + option rules + first-message options, options always showing, generation modes, PC Personality & Drive, Editor drive access); this entry and the mobile-docs one above were the only gaps. CLAUDE.md gained its missing pieces: a **Backdrop art & weather effects** subsection under Chat Rendering (backdrop matcher, weather canvas, Appearance settings — including the note that `server/backdrops/` is not committed, so fresh clones/the APK have no art until populated), `action_suggestions_mode` in the NarratorConfig data-model bullet, a **Scope switches & crash safety** invariants paragraph (scopeLoading pane-unmount + the app-wide ErrorBoundary), a backdrops+weather "What's built" bullet, and project-tree entries for WeatherEffects.tsx, backdrops.ts, weather.ts, and appearanceStore.
+
+---
+[x] When the Editor is working, print out the actions it does (creates/edits/etc.) in real-time in the chat. And move the fixed quick actions to over the chat text box, under the "Or…" label.
+
+Done (two changes):
+- **Editor live action feed** — each Editor tool call already streamed a `{name, result}` event; now the client prints them **live** under the ⚙ EDITOR heading as the turn runs (`chatStore.editorActions`, cleared per turn, pushed on each `tool` event while in planning mode; rendered by a shared `EditorActionsFeed` with a friendly label like "WRITING LORE" / "ADDING A PARTY MEMBER" from the exported `editorActionLabel` map). The ordered list is also **persisted** on the finished planner message (new `editor_actions` JSON column on ChatMessage, additive migration; `editorActions` through schema/TS) and rendered by the same component, so the record of exactly what was built/edited stays on the message after the turn. Verified: server round-trip of `editor_actions` through `_msg_response`, and a Playwright check that a seeded planner message renders both actions with their labels + prose.
+- **Fixed actions above the composer** — Continue / Look Around / Talk to Party / Rest / Use an Item moved out of the in-chat panel to a row directly under the "OR DO SOMETHING ELSE:" header, above the freeform textarea. The in-chat panel now holds only the numbered generated options + the ↻ REROLL that regenerates them (panel hides entirely when there are no options and suggestions are off). Verified via Playwright geometry (pills sit below the "Or…" label and above the textarea).
+
+---

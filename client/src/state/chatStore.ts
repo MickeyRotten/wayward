@@ -274,6 +274,10 @@ function refreshWorldPanels() {
   useTasksStore.getState().fetchTasks()
   usePartyStore.getState().fetchAll()
   useItemsStore.getState().fetchCatalog()
+  // Owned instances + derived equipped/stowed state — the Editor's equip/unequip
+  // and grant/remove change these, so refetch or the Inventory panel stays stale
+  // until a reload. (fetchAll above already refreshes each character's equipment.)
+  useItemsStore.getState().fetchInventory()
   useNarratorStore.getState().fetchConfig()
 }
 

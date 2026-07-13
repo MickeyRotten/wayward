@@ -821,3 +821,13 @@ Done: `basicInfo` gains a **drive** field ("what pushes them forward"), and the 
 It could read them (get_character returns the full basicInfo) but not write them — update_pc's tool schema and handler had a fixed field list without `drive`. Fixed: update_pc now accepts `drive` (with a description telling the Editor it shapes the generated options) and the handler copies it through. Verified with a direct _exec_tool call: drive persists to the character file. (Members deliberately unchanged — their sheets/roster don't surface drive yet.)
 
 ---
+[x] Maybe CLAUDE.md wasn't updated, but there is a responsive mobile UI already.
+
+Correct — the `<1024px` MobileShell/MobileNav layout (single full-screen view over a bottom tab bar, Inspector as a slide-over, `useIsMobile` switch) was built but undocumented. CLAUDE.md updated: "What's built" bullet, a Mobile layout paragraph in UI Layout, and the project tree.
+
+---
+[x] Update feedback.md with everything done in this session that isn't on there yet, as well as CLAUDE.md.
+
+Done — feedback.md was already current for every feature (APK, signing/Releases self-update, campaign-switch loading screen, Fantasy default, weather effects, the text-adventure action panel + option rules + first-message options, options always showing, generation modes, PC Personality & Drive, Editor drive access); this entry and the mobile-docs one above were the only gaps. CLAUDE.md gained its missing pieces: a **Backdrop art & weather effects** subsection under Chat Rendering (backdrop matcher, weather canvas, Appearance settings — including the note that `server/backdrops/` is not committed, so fresh clones/the APK have no art until populated), `action_suggestions_mode` in the NarratorConfig data-model bullet, a **Scope switches & crash safety** invariants paragraph (scopeLoading pane-unmount + the app-wide ErrorBoundary), a backdrops+weather "What's built" bullet, and project-tree entries for WeatherEffects.tsx, backdrops.ts, weather.ts, and appearanceStore.
+
+---

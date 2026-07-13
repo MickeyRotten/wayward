@@ -26,6 +26,7 @@ The heart of the app is a **polished, agentic LLM narrative scene** — chat-bas
 - **Voice / TTS** — optional per-speaker text-to-speech with zero-shot voice cloning from ~10s samples (see "Voice / TTS").
 - **Journal** — a rail tab surfacing the auto-maintained Story So Far as a recap card + a clickable day-by-day timeline, plus a dismissible "Previously on…" chat banner on adventure load (see "Journal").
 - **Skill checks (dice)** — a server-rolled d20 `skill_check` narrator tool for uncertain, consequential actions, rendered as dice chips in chat (see "The Narrator Agent Loop"). Per-campaign toggle (`NarratorConfig.dice_enabled`, default on).
+- **Chat backdrops + weather effects** — scene art behind the messages (deterministically matched to the declared location/time) with the narrator-declared weather animated over it: rain, storms with lightning, snow, drifting fog (see "Chat Rendering & Narration Formatting" → Backdrop art & weather effects).
 - Three-pane UI (left management / middle chat / right inspector) with a **Play vs Edit** mode toggle and an Edit-Mode theme. Below 1024px the app swaps to a single-pane **mobile layout** (`useIsMobile` → [`MobileShell`](client/src/components/Layout/MobileShell.tsx) + `MobileNav`).
 - **Android app (APK)** — a self-contained Chaquopy build under `android/` that embeds the backend on the phone (see "Android App (APK)").
 
@@ -77,7 +78,7 @@ Highlights / things that have changed from the original alpha plan:
 - **Equipment** is 12 fixed slots; each value is an **instance id** (references an `ItemInstance`, not the catalog). "Equipped" is **derived** — an instance is *equipped* iff some character's `equipment[slot]` references its id, else it's *stowed* in the pack (single source of truth; no `equipped_by` column). `/inventory` returns every instance with server-derived `equippedBy`/`slot` (inventory is unbounded — no carry-slot limit).
 - **Characters are portable files, not DB rows.** Identity lives in per-character folders `server/data/characters/<id>/{character.json, full.<ext>, crop.jpg}` — `character.json` holds `type` (`persona`|`character`), `basicInfo` (name/gender/species/age/height/weight/description/likes/dislikes/personality/drive — **no** portrait field) and `fieldSkill`; the two images are the portraits (**full** → Inspector, **crop** → chat + avatars; only ever one of each, replaced on re-upload). These are the reusable/shareable "character cards" (see [`server/db/characters.py`](server/db/characters.py)). Per-adventure state — worn **equipment**, `in_party`, `last_spoke_turn`, and `role` (`pc`|`member`) — lives in an adventure-scoped **`PartyBinding`** row referencing the character id. [`server/db/party.py`](server/db/party.py) joins the two into `RuntimeCharacter` composites (`load_pc`/`load_party`) with binding writers (`set_equipment`/`set_in_party`/`set_last_spoke`); the app still reads `.basic_info`/`.equipment`/`.field_skill`/`.in_party`/`.last_spoke_turn`/`.id` (id == character id). A `/characters` REST API lists/imports/duplicates/deletes cards, serves/uploads portraits, and zips a card for sharing. `migrate_characters_to_files` (in [`database.py`](server/db/database.py)) converts legacy `PlayerCharacter`/`PartyMember` rows (kept only for that back-fill) into files+bindings on load. Campaign zip export/import bundles the referenced character folders. (SillyTavern-compatible `.png` card import/export is a planned later parser.)
 - **Scenario** is edited as 6 structured fields, composed into a permanent, **locked** World lore entry's `content` (not its own table) — see "The Scenario". It still reaches the narrator via ordinary lore injection.
-- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `first_message_options` (scripted opening choices, JSON), `planner_instructions`, `action_suggestions_enabled` (default on), `action_suggestions_instructions`, `action_option_rules` (JSON; one generated option per rule — null → good/neutral/dark/wildcard defaults) (each text field falls back to a built-in default when blank), and `dice_enabled` (offers the narrator the `skill_check` d20 tool; default on).
+- **NarratorConfig** (campaign-scoped) holds `instructions`, `action_instruction`, `spotlight_rule`, `post_history_instructions`, `first_message`, `first_message_options` (scripted opening choices, JSON), `planner_instructions`, `action_suggestions_enabled` (default on), `action_suggestions_instructions`, `action_suggestions_mode` (`separate`|`inline` — see "Action Suggestions"), `action_option_rules` (JSON; one generated option per rule — null → good/neutral/dark/wildcard defaults) (each text field falls back to a built-in default when blank), and `dice_enabled` (offers the narrator the `skill_check` d20 tool; default on).
 - **OpenRouterSettings** (app-scoped) holds the api key (never returned to client), model/sampling params, `max_tokens_response`, `max_context_tokens`, `max_party_size`, plus agent settings `use_tools`, `max_tool_rounds`, `worldbuilding_mode`, `worldbuilding_model_id`, `action_suggestions_model_id`, and TTS settings `tts_enabled`/`tts_autoplay`. (The old carry-slot limit was removed — inventory is unbounded.)
 - **ChatMessage** (adventure-scoped) carries `role`, `content`, `turn_number`, `variant`, `speaker`, `mode` (`narrator`|`planner`), narrator-declared scene state (`location`, `time_of_day`, `weather`, `day`), `spotlight_reason`, and `applied_inventory_deltas`/`applied_equipment_changes` (for swipe/regenerate/delete reversal).
 - Also: `PartyBinding` (adventure-scoped character↔adventure state; identity is files — see above), `Task` (flat to-do list — replaced `Quest`+`QuestObjective`; legacy tables kept only for the one-time `migrate_quests_to_tasks` back-fill), `ItemInstance` (+ legacy `InventoryStack`), `StorySummary` (auto-maintained; surfaced read-only via `GET /journal` — see "Journal"), `WorldbuildingProposal` (Chronicler), `ChatEvent` (adventure-scoped persistent in-chat toasts: Chronicler notices + dice rolls tethered to their turn, untethered player item actions — kinds `chronicler`|`item`|`dice`; see "Chat Rendering & Narration Formatting"), `AppState` (active campaign/adventure pointer). Legacy `PlayerCharacter`/`PartyMember` tables remain only for `migrate_characters_to_files`.
@@ -199,6 +200,11 @@ The chat is styled like a **classical JRPG dialogue scene**. The narration stays
 - **Inline markup** (`formatNarration`): `**bold**` and `*italics*`. Entity names (items/members) get a non-interactive gold highlight (`applyEntityChips`). The configured First Message keeps the gold **drop-cap**.
 - **Block markup**: `> …` → an inset **inscription/letter** box; a line of only `* * *` / `---` → an ornamental **scene divider**. A cinematic **`LOCATION · TIME`** header is shown above a narrator message when its declared scene state changes (derived from `message.location`/`timeOfDay` — no new narrator output).
 - **Convention enforcement**: the always-injected `FORMATTING_GUIDE` (in [`narrator_agent.py`](server/ai/narrator_agent.py)) documents these conventions to the model; the client parser is the deterministic backstop when the model drifts. The `Name: "…"` dialogue convention is the same one `_member_spoke` (`spotlight.py`) already detects, so `last_spoke_turn`/spotlight tracking needs no extra wiring.
+
+**Backdrop art & weather effects** (Play mode only; Edit Mode stays solid indigo):
+- The chat's message area layers **backdrop art** behind the messages with a semi-transparent dark wash over it. `GET /api/backdrops` lists images in `server/backdrops/` (png/jpg/webp); [`lib/backdrops.ts`](client/src/lib/backdrops.ts) deterministically picks the best match by scoring filename tokens ("city_day" → city + day) against the narrator-declared location + time of day, falling back to `forest_day.png` — drop new images in the folder and scenes match automatically. **Note: `server/backdrops/` is not committed** (the art lives only on the user's machine), so fresh clones/the APK render the plain dark chat until the folder is populated.
+- **Weather effects** animate the narrator-declared weather over the backdrop: [`lib/weather.ts`](client/src/lib/weather.ts) maps the freeform declaration onto rain / storm (wind-blown rain + lightning pulses) / snow / drifting fog-haze ("snowstorm" reads as snow; sand/dust as haze), rendered by [`Scene/WeatherEffects.tsx`](client/src/components/Scene/WeatherEffects.tsx) — one canvas between the wash and the messages, area-scaled particle counts, delta-timed, DPR-capped, idle while the tab is hidden, disabled under `prefers-reduced-motion`. Effects show even when no backdrop art matches. `wayward.weatherOverride` in localStorage forces a kind (debug).
+- **Config → Appearance** ([`appearanceStore`](client/src/state/appearanceStore.ts), device-local via localStorage): chat font size, background-wash opacity (`--chat-overlay-opacity`), and the Weather Effects toggle (default on).
 
 ---
 
@@ -349,6 +355,8 @@ Rail tabs: **Home** (PC + party), **Items**, **Tasks**, **Lore**, **Journal** (S
 
 **Client render conventions (keep these invariants):** per-chunk streaming state (`streamingContent`/`toolStatus`/thinking) is subscribed **only** inside `StreamingWindow` — never in `ChatScene` proper; `MessageBubble` is `React.memo`'d with a callback-tolerant comparator, so every derived prop passed to it (`memberResolver`, `chipEntities`, `catalogMap`, `sceneHeaders`, `visibleMessages`, …) must stay `useMemo`'d; `applyEntityChips` caches its compiled regex by `chipEntities` identity.
 
+**Scope switches & crash safety:** while a campaign/adventure switch reloads every store, `App.tsx` **unmounts the panes** behind a themed loading screen (`uiStore.scopeLoading`, set by campaignsStore/adventuresStore around load/create/delete; `reloadAll` in [`adventuresStore`](client/src/state/adventuresStore.ts) refetches everything) — rendering against half-swapped stores is what used to blank the app. An app-wide [`ErrorBoundary`](client/src/components/common/ErrorBoundary.tsx) (wrapped in `main.tsx`) backstops any render crash with a "Something went astray — RELOAD" recovery screen instead of a blank page.
+
 ---
 
 ## Field Skill Writing Guidance
@@ -376,7 +384,8 @@ A placeholder/example shown in the empty Field Skill text field in the UI is wor
 wayward/
 ├── client/src/
 │   ├── components/
-│   │   ├── Scene/ChatScene.tsx     Chat + banner; JRPG dialogue blocks, formatting
+│   │   ├── Scene/ChatScene.tsx     Chat + banner; JRPG dialogue blocks, action panel, formatting
+│   │   ├── Scene/WeatherEffects.tsx  canvas weather over the backdrop (rain/storm/snow/fog)
 │   │   ├── Home/                   PC + party (HomeView)
 │   │   ├── CharacterSheet/, PartyMember/   PC / member editors (view+edit)
 │   │   ├── PortraitBlock.tsx, PortraitEditor.tsx   portrait display + crop/zoom modal
@@ -392,11 +401,13 @@ wayward/
 │   ├── state/   chatStore, partyStore, narratorStore, settingsStore, itemsStore,
 │   │            tasksStore, loreStore, scenarioStore, worldbuildStore,
 │   │            actionSuggestionsStore, adventuresStore, campaignsStore, uiStore,
-│   │            ttsStore (playback queue), journalStore   (Zustand)
+│   │            ttsStore (playback queue), journalStore, appearanceStore
+│   │            (device-local prefs: font size, wash opacity, weather fx)   (Zustand)
 │   ├── lib/     api.ts, location.ts (scene-banner derivation), narration.ts
 │   │            (JRPG chat segmenter), equipSlots.ts (item↔slot fit),
 │   │            voice.ts (voice-sample upload helpers), useIsMobile.ts
-│   │            (mobile/desktop shell switch)
+│   │            (mobile/desktop shell switch), backdrops.ts (scene→art
+│   │            matcher), weather.ts (declared weather → effect kind)
 │   ├── theme.css / edit-theme.css / index.css   design tokens + Tailwind mapping
 │
 ├── server/

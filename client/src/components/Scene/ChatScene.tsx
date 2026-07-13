@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react'
-import { useChatStore } from '../../state/chatStore'
+import { useChatStore, editorActionLabel } from '../../state/chatStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
 import { useSettingsStore } from '../../state/settingsStore'
 import { usePartyStore } from '../../state/partyStore'
@@ -262,6 +262,11 @@ export function ChatScene() {
     : (actionSuggestionsEnabled ? actionSuggestions : [])
   const showActionPanel =
     !planningMode && !inputLocked && (showWhatDoYouDo || visibleMessages.length === 0)
+  // The in-chat panel holds only the numbered options + reroll now (the fixed
+  // actions moved under the composer). Show it when there are options, or when
+  // the suggester is mid-adventure and enabled (loading / empty-hint / reroll).
+  const showOptionsPanel =
+    showActionPanel && (panelOptions.length > 0 || (!isOpening && actionSuggestionsEnabled))
 
   // Self-healing fetch: whenever the panel is visible mid-adventure and no
   // attempt has been made for the current chat state (boot, refresh, save/
@@ -655,7 +660,7 @@ export function ChatScene() {
         {/* The action panel — the primary text-adventure interaction. Numbered
             choice options (scripted on the opening beat, AI-generated after
             each narrator beat) over the always-available fixed actions. */}
-        {showActionPanel && (
+        {showOptionsPanel && (
           <div className="mr-auto w-full max-w-[85%] max-lg:max-w-full flex flex-col gap-1.5 pl-1 pt-1">
             {!isOpening && actionSuggestionsEnabled && actionSuggestionsLoading && (
               <span className="font-ui text-[10px] tracking-wider text-textdim animate-pulse px-1 py-1">
@@ -681,59 +686,9 @@ export function ChatScene() {
               </button>
             ))}
 
-            {/* Fixed actions — always available, part of the same panel */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <QuickActionButton
-                label="Continue"
-                disabled={inputLocked || !apiKeySet}
-                onClick={() => sendTurn('I wait and let the scene unfold.')}
-              />
-              <QuickActionButton
-                label="Look Around"
-                disabled={inputLocked || !apiKeySet}
-                onClick={() => sendTurn('I look around carefully.')}
-              />
-              <QuickActionButton
-                label="Talk to Party"
-                disabled={inputLocked || !apiKeySet}
-                onClick={() => sendTurn('I turn to talk to my party.')}
-              />
-              <QuickActionButton
-                label="Rest"
-                disabled={inputLocked || !apiKeySet}
-                onClick={() => sendTurn('I take a moment to rest.')}
-              />
-              <div className="relative flex">
-                <QuickActionButton
-                  label="Use an Item"
-                  disabled={inputLocked || !apiKeySet || inventory.length === 0}
-                  onClick={() => setItemPickerOpen((o) => !o)}
-                />
-                {itemPickerOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setItemPickerOpen(false)} />
-                    <div className="absolute bottom-full left-0 mb-2 w-64 max-h-72 overflow-y-auto bg-bg2 border border-line2 rounded-md z-20 p-1.5 space-y-1">
-                      {inventory.length === 0 ? (
-                        <p className="text-[11px] text-textdim font-body px-2 py-1.5">No items.</p>
-                      ) : (
-                        inventory.map((stack) => stack.item ? (
-                          <ItemCard
-                            key={stack.itemId}
-                            item={stack.item}
-                            selected={false}
-                            count={stack.count}
-                            onClick={() => {
-                              setItemPickerOpen(false)
-                              sendTurn(`I use the ${stack.item!.name}.`)
-                            }}
-                          />
-                        ) : null)
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-              {!isOpening && actionSuggestionsEnabled && (
+            {/* Reroll sits with the options it regenerates. */}
+            {!isOpening && actionSuggestionsEnabled && (
+              <div className="pt-0.5">
                 <button
                   type="button"
                   title="Reroll the generated options"
@@ -743,8 +698,8 @@ export function ChatScene() {
                 >
                   ↻ REROLL
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -828,12 +783,67 @@ export function ChatScene() {
         </div>
       )}
 
-      {/* Input — the freeform escape hatch under the action panel */}
+      {/* Input — the freeform escape hatch under the action panel, with the
+          always-available fixed actions sitting above the box. */}
       <div className="border-t border-line2 p-3 bg-bg1">
         {!planningMode && (
-          <span className="block font-ui text-[10px] tracking-wider text-textdim mb-1.5">
-            OR DO SOMETHING ELSE:
-          </span>
+          <>
+            <span className="block font-ui text-[10px] tracking-wider text-textdim mb-1.5">
+              OR DO SOMETHING ELSE:
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              <QuickActionButton
+                label="Continue"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I wait and let the scene unfold.')}
+              />
+              <QuickActionButton
+                label="Look Around"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I look around carefully.')}
+              />
+              <QuickActionButton
+                label="Talk to Party"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I turn to talk to my party.')}
+              />
+              <QuickActionButton
+                label="Rest"
+                disabled={inputLocked || !apiKeySet}
+                onClick={() => sendTurn('I take a moment to rest.')}
+              />
+              <div className="relative flex">
+                <QuickActionButton
+                  label="Use an Item"
+                  disabled={inputLocked || !apiKeySet || inventory.length === 0}
+                  onClick={() => setItemPickerOpen((o) => !o)}
+                />
+                {itemPickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setItemPickerOpen(false)} />
+                    <div className="absolute bottom-full left-0 mb-2 w-64 max-h-72 overflow-y-auto bg-bg2 border border-line2 rounded-md z-20 p-1.5 space-y-1">
+                      {inventory.length === 0 ? (
+                        <p className="text-[11px] text-textdim font-body px-2 py-1.5">No items.</p>
+                      ) : (
+                        inventory.map((stack) => stack.item ? (
+                          <ItemCard
+                            key={stack.itemId}
+                            item={stack.item}
+                            selected={false}
+                            count={stack.count}
+                            onClick={() => {
+                              setItemPickerOpen(false)
+                              sendTurn(`I use the ${stack.item!.name}.`)
+                            }}
+                          />
+                        ) : null)
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </>
         )}
         {/* Pending image preview — attached to the next message */}
         {pendingImage && (
@@ -1054,6 +1064,29 @@ function QuickActionButton({ label, disabled, onClick }: { label: string; disabl
     >
       {label}
     </button>
+  )
+}
+
+// ── Editor action feed ──────────────────────────────────────────────
+// Shows what the Editor did this turn — streamed live during the turn and
+// rendered from the persisted record on the finished message.
+
+function EditorActionsFeed({ actions, live }: { actions: { name: string; result: string }[]; live?: boolean }) {
+  if (actions.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1 border-l-2 border-gold/40 pl-2.5 my-1">
+      {actions.map((a, i) => (
+        <div key={i} className="flex items-baseline gap-2">
+          <span className="font-ui text-[9px] tracking-wider text-gold/80 uppercase shrink-0 min-w-[92px]">
+            {editorActionLabel(a.name)}
+          </span>
+          <span className="font-body text-[12px] text-textsec leading-snug">{a.result}</span>
+        </div>
+      ))}
+      {live && (
+        <span className="font-ui text-[9px] tracking-wider text-textdim animate-pulse">···</span>
+      )}
+    </div>
   )
 }
 
@@ -1438,6 +1471,11 @@ const MessageBubble = memo(function MessageBubble({
       {isPlanner && (
         <div className="flex items-center gap-1.5 px-4 pt-1">
           <span className="font-ui text-[9px] tracking-wider text-gold">⚙ EDITOR</span>
+        </div>
+      )}
+      {isPlanner && message.editorActions && message.editorActions.length > 0 && (
+        <div className="px-4 pt-1.5">
+          <EditorActionsFeed actions={message.editorActions} />
         </div>
       )}
       {sceneHeader && (sceneHeader.location || sceneHeader.timeOfDay) && (
@@ -1924,6 +1962,7 @@ function StreamingWindow({
   const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
   const toolStatus = useChatStore((s) => s.toolStatus)
   const isSummarizing = useChatStore((s) => s.isSummarizing)
+  const editorActions = useChatStore((s) => s.editorActions)
 
   // Follow the stream while the user is pinned to the bottom (rAF-batched so
   // we never force a sync reflow per chunk).
@@ -1952,11 +1991,17 @@ function StreamingWindow({
 
   if (!isLoading) return null
 
+  // The Editor's live action feed — prints each create/edit/delete as it
+  // happens during a planning turn, above whatever else is showing.
+  const liveFeed = planningMode && editorActions.length > 0
+    ? <EditorActionsFeed actions={editorActions} live /> : null
+
   // Streaming response — routed through the segmenter so dialogue boxes,
   // dividers, etc. form live as text streams.
   if (streamingContent) {
     return (
       <div className="max-w-[85%] max-lg:max-w-full mr-auto px-4 py-3">
+        {liveFeed && <div className="mb-2">{liveFeed}</div>}
         <SegmentedNarration segments={segments} chipEntities={chipEntities} />
       </div>
     )
@@ -1964,22 +2009,25 @@ function StreamingWindow({
 
   // Generating indicator — narrator/planner avatar with animated dots.
   return (
-    <div className="flex items-start gap-3 mr-auto px-1 py-3">
-      <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
-        <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
-      </div>
-      <div className="pt-2">
-        {toolStatus ? (
-          <span className="font-ui text-[10px] text-gold/80 tracking-wider">
-            {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
-          </span>
-        ) : planningMode ? (
-          <span className="font-ui text-[10px] text-textdim tracking-wider">
-            THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
-          </span>
-        ) : (
-          <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
-        )}
+    <div className="mr-auto max-w-[85%] max-lg:max-w-full">
+      {liveFeed && <div className="px-4 pt-1">{liveFeed}</div>}
+      <div className="flex items-start gap-3 px-1 py-3">
+        <div className="w-10 h-10 rounded-sm border border-gold bg-bg2 flex items-center justify-center flex-shrink-0">
+          <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
+        </div>
+        <div className="pt-2">
+          {toolStatus ? (
+            <span className="font-ui text-[10px] text-gold/80 tracking-wider">
+              {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+            </span>
+          ) : planningMode ? (
+            <span className="font-ui text-[10px] text-textdim tracking-wider">
+              THE EDITOR IS WORKING<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+            </span>
+          ) : (
+            <ThinkingIndicator startedAt={thinkingStartedAt} isSummarizing={isSummarizing} />
+          )}
+        </div>
       </div>
     </div>
   )

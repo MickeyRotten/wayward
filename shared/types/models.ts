@@ -182,6 +182,13 @@ export interface EquipmentChange {
   newItemId: string | null
 }
 
+// A single tool action the Editor took during a planning turn (e.g. "Editing
+// lore" → "Updated the entry 'Murkwood'."). Streamed live and stored on the message.
+export interface EditorAction {
+  name: string
+  result: string
+}
+
 export interface ChatMessage {
   id: number
   role: 'user' | 'assistant' | 'system'
@@ -197,6 +204,7 @@ export interface ChatMessage {
   spotlightReason?: string | null
   appliedInventoryDeltas?: InventoryDelta[] | null
   appliedEquipmentChanges?: EquipmentChange[] | null
+  editorActions?: EditorAction[] | null  // Editor turns: tool actions taken that turn
   imageUrl?: string | null          // player-attached image (user messages)
   imageDescription?: string | null  // the vision agent's description of it
   createdAt: string

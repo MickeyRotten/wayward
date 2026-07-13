@@ -14,6 +14,10 @@ import { useNarratorStore } from './narratorStore'
 const PLANNING_KEY = 'wayward.planningMode'
 
 /** Friendly status labels for narrator + Editor tool calls, shown while a turn works. */
+export function editorActionLabel(name: string): string {
+  return TOOL_STATUS[name] || 'Working'
+}
+
 const TOOL_STATUS: Record<string, string> = {
   // Narrator
   set_scene: 'Setting the scene',
@@ -71,6 +75,9 @@ interface ChatState {
   streamingContent: string
   thinkingStartedAt: number | null
   toolStatus: string | null
+  // Live feed of the Editor's tool actions during a planning turn (real-time;
+  // the same list is also persisted on the finished planner message).
+  editorActions: { name: string; result: string }[]
   toolFailures: string[]
   error: string | null
   // The text of a send whose turn failed — ChatScene restores it into the
@@ -113,6 +120,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingContent: '',
   thinkingStartedAt: null,
   toolStatus: null,
+  editorActions: [],
   toolFailures: [],
   error: null,
   failedInput: null,
@@ -272,7 +280,7 @@ function refreshWorldPanels() {
 async function _handleStream(url: string, body: object, opts: { appendOnDone?: boolean } = {}) {
   const { set, get } = { set: useChatStore.setState, get: useChatStore.getState }
   _aborted = false
-  set({ toolFailures: [] })  // clear any prior turn's failure notices
+  set({ toolFailures: [], editorActions: [] })  // clear any prior turn's notices/feed
   useActionSuggestionsStore.getState().clear()
   useTtsStore.getState().stop()  // a new/regenerated turn silences the old one
 
@@ -333,9 +341,14 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
             // preamble, not the final narration — clear it.
             set({ streamingContent: '' })
           } else if (event.type === 'tool') {
-            // A narrator tool ran mid-turn — surface it as ephemeral status so
-            // multi-round turns don't sit silently.
+            // A tool ran mid-turn — surface it as ephemeral status so multi-round
+            // turns don't sit silently.
             set({ toolStatus: TOOL_STATUS[event.name as string] || 'Working' })
+            // For the Editor, also append to the live real-time action feed
+            // (it carries a human-readable result to print in the chat).
+            if (get().planningMode && typeof event.result === 'string') {
+              set({ editorActions: [...get().editorActions, { name: event.name as string, result: event.result as string }] })
+            }
           } else if (event.type === 'done') {
             if (event.contextTokens !== undefined) set({ contextTokens: event.contextTokens })
             if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
@@ -439,6 +452,6 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
   } finally {
     _activeReader = null
     _aborted = false
-    set({ isLoading: false, isSummarizing: false, streamingContent: '', thinkingStartedAt: null, toolStatus: null })
+    set({ isLoading: false, isSummarizing: false, streamingContent: '', thinkingStartedAt: null, toolStatus: null, editorActions: [] })
   }
 }

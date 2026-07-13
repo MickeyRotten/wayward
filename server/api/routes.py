@@ -1689,6 +1689,7 @@ def _msg_response(m: ChatMessage) -> ChatMessageResponse:
         spotlightReason=m.spotlight_reason,
         appliedInventoryDeltas=m.applied_inventory_deltas,
         appliedEquipmentChanges=m.applied_equipment_changes,
+        editorActions=getattr(m, "editor_actions", None),
         imageUrl=_image_url(m),
         imageDescription=getattr(m, "image_description", None),
         createdAt=m.created_at.isoformat() if m.created_at else "",
@@ -2850,6 +2851,7 @@ def _stream_planner_response(settings: OpenRouterSettings, turn: int):
 
         final_content = ""
         pending_deletes: list[dict] = []
+        editor_actions: list[dict] = []  # {name, result} per tool the Editor ran
         try:
             async for ev in run_planner_agent(turn):
                 t = ev["type"]
@@ -2858,6 +2860,7 @@ def _stream_planner_response(settings: OpenRouterSettings, turn: int):
                 elif t == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
                 elif t == "tool":
+                    editor_actions.append({"name": ev["name"], "result": ev["result"]})
                     yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result']})}\n\n"
                 elif t == "final":
                     final_content = ev["content"]
@@ -2867,14 +2870,15 @@ def _stream_planner_response(settings: OpenRouterSettings, turn: int):
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             return
 
-        log.info("PLANNER RESPONSE turn=%s (%d chars) | pendingDeletes=%d",
-                 turn, len(final_content), len(pending_deletes))
+        log.info("PLANNER RESPONSE turn=%s (%d chars) | actions=%d pendingDeletes=%d",
+                 turn, len(final_content), len(editor_actions), len(pending_deletes))
 
         try:
             async with new_session() as save_session:
                 save_session.add(ChatMessage(
                     role="assistant", content=final_content, turn_number=turn,
                     variant=0, speaker="planner", mode="planner",
+                    editor_actions=editor_actions or None,
                 ))
                 await save_session.commit()
         except Exception:

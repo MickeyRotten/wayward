@@ -255,6 +255,9 @@ class ChatMessage(Base):
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    # Editor (planner) messages only: the ordered list of {name, result} tool
+    # actions the Editor took that turn — a durable record of what it built/edited.
+    editor_actions: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     # Player-attached image (user messages only): filename inside the adventure's
     # chat_images/ folder, plus the vision agent's description of it — the
     # description is what the (possibly text-only) narrator/editor actually sees.

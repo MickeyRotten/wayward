@@ -239,6 +239,7 @@ class ChatMessageResponse(BaseModel):
     spotlightReason: str | None = None
     appliedInventoryDeltas: list[dict] | None = None
     appliedEquipmentChanges: list[dict] | None = None
+    editorActions: list[dict] | None = None  # Editor turns: {name, result} tool actions taken
     imageUrl: str | None = None          # player-attached image (served from the adventure folder)
     imageDescription: str | None = None  # the vision agent's description of it
     createdAt: str

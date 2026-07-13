@@ -838,3 +838,8 @@ Done (two changes):
 - **Fixed actions above the composer** — Continue / Look Around / Talk to Party / Rest / Use an Item moved out of the in-chat panel to a row directly under the "OR DO SOMETHING ELSE:" header, above the freeform textarea. The in-chat panel now holds only the numbered generated options + the ↻ REROLL that regenerates them (panel hides entirely when there are no options and suggestions are off). Verified via Playwright geometry (pills sit below the "Or…" label and above the textarea).
 
 ---
+[x] When the Editor equips/unequips items for a character, or adds/removes items from Inventory, I don't see the change until a browser refresh / app relaunch.
+
+Fixed: the post-Editor-turn refresh (`refreshWorldPanels` in chatStore) refetched lore/tasks/party/catalog/narrator but **not** the owned item instances (`itemsStore.fetchInventory` — the `/inventory` list with derived equipped/stowed state). So the Editor's equip/unequip and item changes weren't reflected until a reload — and since the character sheet resolves equipped instance-ids through that inventory list, even the equipped display could go stale. Added `useItemsStore.getState().fetchInventory()` to `refreshWorldPanels`, matching the manual equip path (`partyStore.equipItem`/`unequipSlot` already refetch both party + inventory). One-line fix; client tsc + build clean.
+
+---

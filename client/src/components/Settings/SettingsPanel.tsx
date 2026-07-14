@@ -12,7 +12,7 @@ import { useAppearanceStore, CHAT_FONT_SIZES, DEFAULT_CHAT_BG_OPACITY } from '..
 import { useTtsStore } from '../../state/ttsStore'
 import { api } from '../../lib/api'
 import { deleteNarratorVoice, uploadNarratorVoice } from '../../lib/voice'
-import type { LoreCategory, LorebookConfig, OpenRouterModel } from '@shared/types/models'
+import type { LlmProvider, LoreCategory, LorebookConfig, OpenRouterModel, OpenRouterSettings } from '@shared/types/models'
 
 const LORE_CATEGORIES: { id: LoreCategory; label: string }[] = [
   { id: 'world', label: 'World' },
@@ -32,8 +32,14 @@ export function SettingsPanel() {
   const settings = useSettingsStore()
   const narrator = useNarratorStore()
 
+  const [provider, setProvider] = useState(settings.provider)
   const [apiKey, setApiKey] = useState('')
   const [modelId, setModelId] = useState(settings.modelId)
+  const [nimModelId, setNimModelId] = useState(settings.nimModelId)
+  const [nimApiKey, setNimApiKey] = useState('')
+  const [customBaseUrl, setCustomBaseUrl] = useState(settings.customBaseUrl)
+  const [customModelId, setCustomModelId] = useState(settings.customModelId)
+  const [customApiKey, setCustomApiKey] = useState('')
   const [temperature, setTemperature] = useState(settings.temperature)
   const [topP, setTopP] = useState(settings.topP)
   const [minP, setMinP] = useState(settings.minP)
@@ -70,7 +76,11 @@ export function SettingsPanel() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
+    setProvider(settings.provider)
     setModelId(settings.modelId)
+    setNimModelId(settings.nimModelId)
+    setCustomBaseUrl(settings.customBaseUrl)
+    setCustomModelId(settings.customModelId)
     setTemperature(settings.temperature)
     setTopP(settings.topP)
     setMinP(settings.minP)
@@ -93,7 +103,7 @@ export function SettingsPanel() {
     setVisionInstructions(settings.visionInstructions)
     setTtsEnabled(settings.ttsEnabled)
     setTtsAutoplay(settings.ttsAutoplay)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.autoRetryCount, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
+  }, [settings.provider, settings.modelId, settings.nimModelId, settings.customBaseUrl, settings.customModelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.autoRetryCount, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -119,8 +129,14 @@ export function SettingsPanel() {
 
   const saveAll = async () => {
     await settings.saveSettings({
+      provider,
       ...(apiKey ? { apiKey } : {}),
       modelId,
+      nimModelId,
+      ...(nimApiKey ? { nimApiKey } : {}),
+      customBaseUrl,
+      customModelId,
+      ...(customApiKey ? { customApiKey } : {}),
       temperature,
       topP,
       minP,
@@ -151,6 +167,8 @@ export function SettingsPanel() {
     void useTtsStore.getState().fetchStatus()
     setApiKey('')
     setVisionApiKey('')
+    setNimApiKey('')
+    setCustomApiKey('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
@@ -179,6 +197,25 @@ export function SettingsPanel() {
     useAppearanceStore.getState().setChatFontSize('medium')
     useAppearanceStore.getState().setChatBgOpacity(DEFAULT_CHAT_BG_OPACITY)
     useAppearanceStore.getState().setWeatherFx(true)
+  }
+
+  // The active provider's model id is stored in a provider-specific field; the
+  // model dropdown (fed by /models for the *saved* provider) drives whichever
+  // one is active. Picking a model auto-saves it (as OpenRouter's flow does).
+  const activeModelId = provider === 'nvidia_nim' ? nimModelId : provider === 'custom' ? customModelId : modelId
+  const setActiveModelId = provider === 'nvidia_nim' ? setNimModelId : provider === 'custom' ? setCustomModelId : setModelId
+  const modelSaveKey = provider === 'nvidia_nim' ? 'nimModelId' : provider === 'custom' ? 'customModelId' : 'modelId'
+
+  const switchProvider = (p: LlmProvider) => {
+    setProvider(p)
+    // Persist immediately so /models serves the new provider, then reload its
+    // list. Prefill NIM's default model on first switch.
+    const patch: Partial<OpenRouterSettings> = { provider: p }
+    if (p === 'nvidia_nim' && !nimModelId) {
+      setNimModelId('deepseek-ai/deepseek-v4-pro')
+      patch.nimModelId = 'deepseek-ai/deepseek-v4-pro'
+    }
+    void settings.saveSettings(patch).then(() => settings.fetchModels())
   }
 
   return (
@@ -213,17 +250,77 @@ export function SettingsPanel() {
         <Section title="AI &amp; Model" onReset={resetAiModel}>
           <SubSection title="API &amp; Model">
             <label className="block">
-              <span className="text-[11px] text-textdim font-body">
-                OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
-              </span>
-              <input
-                type="password"
-                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
-                placeholder={settings.apiKeySet ? '••••••••' : 'Enter your OpenRouter API key'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
+              <span className="text-[11px] text-textdim font-body">Provider</span>
+              <select
+                className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
+                value={provider}
+                onChange={(e) => switchProvider(e.target.value as LlmProvider)}
+              >
+                <option value="openrouter">OpenRouter</option>
+                <option value="nvidia_nim">NVIDIA NIM</option>
+                <option value="custom">Custom (OpenAI-compatible)</option>
+              </select>
             </label>
+
+            {provider === 'openrouter' && (
+              <label className="block">
+                <span className="text-[11px] text-textdim font-body">
+                  OpenRouter API Key {settings.apiKeySet && <span className="text-textsec">(set)</span>}
+                </span>
+                <input
+                  type="password"
+                  className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                  placeholder={settings.apiKeySet ? '••••••••' : 'Enter your OpenRouter API key'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <span className="text-[10px] text-textdim font-body">Get a key at openrouter.ai/keys.</span>
+              </label>
+            )}
+
+            {provider === 'nvidia_nim' && (
+              <label className="block">
+                <span className="text-[11px] text-textdim font-body">
+                  NVIDIA NIM API Key {settings.nimApiKeySet && <span className="text-textsec">(set)</span>}
+                </span>
+                <input
+                  type="password"
+                  className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                  placeholder={settings.nimApiKeySet ? '••••••••' : 'nvapi-...'}
+                  value={nimApiKey}
+                  onChange={(e) => setNimApiKey(e.target.value)}
+                />
+                <span className="text-[10px] text-textdim font-body">Get an <code>nvapi-…</code> key at build.nvidia.com.</span>
+              </label>
+            )}
+
+            {provider === 'custom' && (
+              <>
+                <label className="block">
+                  <span className="text-[11px] text-textdim font-body">API Base URL</span>
+                  <input
+                    type="text"
+                    className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                    placeholder="https://your-endpoint/v1"
+                    value={customBaseUrl}
+                    onChange={(e) => setCustomBaseUrl(e.target.value)}
+                  />
+                  <span className="text-[10px] text-textdim font-body">Any OpenAI-compatible endpoint (must end in /v1).</span>
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-textdim font-body">
+                    API Key {settings.customApiKeySet && <span className="text-textsec">(set)</span>}
+                  </span>
+                  <input
+                    type="password"
+                    className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
+                    placeholder={settings.customApiKeySet ? '••••••••' : 'Enter the endpoint API key'}
+                    value={customApiKey}
+                    onChange={(e) => setCustomApiKey(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
             {settings.availableModels.length === 0 && (
               <button
                 type="button"
@@ -250,13 +347,15 @@ export function SettingsPanel() {
               {settings.availableModels.length > 0 ? (
                 <select
                   className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
-                  value={modelId}
+                  value={activeModelId}
                   onChange={(e) => {
-                    setModelId(e.target.value)
+                    setActiveModelId(e.target.value)
                     const model = settings.availableModels.find((m) => m.id === e.target.value)
-                    if (model) {
-                      settings.saveSettings({ modelId: e.target.value, maxContextTokens: model.contextLength })
-                    }
+                    // OpenRouter reports contextLength; NIM/custom don't, so only
+                    // update the context budget when we actually know it.
+                    const patch: Partial<OpenRouterSettings> = { [modelSaveKey]: e.target.value }
+                    if (model && model.contextLength > 0) patch.maxContextTokens = model.contextLength
+                    void settings.saveSettings(patch)
                   }}
                 >
                   <option value="">Select a model...</option>
@@ -272,15 +371,15 @@ export function SettingsPanel() {
               ) : (
                 <input
                   className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2"
-                  placeholder="e.g. anthropic/claude-sonnet-4.6"
-                  value={modelId}
-                  onChange={(e) => setModelId(e.target.value)}
+                  placeholder={provider === 'nvidia_nim' ? 'deepseek-ai/deepseek-v4-pro' : 'e.g. anthropic/claude-sonnet-4.6'}
+                  value={activeModelId}
+                  onChange={(e) => setActiveModelId(e.target.value)}
                 />
               )}
             </label>
 
             {(() => {
-              const selected = settings.availableModels.find((m) => m.id === modelId)
+              const selected = settings.availableModels.find((m) => m.id === activeModelId)
               const legacyByModel = useTools && selected && !selected.supportsTools
               const legacyByToggle = !useTools
               if (!legacyByModel && !legacyByToggle) return null

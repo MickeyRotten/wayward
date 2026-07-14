@@ -32,7 +32,7 @@ from server.ai.narrator_actions import (
     tool_skill_check,
     tool_unequip,
 )
-from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn
+from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
 from server.db.database import new_session
 
 log = logging.getLogger("wayward.narrator_agent")
@@ -302,6 +302,7 @@ async def run_narrator_agent(
 
     max_rounds = max(1, settings.max_tool_rounds or 6)
     full_max_tokens = settings.max_tokens_response
+    base_url, api_key, main_model = provider_endpoint(settings)
 
     async with new_session() as agent_session:
         for round_idx in range(max_rounds):
@@ -323,8 +324,9 @@ async def run_narrator_agent(
             # re-run — messages is unmutated until a call succeeds).
             def _make_call(_offer=offer_tools):
                 return chat_completion_agent_turn(
-                    api_key=settings.api_key,
-                    model_id=settings.model_id,
+                    api_key=api_key,
+                    model_id=main_model,
+                    base_url=base_url,
                     messages=messages,
                     temperature=settings.temperature,
                     max_tokens=full_max_tokens,

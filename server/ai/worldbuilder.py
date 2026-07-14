@@ -21,7 +21,7 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.ai.openrouter import chat_completion_agent_turn
+from server.ai.openrouter import chat_completion_agent_turn, provider_endpoint
 from server.db import events as event_ops
 from server.db import party as party_ops
 from server.db.database import new_session
@@ -668,7 +668,10 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
     """
     async with new_session() as session:
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-        if not settings or not settings.api_key or not settings.model_id:
+        if not settings:
+            return []
+        base_url, api_key, main_model = provider_endpoint(settings)
+        if not api_key or not main_model:
             return []
         mode = settings.worldbuilding_mode or "confirmation"
         if mode == "disabled":
@@ -699,7 +702,7 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
 
         world_state = await _build_world_state(session)
         turn_ctx = await _turn_context(session, turn_number)
-        model_id = settings.worldbuilding_model_id or settings.model_id
+        model_id = settings.worldbuilding_model_id or main_model
 
         # Guard data for the deterministic rule backstop: every party member
         # (incl. benched) and the PC must never be filed as lore, and item
@@ -720,7 +723,7 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         tool_calls: list[dict] = []
         try:
             async for ev in chat_completion_agent_turn(
-                api_key=settings.api_key, model_id=model_id, messages=messages,
+                api_key=api_key, model_id=model_id, base_url=base_url, messages=messages,
                 temperature=0.4,
                 max_tokens=min(settings.max_tokens_response, _CHRONICLER_MAX_TOKENS),
                 tools=TOOL_SCHEMAS,

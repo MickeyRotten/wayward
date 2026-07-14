@@ -1,9 +1,15 @@
 import { create } from 'zustand'
-import type { OpenRouterModel, OpenRouterSettings, WorldbuildingMode } from '@shared/types/models'
+import type { LlmProvider, OpenRouterModel, OpenRouterSettings, WorldbuildingMode } from '@shared/types/models'
 import { api } from '../lib/api'
 
 interface SettingsState {
+  provider: LlmProvider
   modelId: string
+  nimModelId: string
+  nimApiKeySet: boolean
+  customBaseUrl: string
+  customModelId: string
+  customApiKeySet: boolean
   temperature: number
   topP: number
   minP: number
@@ -31,15 +37,26 @@ interface SettingsState {
   apiKeySet: boolean
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
-  saveSettings: (update: Partial<OpenRouterSettings> & { apiKey?: string; visionApiKey?: string }) => Promise<void>
+  saveSettings: (update: Partial<OpenRouterSettings> & { apiKey?: string; visionApiKey?: string; nimApiKey?: string; customApiKey?: string }) => Promise<void>
   fetchModels: () => Promise<void>
 }
 
-type SettingsResponse = OpenRouterSettings & { apiKeySet: boolean; visionApiKeySet: boolean }
+type SettingsResponse = OpenRouterSettings & {
+  apiKeySet: boolean
+  visionApiKeySet: boolean
+  nimApiKeySet: boolean
+  customApiKeySet: boolean
+}
 
 function applyResponse(s: SettingsResponse) {
   return {
+    provider: s.provider,
     modelId: s.modelId,
+    nimModelId: s.nimModelId,
+    nimApiKeySet: s.nimApiKeySet,
+    customBaseUrl: s.customBaseUrl,
+    customModelId: s.customModelId,
+    customApiKeySet: s.customApiKeySet,
     temperature: s.temperature,
     topP: s.topP,
     minP: s.minP,
@@ -69,7 +86,13 @@ function applyResponse(s: SettingsResponse) {
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
+  provider: 'openrouter',
   modelId: '',
+  nimModelId: '',
+  nimApiKeySet: false,
+  customBaseUrl: '',
+  customModelId: '',
+  customApiKeySet: false,
   temperature: 0.7,
   topP: 1.0,
   minP: 0.0,
@@ -105,7 +128,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   saveSettings: async (update) => {
     const state = get()
     const payload = {
+      provider: update.provider ?? state.provider,
       modelId: update.modelId ?? state.modelId,
+      nimModelId: update.nimModelId ?? state.nimModelId,
+      customBaseUrl: update.customBaseUrl ?? state.customBaseUrl,
+      customModelId: update.customModelId ?? state.customModelId,
       temperature: update.temperature ?? state.temperature,
       topP: update.topP ?? state.topP,
       minP: update.minP ?? state.minP,
@@ -131,6 +158,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ttsAutoplay: update.ttsAutoplay ?? state.ttsAutoplay,
       ...(update.apiKey !== undefined ? { apiKey: update.apiKey } : {}),
       ...(update.visionApiKey !== undefined ? { visionApiKey: update.visionApiKey } : {}),
+      ...(update.nimApiKey !== undefined ? { nimApiKey: update.nimApiKey } : {}),
+      ...(update.customApiKey !== undefined ? { customApiKey: update.customApiKey } : {}),
     }
     const s = await api.put<SettingsResponse>('/settings/openrouter', payload)
     set(applyResponse(s))

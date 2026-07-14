@@ -37,7 +37,7 @@ from server.ai.action_suggester import (
 )
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
-from server.ai.openrouter import chat_completion_stream, fetch_models
+from server.ai.openrouter import chat_completion_stream, fetch_models, stream_with_retry
 from server.ai.prompt_builder import augment_user_content, build_prompt, estimate_prompt_tokens
 from server.ai.vision import VISION_DEFAULT_INSTRUCTIONS, describe_image
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, _name_mentioned, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -1017,6 +1017,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         maxContextTokens=s.max_context_tokens,
         maxPartySize=s.max_party_size,
         maxToolRounds=s.max_tool_rounds,
+        autoRetryCount=int(getattr(s, "auto_retry_count", 2) or 0),
         useTools=bool(s.use_tools),
         worldbuildingMode=s.worldbuilding_mode,
         worldbuildingModelId=s.worldbuilding_model_id,
@@ -1066,6 +1067,7 @@ async def update_openrouter_settings(
     s.max_context_tokens = data.maxContextTokens
     s.max_party_size = data.maxPartySize
     s.max_tool_rounds = data.maxToolRounds
+    s.auto_retry_count = max(0, min(5, data.autoRetryCount))
     s.use_tools = data.useTools
     s.worldbuilding_mode = data.worldbuildingMode
     s.worldbuilding_model_id = data.worldbuildingModelId
@@ -1898,6 +1900,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "maxContextTokens": settings.max_context_tokens if settings else 128000,
             "maxPartySize": settings.max_party_size if settings else 3,
             "maxToolRounds": settings.max_tool_rounds if settings else 6,
+            "autoRetryCount": int(getattr(settings, "auto_retry_count", 2) or 0) if settings else 2,
             "useTools": bool(settings.use_tools) if settings else True,
             "worldbuildingMode": settings.worldbuilding_mode if settings else "confirmation",
             "worldbuildingModelId": settings.worldbuilding_model_id if settings else "",
@@ -2019,6 +2022,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         max_context_tokens=s.get("maxContextTokens", 128000),
         max_party_size=s.get("maxPartySize", 3),
         max_tool_rounds=s.get("maxToolRounds", 6),
+        auto_retry_count=s.get("autoRetryCount", 2),
         use_tools=s.get("useTools", True),
         worldbuilding_mode=s.get("worldbuildingMode", "confirmation"),
         worldbuilding_model_id=s.get("worldbuildingModelId", ""),
@@ -2859,6 +2863,8 @@ def _stream_planner_response(settings: OpenRouterSettings, turn: int):
                     yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
                 elif t == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
+                elif t == "retry":
+                    yield f"data: {json.dumps({'type': 'retry', 'attempt': ev['attempt'], 'of': ev['of']})}\n\n"
                 elif t == "tool":
                     editor_actions.append({"name": ev["name"], "result": ev["result"]})
                     yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result']})}\n\n"
@@ -2983,9 +2989,8 @@ def _stream_llm_response(
 
         yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
 
-        full_text = ""
-        try:
-            async for chunk in chat_completion_stream(
+        def _make_stream():
+            return chat_completion_stream(
                 api_key=api_key,
                 model_id=model_id,
                 messages=messages,
@@ -2997,9 +3002,26 @@ def _stream_llm_response(
                 frequency_penalty=frequency_penalty,
                 presence_penalty=presence_penalty,
                 repetition_penalty=repetition_penalty,
+            )
+
+        # Auto-retry on error/safety block (configurable). The legacy path has no
+        # mid-stream DB mutations, so a full re-stream is always safe; a partial
+        # attempt emits `discard` (client clears it) before the retry.
+        full_text = ""
+        try:
+            async for ev in stream_with_retry(
+                _make_stream, getattr(settings, "auto_retry_count", 0) or 0,
+                log_ctx=f" legacy turn={current_turn}",
             ):
-                full_text += chunk
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                et = ev["type"]
+                if et == "chunk":
+                    full_text += ev["text"]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif et == "discard":
+                    full_text = ""
+                    yield f"data: {json.dumps({'type': 'discard'})}\n\n"
+                elif et == "retry":
+                    yield f"data: {json.dumps({'type': 'retry', 'attempt': ev['attempt'], 'of': ev['of']})}\n\n"
         except Exception as e:
             log.exception("OpenRouter stream failed")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -3187,6 +3209,8 @@ def _stream_agent_response(
                     yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
                 elif etype == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
+                elif etype == "retry":
+                    yield f"data: {json.dumps({'type': 'retry', 'attempt': ev['attempt'], 'of': ev['of']})}\n\n"
                 elif etype == "tool":
                     yield f"data: {json.dumps({'type': 'tool', 'name': ev['name'], 'result': ev['result'], 'ok': ev.get('ok', True)})}\n\n"
                 elif etype == "final":

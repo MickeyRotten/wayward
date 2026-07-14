@@ -160,6 +160,7 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxContextTokens: int = 128000
     maxPartySize: int = 3
     maxToolRounds: int = 6
+    autoRetryCount: int = 2
     useTools: bool = True
     worldbuildingMode: str = "confirmation"
     worldbuildingModelId: str = ""
@@ -187,6 +188,7 @@ class OpenRouterSettingsResponse(BaseModel):
     maxContextTokens: int
     maxPartySize: int
     maxToolRounds: int
+    autoRetryCount: int
     useTools: bool
     worldbuildingMode: str
     worldbuildingModelId: str

@@ -44,6 +44,7 @@ export function SettingsPanel() {
   const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
   const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
   const [maxToolRounds, setMaxToolRounds] = useState(settings.maxToolRounds)
+  const [autoRetryCount, setAutoRetryCount] = useState(settings.autoRetryCount)
   const [useTools, setUseTools] = useState(settings.useTools)
   const [wbMode, setWbMode] = useState(settings.worldbuildingMode)
   const [wbModelId, setWbModelId] = useState(settings.worldbuildingModelId)
@@ -80,6 +81,7 @@ export function SettingsPanel() {
     setMaxTokens(settings.maxTokensResponse)
     setMaxPartySize(settings.maxPartySize)
     setMaxToolRounds(settings.maxToolRounds)
+    setAutoRetryCount(settings.autoRetryCount)
     setUseTools(settings.useTools)
     setWbMode(settings.worldbuildingMode)
     setWbModelId(settings.worldbuildingModelId)
@@ -91,7 +93,7 @@ export function SettingsPanel() {
     setVisionInstructions(settings.visionInstructions)
     setTtsEnabled(settings.ttsEnabled)
     setTtsAutoplay(settings.ttsAutoplay)
-  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
+  }, [settings.modelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.autoRetryCount, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -130,6 +132,7 @@ export function SettingsPanel() {
       maxContextTokens: settings.maxContextTokens,
       maxPartySize,
       maxToolRounds,
+      autoRetryCount,
       useTools,
       worldbuildingMode: wbMode,
       worldbuildingModelId: wbModelId,
@@ -159,7 +162,7 @@ export function SettingsPanel() {
     setFreqPen(0); setPresPen(0); setRepPen(1); setMaxTokens(1000)
   }
   const resetAgents = () => {
-    setUseTools(true); setMaxToolRounds(6)
+    setUseTools(true); setMaxToolRounds(6); setAutoRetryCount(2)
     setWbMode('confirmation'); setWbModelId('')
     setSummaryThreshold(0.7); setSummaryModelId('')
     setActionSuggestionsEnabled(false); setActionSuggestionsModelId('')
@@ -353,6 +356,20 @@ export function SettingsPanel() {
             </label>
             <p className="text-[10px] text-textdim font-body">
               When on, the narrator calls tools (grant/equip/scene/etc.) over up to this many round-trips per turn. When off, it uses the legacy text-block protocol.
+            </p>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Auto-retry on error / safety block</span>
+              <input
+                type="number"
+                min={0}
+                max={5}
+                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                value={autoRetryCount}
+                onChange={(e) => setAutoRetryCount(Math.max(0, Math.min(5, Number(e.target.value) || 0)))}
+              />
+            </label>
+            <p className="text-[10px] text-textdim font-body">
+              If the model errors or its safety filter blocks a turn, silently regenerate up to this many times before showing the error (Narrator and Editor). 0 = off (manual RETRY only). Max 5.
             </p>
           </SubSection>
 

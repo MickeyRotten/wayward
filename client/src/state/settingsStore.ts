@@ -15,6 +15,7 @@ interface SettingsState {
   maxContextTokens: number
   maxPartySize: number
   maxToolRounds: number
+  autoRetryCount: number
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
@@ -50,6 +51,7 @@ function applyResponse(s: SettingsResponse) {
     maxContextTokens: s.maxContextTokens,
     maxPartySize: s.maxPartySize,
     maxToolRounds: s.maxToolRounds,
+    autoRetryCount: s.autoRetryCount,
     useTools: s.useTools,
     worldbuildingMode: s.worldbuildingMode,
     worldbuildingModelId: s.worldbuildingModelId,
@@ -79,6 +81,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   maxContextTokens: 128000,
   maxPartySize: 3,
   maxToolRounds: 6,
+  autoRetryCount: 2,
   useTools: true,
   worldbuildingMode: 'confirmation',
   worldbuildingModelId: '',
@@ -114,6 +117,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       maxContextTokens: update.maxContextTokens ?? state.maxContextTokens,
       maxPartySize: update.maxPartySize ?? state.maxPartySize,
       maxToolRounds: update.maxToolRounds ?? state.maxToolRounds,
+      autoRetryCount: update.autoRetryCount ?? state.autoRetryCount,
       useTools: update.useTools ?? state.useTools,
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,

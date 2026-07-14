@@ -120,6 +120,7 @@ export interface OpenRouterSettings {
   maxContextTokens: number
   maxPartySize: number
   maxToolRounds: number
+  autoRetryCount: number
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string

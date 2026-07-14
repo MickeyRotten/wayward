@@ -57,6 +57,10 @@ class OpenRouterSettings(Base):
     # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.
     max_tool_rounds: Mapped[int] = mapped_column(Integer, default=6)
     use_tools: Mapped[bool] = mapped_column(Integer, default=True)
+    # Auto-retry a turn's model call on an error or safety-filter block, up to
+    # this many extra attempts before surfacing the error (0 = off). Retries
+    # happen per model call, so tools that already ran are never re-applied.
+    auto_retry_count: Mapped[int] = mapped_column(Integer, default=2)
     # Chronicler (world-building agent): when/how it creates lore/quests/members.
     # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
     worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")

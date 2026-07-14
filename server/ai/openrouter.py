@@ -341,3 +341,64 @@ async def chat_completion_agent_turn(
         "tool_calls": tool_calls,
         "finish_reason": finish_reason,
     }
+
+
+async def agent_turn_with_retry(
+    make_stream, retries: int, *, log_ctx: str = ""
+) -> AsyncGenerator[dict, None]:
+    """Run one ``chat_completion_agent_turn`` stream with up to ``retries`` extra
+    attempts on an error or safety-filter block (both raised as RuntimeError).
+
+    ``make_stream`` is a zero-arg callable returning a FRESH agent-turn generator
+    (so each attempt re-sends the same, unmutated ``messages`` — a failed attempt
+    never appended tool results, so re-attempting can't re-run tools). Yields the
+    underlying ``content``/``result`` events; when an attempt streamed partial
+    content before failing, yields ``{"type":"discard"}`` so the client clears it;
+    before each retry yields ``{"type":"retry","attempt","of"}``. Re-raises if all
+    attempts fail."""
+    import logging
+    log = logging.getLogger("wayward.retry")
+    attempt = 0
+    while True:
+        streamed = False
+        try:
+            async for ev in make_stream():
+                if ev.get("type") == "content":
+                    streamed = True
+                yield ev
+            return
+        except Exception as e:  # noqa: BLE001 — surface after retries exhausted
+            if attempt >= max(0, retries):
+                raise
+            attempt += 1
+            if streamed:
+                yield {"type": "discard"}
+            yield {"type": "retry", "attempt": attempt, "of": max(0, retries)}
+            log.warning("agent-turn retry %s/%s%s after: %s", attempt, retries, log_ctx, e)
+
+
+async def stream_with_retry(
+    make_stream, retries: int, *, log_ctx: str = ""
+) -> AsyncGenerator[dict, None]:
+    """Like ``agent_turn_with_retry`` but for the plain-text ``chat_completion_stream``
+    (yields str chunks). Yields dict events: ``{"type":"chunk","text"}`` per chunk,
+    ``{"type":"discard"}`` when a failed attempt had streamed, ``{"type":"retry",...}``
+    before a retry. Re-raises if all attempts fail."""
+    import logging
+    log = logging.getLogger("wayward.retry")
+    attempt = 0
+    while True:
+        streamed = False
+        try:
+            async for chunk in make_stream():
+                streamed = True
+                yield {"type": "chunk", "text": chunk}
+            return
+        except Exception as e:  # noqa: BLE001
+            if attempt >= max(0, retries):
+                raise
+            attempt += 1
+            if streamed:
+                yield {"type": "discard"}
+            yield {"type": "retry", "attempt": attempt, "of": max(0, retries)}
+            log.warning("stream retry %s/%s%s after: %s", attempt, retries, log_ctx, e)

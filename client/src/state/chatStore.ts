@@ -344,6 +344,14 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
             // Agentic loop: content streamed on a tool-calling round was
             // preamble, not the final narration — clear it.
             set({ streamingContent: '' })
+          } else if (event.type === 'retry') {
+            // Auto-retry after an error/safety block — clear any partial output
+            // and show the attempt count while it regenerates.
+            set({
+              streamingContent: '',
+              toolStatus: `Retrying (${event.attempt}/${event.of})`,
+              thinkingStartedAt: Date.now(),
+            })
           } else if (event.type === 'tool') {
             // A tool ran mid-turn — surface it as ephemeral status so multi-round
             // turns don't sit silently.

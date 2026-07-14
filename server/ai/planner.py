@@ -27,7 +27,7 @@ from server.ai.narrator_actions import (
     tool_equip,
     tool_unequip,
 )
-from server.ai.openrouter import chat_completion_agent_turn
+from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
 from server.ai.worldbuilder import LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
@@ -554,13 +554,22 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
                 messages.append({"role": "system", "content": PLANNER_FINAL_NUDGE})
             result = None
             _round_started = False
-            async for ev in chat_completion_agent_turn(
-                api_key=settings.api_key, model_id=settings.model_id, messages=messages,
-                temperature=settings.temperature, max_tokens=settings.max_tokens_response,
-                tools=TOOL_SCHEMAS if offer_tools else None,
-                top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,
-                frequency_penalty=settings.frequency_penalty, presence_penalty=settings.presence_penalty,
-                repetition_penalty=settings.repetition_penalty,
+
+            def _make_call(_offer=offer_tools):
+                return chat_completion_agent_turn(
+                    api_key=settings.api_key, model_id=settings.model_id, messages=messages,
+                    temperature=settings.temperature, max_tokens=settings.max_tokens_response,
+                    tools=TOOL_SCHEMAS if _offer else None,
+                    top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,
+                    frequency_penalty=settings.frequency_penalty, presence_penalty=settings.presence_penalty,
+                    repetition_penalty=settings.repetition_penalty,
+                )
+
+            # Auto-retry on error/safety block (configurable; per-call, so the
+            # Editor's already-committed tool actions are never re-run).
+            async for ev in agent_turn_with_retry(
+                _make_call, getattr(settings, "auto_retry_count", 0) or 0,
+                log_ctx=f" editor turn={turn_number} round={round_idx}",
             ):
                 if ev["type"] == "content":
                     # Separate this round's prose from the previous round's.
@@ -570,6 +579,8 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
                     yield {"type": "content", "text": ev["text"]}
                 elif ev["type"] == "result":
                     result = ev
+                elif ev["type"] in ("discard", "retry"):
+                    yield ev
 
             tool_calls = (result or {}).get("tool_calls") or []
             content = ((result or {}).get("content") or "").strip()

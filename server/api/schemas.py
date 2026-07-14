@@ -147,8 +147,14 @@ class ScenarioResponse(BaseModel):
 # --- OpenRouter Settings ---
 
 class OpenRouterSettingsUpdate(BaseModel):
+    provider: str = "openrouter"  # 'openrouter' | 'nvidia_nim' | 'custom'
     apiKey: str | None = None
     modelId: str = ""
+    nimApiKey: str | None = None   # write-only, like apiKey
+    nimModelId: str = ""
+    customBaseUrl: str = ""
+    customApiKey: str | None = None  # write-only, like apiKey
+    customModelId: str = ""
     temperature: float = 0.7
     topP: float = 1.0
     minP: float = 0.0
@@ -176,7 +182,13 @@ class OpenRouterSettingsUpdate(BaseModel):
 
 
 class OpenRouterSettingsResponse(BaseModel):
+    provider: str
     modelId: str
+    nimModelId: str
+    nimApiKeySet: bool
+    customBaseUrl: str
+    customModelId: str
+    customApiKeySet: bool
     temperature: float
     topP: float
     minP: float

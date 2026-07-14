@@ -17,7 +17,7 @@ import re
 
 from sqlalchemy import select
 
-from server.ai.openrouter import chat_completion_agent_turn
+from server.ai.openrouter import chat_completion_agent_turn, provider_endpoint
 from server.db.database import new_session
 from server.db import party as party_ops
 from server.db.models import ChatMessage, NarratorConfig, OpenRouterSettings, Task
@@ -292,10 +292,13 @@ async def run_action_suggester(turn_number: int) -> list[str]:
             return []
 
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-        if not settings or not settings.api_key or not settings.model_id:
+        if not settings:
+            return []
+        base_url, api_key, main_model = provider_endpoint(settings)
+        if not api_key or not main_model:
             return []
 
-        model_id = settings.action_suggestions_model_id or settings.model_id
+        model_id = settings.action_suggestions_model_id or main_model
         # Custom guidance (Config → Agents & Tools) overrides the built-in
         # preamble; the per-slot OPTION RULES are always appended after it.
         preamble = getattr(narrator, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE
@@ -317,8 +320,9 @@ async def run_action_suggester(turn_number: int) -> list[str]:
             tool_calls: list[dict] = []
             try:
                 async for ev in chat_completion_agent_turn(
-                    api_key=settings.api_key,
+                    api_key=api_key,
                     model_id=model_id,
+                    base_url=base_url,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=_MAX_TOKENS,

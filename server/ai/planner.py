@@ -27,7 +27,7 @@ from server.ai.narrator_actions import (
     tool_equip,
     tool_unequip,
 )
-from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn
+from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
 from server.ai.worldbuilder import LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
@@ -546,7 +546,8 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
         content_parts: list[str] = []
         tool_results: list[str] = []  # for an empty-reply fallback
 
-        log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, settings.model_id if settings else "?")
+        base_url, api_key, main_model = provider_endpoint(settings)
+        log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, main_model or "?")
 
         for round_idx in range(max_rounds):
             offer_tools = round_idx < max_rounds - 1
@@ -557,7 +558,7 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
 
             def _make_call(_offer=offer_tools):
                 return chat_completion_agent_turn(
-                    api_key=settings.api_key, model_id=settings.model_id, messages=messages,
+                    api_key=api_key, model_id=main_model, base_url=base_url, messages=messages,
                     temperature=settings.temperature, max_tokens=settings.max_tokens_response,
                     tools=TOOL_SCHEMAS if _offer else None,
                     top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,

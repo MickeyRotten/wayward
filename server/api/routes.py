@@ -37,7 +37,7 @@ from server.ai.action_suggester import (
 )
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
 from server.ai.planner import PLANNER_GUIDANCE, run_planner_agent
-from server.ai.openrouter import chat_completion_stream, fetch_models, stream_with_retry
+from server.ai.openrouter import OPENROUTER_BASE, chat_completion_stream, fetch_models, provider_endpoint, stream_with_retry
 from server.ai.prompt_builder import augment_user_content, build_prompt, estimate_prompt_tokens
 from server.ai.vision import VISION_DEFAULT_INSTRUCTIONS, describe_image
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE, SpotlightSignal, _name_mentioned, compute_spotlight_signals, detect_speakers, format_spotlight_block
@@ -1005,7 +1005,13 @@ async def _get_item(session: AsyncSession, item_id: str) -> LorebookEntry | None
 
 def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
     return OpenRouterSettingsResponse(
+        provider=getattr(s, "llm_provider", "") or "openrouter",
         modelId=s.model_id,
+        nimModelId=getattr(s, "nim_model_id", "") or "",
+        nimApiKeySet=bool(getattr(s, "nim_api_key", "")),
+        customBaseUrl=getattr(s, "custom_base_url", "") or "",
+        customModelId=getattr(s, "custom_model_id", "") or "",
+        customApiKeySet=bool(getattr(s, "custom_api_key", "")),
         temperature=s.temperature,
         topP=s.top_p,
         minP=s.min_p,
@@ -1053,9 +1059,17 @@ async def update_openrouter_settings(
     if not s:
         s = OpenRouterSettings()
         session.add(s)
+    s.llm_provider = data.provider or "openrouter"
     if data.apiKey is not None:
         s.api_key = data.apiKey
     s.model_id = data.modelId
+    if data.nimApiKey is not None:  # write-only, like apiKey
+        s.nim_api_key = data.nimApiKey
+    s.nim_model_id = data.nimModelId
+    s.custom_base_url = data.customBaseUrl
+    if data.customApiKey is not None:  # write-only, like apiKey
+        s.custom_api_key = data.customApiKey
+    s.custom_model_id = data.customModelId
     s.temperature = data.temperature
     s.top_p = data.topP
     s.min_p = data.minP
@@ -1894,7 +1908,11 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "summaryUpToTurn": summary.summary_up_to_turn if summary else 0,
         },
         "settings": {
+            "provider": (getattr(settings, "llm_provider", "") or "openrouter") if settings else "openrouter",
             "modelId": settings.model_id if settings else "",
+            "nimModelId": (getattr(settings, "nim_model_id", "") or "") if settings else "",
+            "customBaseUrl": (getattr(settings, "custom_base_url", "") or "") if settings else "",
+            "customModelId": (getattr(settings, "custom_model_id", "") or "") if settings else "",
             "temperature": settings.temperature if settings else 0.7,
             "maxTokensResponse": settings.max_tokens_response if settings else 1000,
             "maxContextTokens": settings.max_context_tokens if settings else 128000,
@@ -2010,13 +2028,21 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         summary_up_to_turn=summary_data.get("summaryUpToTurn", 0),
     ))
 
-    # Restore settings (without apiKey)
+    # Restore settings (keys are never exported — preserve the existing ones)
     existing_settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     old_api_key = existing_settings.api_key if existing_settings else ""
+    old_nim_key = getattr(existing_settings, "nim_api_key", "") if existing_settings else ""
+    old_custom_key = getattr(existing_settings, "custom_api_key", "") if existing_settings else ""
     s = data.get("settings", {})
     session.add(OpenRouterSettings(
+        llm_provider=s.get("provider", "openrouter"),
         api_key=old_api_key,
         model_id=s.get("modelId", ""),
+        nim_api_key=old_nim_key,
+        nim_model_id=s.get("nimModelId", ""),
+        custom_base_url=s.get("customBaseUrl", ""),
+        custom_api_key=old_custom_key,
+        custom_model_id=s.get("customModelId", ""),
         temperature=s.get("temperature", 0.7),
         max_tokens_response=s.get("maxTokensResponse", 1000),
         max_context_tokens=s.get("maxContextTokens", 128000),
@@ -2125,12 +2151,16 @@ async def reset_adventure(session: AsyncSession = Depends(get_session)):
 
 @router.get("/models")
 async def list_models(session: AsyncSession = Depends(get_session)):
-    # OpenRouter's model list is public, so this works without an API key —
-    # the dropdown can be populated before the user has entered one.
+    # Resolve the active provider (OpenRouter / NVIDIA NIM / custom) so the
+    # dropdown lists that provider's models. OpenRouter's list is public, so it
+    # works without a key; NIM/custom require their key (empty → empty list).
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    api_key = settings.api_key if settings else ""
+    if settings is None:
+        base_url, api_key = OPENROUTER_BASE, ""
+    else:
+        base_url, api_key, _main_model = provider_endpoint(settings)
     try:
-        models = await fetch_models(api_key)
+        models = await fetch_models(api_key, base_url=base_url)
         return models
     except Exception as e:
         raise HTTPException(502, f"Failed to fetch models: {e}")
@@ -2205,9 +2235,12 @@ _HISTORY_WINDOW = 500
 async def _load_game_context(session: AsyncSession):
     """Load all game state needed for a chat turn."""
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    if not settings or not settings.api_key:
-        raise HTTPException(400, "OpenRouter API key not configured")
-    if not settings.model_id:
+    if not settings:
+        raise HTTPException(400, "LLM provider not configured")
+    _base_url, api_key, main_model = provider_endpoint(settings)
+    if not api_key:
+        raise HTTPException(400, "API key not configured for the selected provider")
+    if not main_model:
         raise HTTPException(400, "No model selected")
 
     narrator = (await session.execute(select(NarratorConfig))).scalars().first() or NarratorConfig(instructions="")
@@ -2252,9 +2285,12 @@ async def _should_use_tools(settings: OpenRouterSettings) -> bool:
     and let the call surface an error rather than silently downgrading."""
     if not settings.use_tools:
         return False
+    base_url, api_key, main_model = provider_endpoint(settings)
+    # Non-OpenRouter providers (NIM/custom) report every model as tool-capable
+    # in fetch_models, so this check is effectively a no-op there — trust the toggle.
     try:
-        models = await fetch_models(settings.api_key)
-        m = next((x for x in models if x["id"] == settings.model_id), None)
+        models = await fetch_models(api_key, base_url=base_url)
+        m = next((x for x in models if x["id"] == main_model), None)
         if m is not None:
             return bool(m.get("supportsTools"))
     except Exception:
@@ -2350,11 +2386,13 @@ async def _maybe_summarize_and_build(
     if over_threshold:
         to_summarize, to_keep, new_boundary = pick_messages_to_summarize(filtered)
         if to_summarize:
+            sum_base_url, sum_api_key, sum_main_model = provider_endpoint(settings)
             new_summary = await generate_summary(
-                api_key=settings.api_key,
-                model_id=(getattr(settings, "summary_model_id", "") or settings.model_id),
+                api_key=sum_api_key,
+                model_id=(getattr(settings, "summary_model_id", "") or sum_main_model),
                 messages_to_summarize=to_summarize,
                 existing_summary=summary.content,
+                base_url=sum_base_url,
             )
             summary.content = new_summary
             summary.summary_up_to_turn = new_boundary
@@ -2817,9 +2855,12 @@ async def action_suggestions_run(
 
 async def _planner_turn(data: ChatTurnRequest, session: AsyncSession):
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-    if not settings or not settings.api_key:
-        raise HTTPException(400, "OpenRouter API key not configured")
-    if not settings.model_id:
+    if not settings:
+        raise HTTPException(400, "LLM provider not configured")
+    _base_url, api_key, main_model = provider_endpoint(settings)
+    if not api_key:
+        raise HTTPException(400, "API key not configured for the selected provider")
+    if not main_model:
         raise HTTPException(400, "No model selected")
     pc = await party_ops.load_pc(session)
 
@@ -2954,8 +2995,7 @@ def _stream_llm_response(
         messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
 
     context_tokens = estimate_prompt_tokens(messages)
-    api_key = settings.api_key
-    model_id = settings.model_id
+    base_url, api_key, model_id = provider_endpoint(settings)
     temperature = settings.temperature
     top_p = settings.top_p
     min_p = settings.min_p
@@ -2993,6 +3033,7 @@ def _stream_llm_response(
             return chat_completion_stream(
                 api_key=api_key,
                 model_id=model_id,
+                base_url=base_url,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -3171,11 +3212,12 @@ def _stream_agent_response(
         messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
     context_tokens = estimate_prompt_tokens(messages)
     max_context = settings.max_context_tokens
+    _base_url, _api_key, _log_model = provider_endpoint(settings)
 
     log.info(
         "LLM AGENT REQUEST turn=%s variant=%s | model=%s | temp=%s | max_tokens=%s "
         "max_context=%s max_tool_rounds=%s | ~%s prompt tokens",
-        current_turn, variant, settings.model_id, settings.temperature,
+        current_turn, variant, _log_model, settings.temperature,
         settings.max_tokens_response, max_context, settings.max_tool_rounds, context_tokens,
     )
     if log.isEnabledFor(logging.DEBUG):

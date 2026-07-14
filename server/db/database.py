@@ -205,6 +205,12 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "tts_enabled", "ALTER TABLE openrouter_settings ADD COLUMN tts_enabled INTEGER DEFAULT 0"),
         ("openrouter_settings", "tts_autoplay", "ALTER TABLE openrouter_settings ADD COLUMN tts_autoplay INTEGER DEFAULT 1"),
         ("openrouter_settings", "auto_retry_count", "ALTER TABLE openrouter_settings ADD COLUMN auto_retry_count INTEGER DEFAULT 2"),
+        ("openrouter_settings", "llm_provider", "ALTER TABLE openrouter_settings ADD COLUMN llm_provider VARCHAR DEFAULT 'openrouter'"),
+        ("openrouter_settings", "nim_api_key", "ALTER TABLE openrouter_settings ADD COLUMN nim_api_key VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "nim_model_id", "ALTER TABLE openrouter_settings ADD COLUMN nim_model_id VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "custom_base_url", "ALTER TABLE openrouter_settings ADD COLUMN custom_base_url VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "custom_api_key", "ALTER TABLE openrouter_settings ADD COLUMN custom_api_key VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "custom_model_id", "ALTER TABLE openrouter_settings ADD COLUMN custom_model_id VARCHAR DEFAULT ''"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:

@@ -39,8 +39,19 @@ class OpenRouterSettings(Base):
     __tablename__ = "openrouter_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    api_key: Mapped[str] = mapped_column(String, default="")
-    model_id: Mapped[str] = mapped_column(String, default="")
+    # Active LLM provider (all OpenAI-compatible): 'openrouter' | 'nvidia_nim' |
+    # 'custom'. Each keeps its own key/model; 'custom' also its own base URL. The
+    # base URL is derived per provider (see openrouter.provider_endpoint).
+    llm_provider: Mapped[str] = mapped_column(String, default="openrouter")
+    api_key: Mapped[str] = mapped_column(String, default="")  # OpenRouter key
+    model_id: Mapped[str] = mapped_column(String, default="")  # OpenRouter model
+    # NVIDIA NIM (https://integrate.api.nvidia.com/v1) credential + model.
+    nim_api_key: Mapped[str] = mapped_column(String, default="")
+    nim_model_id: Mapped[str] = mapped_column(String, default="")
+    # Custom OpenAI-compatible endpoint: its own base URL, key, model.
+    custom_base_url: Mapped[str] = mapped_column(String, default="")
+    custom_api_key: Mapped[str] = mapped_column(String, default="")
+    custom_model_id: Mapped[str] = mapped_column(String, default="")
     temperature: Mapped[float] = mapped_column(Float, default=0.7)
     top_p: Mapped[float] = mapped_column(Float, default=1.0)
     min_p: Mapped[float] = mapped_column(Float, default=0.0)

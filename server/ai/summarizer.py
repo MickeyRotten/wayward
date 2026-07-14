@@ -1,4 +1,4 @@
-from server.ai.openrouter import chat_completion_stream
+from server.ai.openrouter import OPENROUTER_BASE, chat_completion_stream
 from server.db.models import ChatMessage
 
 SUMMARY_THRESHOLD = 0.70
@@ -51,6 +51,7 @@ async def generate_summary(
     model_id: str,
     messages_to_summarize: list[ChatMessage],
     existing_summary: str,
+    base_url: str = OPENROUTER_BASE,
 ) -> str:
     user_content = ""
     if existing_summary:
@@ -66,6 +67,7 @@ async def generate_summary(
     async for chunk in chat_completion_stream(
         api_key=api_key,
         model_id=model_id,
+        base_url=base_url,
         messages=prompt,
         temperature=0.3,
         max_tokens=500,

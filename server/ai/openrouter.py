@@ -6,6 +6,35 @@ from collections.abc import AsyncGenerator
 import httpx
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+# NVIDIA NIM's hosted API is OpenAI-compatible — same streaming/tool-call shape
+# as OpenRouter, so it reuses every function here; only the base URL + key differ.
+NVIDIA_NIM_BASE = "https://integrate.api.nvidia.com/v1"
+NIM_DEFAULT_MODEL = "deepseek-ai/deepseek-v4-pro"
+
+
+def provider_endpoint(settings) -> tuple[str, str, str]:
+    """Resolve the active LLM provider to ``(base_url, api_key, main_model_id)``.
+
+    All three providers are OpenAI-compatible; only these three values change.
+    'openrouter' (default) keeps the original api_key/model_id; 'nvidia_nim' and
+    'custom' carry their own credential + model (custom also its own base URL)."""
+    provider = (getattr(settings, "llm_provider", "") or "openrouter")
+    if provider == "nvidia_nim":
+        return (NVIDIA_NIM_BASE,
+                getattr(settings, "nim_api_key", "") or "",
+                getattr(settings, "nim_model_id", "") or "")
+    if provider == "custom":
+        base = (getattr(settings, "custom_base_url", "") or "").rstrip("/") or OPENROUTER_BASE
+        return (base,
+                getattr(settings, "custom_api_key", "") or "",
+                getattr(settings, "custom_model_id", "") or "")
+    return (OPENROUTER_BASE, settings.api_key or "", settings.model_id or "")
+
+
+def is_openrouter(base_url: str) -> bool:
+    """OpenRouter accepts the extra sampling params (min_p/top_k/repetition_penalty)
+    and returns rich model metadata; other OpenAI-compatible providers may not."""
+    return base_url.rstrip("/") == OPENROUTER_BASE
 
 # Transient statuses worth retrying once or twice (rate limit / provider hiccup).
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
@@ -44,38 +73,52 @@ async def close_client() -> None:
         await _shared_client.aclose()
 
 
-async def fetch_models(api_key: str = "") -> list[dict]:
-    # OpenRouter's /models endpoint is public; the key is optional. Cache under a
-    # stable key so the keyless list is reused too.
+async def fetch_models(api_key: str = "", base_url: str = OPENROUTER_BASE) -> list[dict]:
+    """List the provider's models in the normalized shape
+    ``{id, name, contextLength, supportsTools, supportsImages}``.
+
+    OpenRouter's ``/models`` is public + rich (capabilities in
+    ``supported_parameters``/``architecture``). Other OpenAI-compatible providers
+    (NVIDIA NIM, custom) return a plain ``{data:[{id}]}`` with no capability
+    metadata, so their models are marked tool-capable (NIM supports tool calling;
+    vision keeps its own model picker)."""
     now = time.time()
-    cache_key = api_key or "_public"
+    cache_key = f"{base_url}|{api_key or '_public'}"
     cached = _model_cache.get(cache_key)
     if cached and now - cached[0] < MODEL_CACHE_TTL:
         return cached[1]
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    res = await _client().get(
-        f"{OPENROUTER_BASE}/models",
-        headers=headers,
-        timeout=30,
-    )
+    res = await _client().get(f"{base_url}/models", headers=headers, timeout=30)
     res.raise_for_status()
-
     data = res.json().get("data", [])
-    models = [
-        {
-            "id": m["id"],
-            "name": m.get("name", m["id"]),
-            "contextLength": m.get("context_length", 0),
-            # OpenRouter exposes per-model capabilities in supported_parameters;
-            # "tools" means the model can do function/tool calling (required for
-            # the agentic narrator loop).
-            "supportsTools": "tools" in (m.get("supported_parameters") or []),
-            # Image input capability (for the vision agent's model picker).
-            "supportsImages": "image" in ((m.get("architecture") or {}).get("input_modalities") or []),
-        }
-        for m in data
-    ]
+
+    if is_openrouter(base_url):
+        models = [
+            {
+                "id": m["id"],
+                "name": m.get("name", m["id"]),
+                "contextLength": m.get("context_length", 0),
+                # "tools" in supported_parameters => function/tool calling (needed
+                # for the agentic narrator loop); image => vision picker capable.
+                "supportsTools": "tools" in (m.get("supported_parameters") or []),
+                "supportsImages": "image" in ((m.get("architecture") or {}).get("input_modalities") or []),
+            }
+            for m in data
+        ]
+    else:
+        # Plain OpenAI-compatible list (id only). NIM/custom models are assumed
+        # tool-capable; context length is unknown (client only uses it to prefill).
+        models = [
+            {
+                "id": m["id"],
+                "name": m.get("id", ""),
+                "contextLength": int(m.get("context_length") or 0),
+                "supportsTools": True,
+                "supportsImages": False,
+            }
+            for m in data if m.get("id")
+        ]
     models.sort(key=lambda m: m["name"])
     _model_cache[cache_key] = (now, models)
     return models
@@ -87,6 +130,7 @@ async def chat_completion_text(
     messages: list[dict],
     temperature: float = 0.2,
     max_tokens: int = 500,
+    base_url: str = OPENROUTER_BASE,
 ) -> str:
     """One plain, non-streaming completion; returns the assistant text.
 
@@ -102,7 +146,7 @@ async def chat_completion_text(
     client = _client()
     for attempt in range(_MAX_ATTEMPTS):
         res = await client.post(
-            f"{OPENROUTER_BASE}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -156,20 +200,26 @@ def _apply_sampling(
     frequency_penalty: float | None,
     presence_penalty: float | None,
     repetition_penalty: float | None,
+    openai_strict: bool = False,
 ) -> None:
     """Forward optional sampling params only when set to a meaningful (non-no-op)
     value, so default settings don't constrain providers that reject e.g.
-    top_k=0. OpenRouter passes these through to the underlying model."""
+    top_k=0. OpenRouter passes its superset through to the underlying model; when
+    ``openai_strict`` (NVIDIA NIM / custom endpoints) only the OpenAI-standard
+    params are sent — min_p/top_k/repetition_penalty are OpenRouter-only and
+    would be rejected."""
     if top_p is not None and top_p < 1.0:
         body["top_p"] = top_p
-    if min_p is not None and min_p > 0:
-        body["min_p"] = min_p
-    if top_k is not None and top_k > 0:
-        body["top_k"] = top_k
     if frequency_penalty:
         body["frequency_penalty"] = frequency_penalty
     if presence_penalty:
         body["presence_penalty"] = presence_penalty
+    if openai_strict:
+        return
+    if min_p is not None and min_p > 0:
+        body["min_p"] = min_p
+    if top_k is not None and top_k > 0:
+        body["top_k"] = top_k
     if repetition_penalty is not None and repetition_penalty != 1.0:
         body["repetition_penalty"] = repetition_penalty
 
@@ -186,6 +236,7 @@ async def chat_completion_stream(
     frequency_penalty: float | None = None,
     presence_penalty: float | None = None,
     repetition_penalty: float | None = None,
+    base_url: str = OPENROUTER_BASE,
 ) -> AsyncGenerator[str, None]:
     body: dict = {
         "model": model_id,
@@ -194,13 +245,14 @@ async def chat_completion_stream(
         "temperature": temperature,
         "stream": True,
     }
-    _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty, repetition_penalty)
+    _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty,
+                    repetition_penalty, openai_strict=not is_openrouter(base_url))
 
     client = _client()
     for attempt in range(_MAX_ATTEMPTS):
         async with client.stream(
             "POST",
-            f"{OPENROUTER_BASE}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -252,6 +304,7 @@ async def chat_completion_agent_turn(
     frequency_penalty: float | None = None,
     presence_penalty: float | None = None,
     repetition_penalty: float | None = None,
+    base_url: str = OPENROUTER_BASE,
 ) -> AsyncGenerator[dict, None]:
     """One streaming model turn with tool calling.
 
@@ -270,7 +323,8 @@ async def chat_completion_agent_turn(
     if tools:
         body["tools"] = tools
         body["tool_choice"] = tool_choice
-    _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty, repetition_penalty)
+    _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty,
+                    repetition_penalty, openai_strict=not is_openrouter(base_url))
 
     content_parts: list[str] = []
     tool_acc: dict[int, dict] = {}
@@ -280,7 +334,7 @@ async def chat_completion_agent_turn(
     for attempt in range(_MAX_ATTEMPTS):
         async with client.stream(
             "POST",
-            f"{OPENROUTER_BASE}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

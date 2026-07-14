@@ -15,7 +15,7 @@ key — write-only, never returned to the client.
 
 import logging
 
-from server.ai.openrouter import chat_completion_text
+from server.ai.openrouter import OPENROUTER_BASE, chat_completion_text, provider_endpoint
 from server.db.models import OpenRouterSettings
 
 log = logging.getLogger("wayward.vision")
@@ -33,12 +33,14 @@ VISION_DEFAULT_INSTRUCTIONS = (
 
 
 def vision_key(settings: OpenRouterSettings) -> str:
-    """The OpenRouter key the vision agent should use (own key when configured)."""
+    """The key the vision agent should use (own key when configured, else the
+    active provider's key)."""
     if not getattr(settings, "vision_use_same_key", True):
         own = getattr(settings, "vision_api_key", "") or ""
         if own:
             return own
-    return settings.api_key
+    _base_url, api_key, _model = provider_endpoint(settings)
+    return api_key
 
 
 async def describe_image(settings: OpenRouterSettings, image_data_url: str, player_text: str = "") -> str | None:
@@ -53,10 +55,18 @@ async def describe_image(settings: OpenRouterSettings, image_data_url: str, play
         })
     user_parts.append({"type": "image_url", "image_url": {"url": image_data_url}})
     instructions = (getattr(settings, "vision_instructions", "") or "").strip() or VISION_DEFAULT_INSTRUCTIONS
+    # When the vision agent uses its own key it targets OpenRouter (the own-key
+    # feature exists for a free-tier OpenRouter key); otherwise it follows the
+    # active provider so the vision model is fetched from the same endpoint.
+    if not getattr(settings, "vision_use_same_key", True) and (getattr(settings, "vision_api_key", "") or ""):
+        base_url = OPENROUTER_BASE
+    else:
+        base_url, _api_key, _model = provider_endpoint(settings)
     try:
         text = await chat_completion_text(
             api_key=vision_key(settings),
             model_id=model,
+            base_url=base_url,
             messages=[
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": user_parts},

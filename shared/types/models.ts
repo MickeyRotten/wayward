@@ -107,8 +107,19 @@ export interface NarratorConfig {
   instructions: string
 }
 
+export type LlmProvider = 'openrouter' | 'nvidia_nim' | 'custom'
+
 export interface OpenRouterSettings {
+  // Active LLM provider. OpenRouter and NVIDIA NIM (+ any custom
+  // OpenAI-compatible endpoint) each keep their own key/model. The keys
+  // themselves are write-only; the response mirrors them as *ApiKeySet booleans.
+  provider: LlmProvider
   modelId: string
+  // NVIDIA NIM (integrate.api.nvidia.com).
+  nimModelId: string
+  // Custom OpenAI-compatible endpoint.
+  customBaseUrl: string
+  customModelId: string
   temperature: number
   topP: number
   minP: number

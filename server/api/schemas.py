@@ -447,8 +447,10 @@ class LorebookConfigSchema(BaseModel):
         "world": "top", "characters": "top", "items": "top",
         "monsters": "top", "spells": "top",
     }
+    scanDepth: int = 3
 
 
 class LorebookConfigUpdate(BaseModel):
     injectionOrder: dict[str, int] | None = None
     injectionPosition: dict[str, str] | None = None
+    scanDepth: int | None = None

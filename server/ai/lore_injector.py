@@ -9,20 +9,28 @@ from server.db.models import LorebookConfig, LorebookEntry
 
 
 def match_entries(
-    player_message: str,
+    scan_text: str,
     entries: list[LorebookEntry],
 ) -> list[LorebookEntry]:
-    """Return all entries that match: permanent=True OR any keyword appears
-    in the player message (case-insensitive). Disabled entries are skipped."""
+    """Return all entries that match: permanent=True OR any keyword — or the
+    entry's own title, an implicit keyword — appears in ``scan_text``
+    (case-insensitive). Disabled entries are skipped.
+
+    ``scan_text`` is the text window being scanned: the new player message plus
+    the last few turns of history (see build_prompt / LorebookConfig.scan_depth),
+    so lore the narrator introduced still injects when the player replies with
+    "tell me more about it"."""
     matched: list[LorebookEntry] = []
-    msg_lower = player_message.lower()
+    msg_lower = scan_text.lower()
     for entry in entries:
         if not entry.enabled:
             continue
         if entry.permanent:
             matched.append(entry)
             continue
-        for kw in (entry.keywords or []):
+        title = (entry.title or "").strip().lower()
+        candidates = [*(entry.keywords or []), *( [title] if title else [] )]
+        for kw in candidates:
             if kw.lower() in msg_lower:
                 matched.append(entry)
                 break

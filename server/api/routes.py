@@ -1514,6 +1514,7 @@ async def get_lore_config(session: AsyncSession = Depends(get_session)):
     return LorebookConfigSchema(
         injectionOrder=cfg.injection_order,
         injectionPosition=cfg.injection_position,
+        scanDepth=int(getattr(cfg, "scan_depth", 3) or 0),
     )
 
 
@@ -1530,11 +1531,14 @@ async def update_lore_config(
         cfg.injection_order = data.injectionOrder
     if data.injectionPosition is not None:
         cfg.injection_position = data.injectionPosition
+    if data.scanDepth is not None:
+        cfg.scan_depth = max(0, min(int(data.scanDepth), 20))
     await session.commit()
     await session.refresh(cfg)
     return LorebookConfigSchema(
         injectionOrder=cfg.injection_order,
         injectionPosition=cfg.injection_position,
+        scanDepth=int(getattr(cfg, "scan_depth", 3) or 0),
     )
 
 
@@ -2374,13 +2378,13 @@ async def _maybe_summarize_and_build(
     lore_entries: list[LorebookEntry] | None = None,
     lore_config: LorebookConfig | None = None,
 ):
-    """Check if summarization is needed, do it, then build the prompt.
-    Returns (prompt_messages, did_summarize, spotlight_signals, summarize_hint).
+    """Build the turn's prompt and measure it against the summary threshold.
+    Returns (prompt_messages, needs_summary, spotlight_signals).
 
-    In agentic mode the deterministic second summarization call is skipped (the
-    model owns summarization via the update_summary tool); instead we return a
-    ``summarize_hint`` flag when context is getting long. The legacy path keeps
-    threshold-triggered auto-summary as before."""
+    Summarisation itself no longer happens here — when the prompt is over the
+    threshold, ``needs_summary`` tells the stream driver to schedule a
+    background compression AFTER the narration is delivered
+    (_summarize_in_background), so the player never waits on the summariser."""
 
     # Filter history to only unsummarized turns
     filtered = [m for m in history if m.turn_number > summary.summary_up_to_turn]
@@ -2418,7 +2422,8 @@ async def _maybe_summarize_and_build(
         )
         spotlight_block = f"{spotlight_block}\n\n{note}" if spotlight_block else note
 
-    # Build a test prompt to check size
+    # Build the turn's prompt (build_prompt trims oldest history to the budget,
+    # so this always fits) and measure it against the summary threshold.
     test_prompt = build_prompt(
         narrator_config=narrator,
         player_character=pc,
@@ -2437,50 +2442,76 @@ async def _maybe_summarize_and_build(
     )
 
     preamble_tokens = estimate_prompt_tokens(test_prompt)
-    did_summarize = False
-    summarize_hint = False  # kept for signature; deterministic summarisation below
-    over_threshold = should_summarize(
+    # Over-threshold no longer summarises IN the turn (that stalled the player
+    # behind a whole extra LLM call on exactly the slowest turns). The prompt
+    # above already fits — build_prompt trims oldest history to the budget — so
+    # we just flag it and the stream driver compresses in the background AFTER
+    # the narration is delivered (see _summarize_in_background).
+    needs_summary = should_summarize(
         preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response,
         threshold=getattr(settings, "summary_threshold", None) or 0.7,
     )
 
-    # Deterministic summarisation in BOTH modes (reliable — not dependent on the
-    # model choosing to call update_summary). Uses the optional summary model.
-    if over_threshold:
-        to_summarize, to_keep, new_boundary = pick_messages_to_summarize(filtered)
-        if to_summarize:
-            sum_base_url, sum_api_key, sum_main_model = provider_endpoint(settings)
-            new_summary = await generate_summary(
-                api_key=sum_api_key,
-                model_id=(getattr(settings, "summary_model_id", "") or sum_main_model),
-                messages_to_summarize=to_summarize,
-                existing_summary=summary.content,
-                base_url=sum_base_url,
-            )
-            summary.content = new_summary
-            summary.summary_up_to_turn = new_boundary
-            await session.commit()
-            filtered = to_keep
-            did_summarize = True
+    return test_prompt, needs_summary, spotlight_signals
 
-    messages = build_prompt(
-        narrator_config=narrator,
-        player_character=pc,
-        party_members=party_list,
-        chat_history=filtered,
-        player_message=player_message,
-        spotlight_block=spotlight_block,
-        story_summary=summary.content or None,
-        item_catalog=item_catalog,
-        tasks=tasks,
-        lore_entries=lore_entries,
-        lore_config=lore_config,
-        max_context_tokens=settings.max_context_tokens,
-        max_response_tokens=settings.max_tokens_response,
-        include_action_protocol=not agentic,
-    )
 
-    return messages, did_summarize, spotlight_signals, summarize_hint
+_bg_summary_lock = asyncio.Lock()
+
+
+def _schedule_background_summary() -> None:
+    """Fire-and-forget the post-turn history compression."""
+    asyncio.create_task(_summarize_in_background())
+
+
+async def _summarize_in_background() -> None:
+    """Compress the oldest unsummarised turns into the running Story So Far,
+    OUTSIDE the player's turn (the summariser LLM call used to run before
+    narration started, stalling long adventures). Runs after the narration is
+    saved; own session; re-checks the threshold itself; errors only logged.
+    The lock keeps concurrent turns from double-summarising the same span."""
+    if _bg_summary_lock.locked():
+        return  # a pass is already running; the next turn re-checks anyway
+    async with _bg_summary_lock:
+        try:
+            async with new_session() as session:
+                settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+                if not settings:
+                    return
+                base_url, api_key, main_model = provider_endpoint(settings)
+                if not api_key or not main_model:
+                    return
+                summary = (await session.execute(select(StorySummary))).scalars().first()
+                if not summary:
+                    summary = StorySummary(content="", summary_up_to_turn=0)
+                    session.add(summary)
+                recent = (await session.execute(
+                    select(ChatMessage)
+                    .where(func.coalesce(ChatMessage.mode, "narrator") != "planner")
+                    .order_by(ChatMessage.id.desc())
+                    .limit(_HISTORY_WINDOW)
+                )).scalars().all()
+                filtered = [m for m in reversed(recent) if m.turn_number > summary.summary_up_to_turn]
+
+                # No threshold re-check here: the in-turn scheduler already
+                # measured the FULL prompt over the threshold. Re-measuring with
+                # a different (history-only) metric could decline forever while
+                # trimming silently drops unsummarised turns.
+                to_summarize, _to_keep, new_boundary = pick_messages_to_summarize(filtered)
+                if not to_summarize:
+                    return
+                new_summary = await generate_summary(
+                    api_key=api_key,
+                    model_id=(getattr(settings, "summary_model_id", "") or main_model),
+                    messages_to_summarize=to_summarize,
+                    existing_summary=summary.content,
+                    base_url=base_url,
+                )
+                summary.content = new_summary
+                summary.summary_up_to_turn = new_boundary
+                await session.commit()
+                log.info("BACKGROUND SUMMARY compressed history up to turn %s", new_boundary)
+        except Exception:
+            log.exception("Background summarisation failed (will retry on a later turn)")
 
 
 @router.post("/chat/turn")
@@ -2522,7 +2553,7 @@ async def chat_turn(
     player_deltas = [] if agentic else await _detect_player_deltas(data.message, session)
     await session.commit()
 
-    messages, did_summarize, spotlight_signals, summarize_hint = await _maybe_summarize_and_build(
+    messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
         history=all_messages,
         summary=summary,
@@ -2548,7 +2579,7 @@ async def chat_turn(
             current_turn=current_turn,
             variant=variant_count,
             spotlight_signals=spotlight_signals,
-            summarize_hint=summarize_hint,
+            schedule_summary=needs_summary,
             user_message_id=user_msg.id,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
             inline_option_rules=_inline_option_rules(narrator),
@@ -2560,7 +2591,7 @@ async def chat_turn(
         party_list=party,
         current_turn=current_turn,
         variant=variant_count,
-        did_summarize=did_summarize,
+        schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
         user_message_id=user_msg.id,
@@ -2616,7 +2647,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     # mode re-derives item use through the consume_item tool during the loop.
     player_deltas = [] if agentic else await _detect_player_deltas(user_msg.content, session)
 
-    messages, did_summarize, spotlight_signals, summarize_hint = await _maybe_summarize_and_build(
+    messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
         history=history,
         summary=summary,
@@ -2644,7 +2675,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
             current_turn=turn,
             variant=variant_count,
             spotlight_signals=spotlight_signals,
-            summarize_hint=summarize_hint,
+            schedule_summary=needs_summary,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
             inline_option_rules=_inline_option_rules(narrator),
         )
@@ -2655,7 +2686,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         party_list=party,
         current_turn=turn,
         variant=variant_count,
-        did_summarize=did_summarize,
+        schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
         inline_option_rules=_inline_option_rules(narrator),
@@ -2713,7 +2744,7 @@ async def regenerate(
 
     history = [m for m in all_messages if m.turn_number < last_turn]
 
-    messages, did_summarize, spotlight_signals, summarize_hint = await _maybe_summarize_and_build(
+    messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
         history=history,
         summary=summary,
@@ -2754,7 +2785,7 @@ async def regenerate(
             current_turn=last_turn,
             variant=0,
             spotlight_signals=spotlight_signals,
-            summarize_hint=summarize_hint,
+            schedule_summary=needs_summary,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
             inline_option_rules=_inline_option_rules(narrator),
         )
@@ -2766,7 +2797,7 @@ async def regenerate(
         party_list=party,
         current_turn=last_turn,
         variant=0,
-        did_summarize=did_summarize,
+        schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
         inline_option_rules=_inline_option_rules(narrator),
@@ -3046,7 +3077,7 @@ def _stream_llm_response(
     party_list: list,
     current_turn: int,
     variant: int,
-    did_summarize: bool = False,
+    schedule_summary: bool = False,
     spotlight_signals: list[SpotlightSignal] | None = None,
     player_deltas: list[dict] | None = None,
     user_message_id: int | None = None,
@@ -3087,9 +3118,6 @@ def _stream_llm_response(
 
     async def stream():
         await _save_prompt_log(messages)
-        if did_summarize:
-            yield f"data: {json.dumps({'type': 'summarized'})}\n\n"
-
         yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
 
         def _make_stream():
@@ -3248,6 +3276,10 @@ def _stream_llm_response(
             done_payload['suggestions'] = inline_suggestions
         yield f"data: {json.dumps(done_payload)}\n\n"
 
+        # Post-turn: compress history in the background (never blocks the player).
+        if schedule_summary and saved_message is not None:
+            _schedule_background_summary()
+
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
@@ -3260,7 +3292,7 @@ def _stream_agent_response(
     current_turn: int,
     variant: int,
     spotlight_signals: list[SpotlightSignal] | None = None,
-    summarize_hint: bool = False,
+    schedule_summary: bool = False,
     user_message_id: int | None = None,
     dice_enabled: bool = True,
     inline_option_rules: list[str] | None = None,
@@ -3306,7 +3338,6 @@ def _stream_agent_response(
                 settings=settings,
                 base_messages=messages,
                 current_turn=current_turn,
-                summarize_hint=summarize_hint,
                 dice_enabled=dice_enabled,
             ):
                 etype = ev["type"]
@@ -3402,5 +3433,9 @@ def _stream_agent_response(
         if inline_suggestions:
             done_payload['suggestions'] = inline_suggestions
         yield f"data: {json.dumps(done_payload)}\n\n"
+
+        # Post-turn: compress history in the background (never blocks the player).
+        if schedule_summary and saved_message is not None:
+            _schedule_background_summary()
 
     return StreamingResponse(stream(), media_type="text/event-stream")

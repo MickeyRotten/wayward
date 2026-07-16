@@ -180,7 +180,7 @@ The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](
 3. `max_tool_rounds` (default 6, configurable) caps the loop; the final round drops `tools` to force narration.
 
 **Tools** (handlers in [`server/ai/narrator_actions.py`](server/ai/narrator_actions.py)):
-- *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`, `update_summary` (replaces threshold summarization — the model compresses history when nudged by a context hint).
+- *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`. (History summarisation is deterministic and server-side: when the prompt crosses the threshold, compression runs as a **post-turn background pass** — `_summarize_in_background` in routes.py — never blocking the player's turn.)
 - *Read:* `lookup_item`, `search_items`, `list_inventory`, `get_character` — let the model validate before acting (e.g. confirm an item exists and its slot before `equip`).
 - *Dice:* `skill_check(characterName, skill, difficulty)` — offered only when `NarratorConfig.dice_enabled` (schema + `DICE_GUIDANCE` appended conditionally in `run_narrator_agent`). **The server rolls the d20** (DC map easy 8 / normal 12 / hard 16 / heroic 19, nat 1/20 = crits) and returns roll/DC/outcome, so the model narrates a result it was *given* and can't fudge. Each roll writes a **tethered `ChatEvent` (`kind='dice'`)** rendered as a gold/red dice chip in chat; being tethered, it vanishes with the turn on swipe/regenerate/delete and the retelling re-rolls fresh. Agentic path only (no legacy `<<<ACTIONS>>>` equivalent).
 
@@ -320,8 +320,10 @@ One isolated function — [`build_prompt`](server/ai/prompt_builder.py) — asse
 5. Active tasks
 6. Story summary (auto-compressed older history)
 7. PARTY SPOTLIGHT block (computed signals — see below)
-8. Lorebook entries matched by keyword (injected at top / before-input / bottom
-   positions per LorebookConfig)
+8. Lorebook entries matched by keyword — matching scans the new player message
+   plus the last `LorebookConfig.scan_depth` turns of history (default 3), and
+   entry titles count as implicit keywords (injected at top / before-input /
+   bottom positions per LorebookConfig)
 9. Recent chat history (trimmed to the context budget; the editable First Message
    is prepended as the opening assistant turn). Planner-thread messages are
    excluded.

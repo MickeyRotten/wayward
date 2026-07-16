@@ -1319,6 +1319,19 @@ function LorebookInjectionConfig() {
           />
         ))}
       </div>
+      <label className="flex items-center gap-2 pt-1">
+        <span className="font-body text-sm text-text">Keyword scan depth</span>
+        <input
+          type="number"
+          min={0}
+          max={20}
+          title="How many recent turns (besides the new message) are scanned for lore keywords"
+          className="w-[64px] border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+          value={config.scanDepth ?? 3}
+          onChange={(e) => saveConfig({ scanDepth: Math.max(0, Math.min(Number(e.target.value) || 0, 20)) })}
+        />
+        <span className="text-[10px] text-textdim font-body">recent turns scanned for keywords (0 = newest message only)</span>
+      </label>
     </div>
   )
 }

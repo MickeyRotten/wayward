@@ -907,3 +907,11 @@ Fixed: in the agentic narrator loop (`run_narrator_agent`), the per-round preamb
 [ ] R14 (maintainability, low): Split the two megafiles. routes.py is 3,343 lines and ChatScene.tsx 2,254 — every change pays a navigation tax and merge risk. Split routes.py into domain routers (chat, campaigns/adventures, characters/party, items/inventory, lore/scenario, settings, tts) under server/api/, and carve ChatScene.tsx into Scene/ subcomponents (banner, action panel, message list, composer, indicators). Pure refactor, no behavior change.
 
 ---
+[ ] R15 (UX, mobile): Edit/Play mode toggle always accessible. On the APK the only mode toggle is the Play button in the chat banner, and the mobile shell shows one view at a time — so from Home/Items/Lore, or with the entry you want to edit already open in the Inspector slide-over, you have to navigate back to the Chat tab, toggle, then navigate back again.
+
+  Research notes: `planningMode` lives in chatStore (localStorage-persisted) and everything already reacts to it globally (Inspector editability, the +New buttons, the indigo edit-theme body class), and `setPlanningMode` is a pure client-side flip (no server call; selection is preserved across mode flips) — so the toggle can safely be rendered anywhere; this is purely a UI-placement task. Suggested placement, in order of value:
+  - Make the Inspector header's read-only EDITING/VIEW badge (PartyInspector.tsx — its tooltip literally says "Toggle Edit Mode in chat to edit") a tappable toggle that flips the mode in place. Solves the exact "already in the entry" frustration, on desktop and mobile alike.
+  - Mobile: add the Play/Edit toggle to the bottom nav area (MobileNav) or the slide-over/panel headers so it's reachable from every view, not just Chat. Mind the bar width — 5 slots today; the More sheet or the slide-over header row are the cheap spots.
+  - Keep the chat-banner Play button as-is (desktop primary).
+
+---

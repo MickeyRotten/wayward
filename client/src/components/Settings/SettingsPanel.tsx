@@ -795,7 +795,7 @@ export function SettingsPanel() {
           <span className="block text-[10px] text-textdim font-body">
             The Narrator (narration + NPC lines) and each party member speak with their own
             voice, cloned from a ~10&#8202;s speech sample. Without a sample, everyone shares the
-            default voice. Upload character samples on their sheets (Home tab). Synthesis runs
+            default voice. Upload character samples on their sheets (Party tab). Synthesis runs
             on this machine — it is slow without a GPU.
           </span>
 

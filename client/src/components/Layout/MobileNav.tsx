@@ -4,6 +4,7 @@ import { TABS } from '../IconRail/IconRail'
 import { useUiStore } from '../../state/uiStore'
 import type { MobileView, TabId } from '../../state/uiStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
+import { useChatStore } from '../../state/chatStore'
 
 // Primary slots on the bar; everything else lives in the More sheet.
 const BAR_TABS: TabId[] = ['home', 'items', 'lore']
@@ -67,6 +68,8 @@ export function MobileNav() {
   const setActiveTab = useUiStore((s) => s.setActiveTab)
   const select = useUiStore((s) => s.select)
   const pendingCount = useWorldbuildStore((s) => s.pendingCount)
+  const planningMode = useChatStore((s) => s.planningMode)
+  const setPlanningMode = useChatStore((s) => s.setPlanningMode)
   const [moreOpen, setMoreOpen] = useState(false)
 
   const go = (view: MobileView) => {
@@ -113,6 +116,25 @@ export function MobileNav() {
                 </button>
               )
             })}
+            {/* Edit/Play mode toggle — reachable from every view, not just Chat
+                (the chat banner's Play button stays the desktop primary). */}
+            <button
+              type="button"
+              className={`flex w-full items-center gap-3 px-5 min-h-[48px] border-t border-line transition-colors ${
+                planningMode ? 'text-gold' : 'text-textsec'
+              }`}
+              onClick={() => { setPlanningMode(!planningMode); setMoreOpen(false) }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              </svg>
+              <span className="font-ui text-[11px] tracking-wider">EDIT MODE</span>
+              <span className={`ml-auto font-ui text-[9px] tracking-wider px-2 py-0.5 border ${
+                planningMode ? 'text-gold border-gold/40' : 'text-textdim border-line'
+              }`}>
+                {planningMode ? 'ON' : 'OFF'}
+              </span>
+            </button>
           </div>
         </>
       )}

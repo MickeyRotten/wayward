@@ -130,6 +130,8 @@ def build_prompt(
                 lines.append(f"    Likes: {info['likes']}")
             if info.get('dislikes'):
                 lines.append(f"    Dislikes: {info['dislikes']}")
+            if info.get('other'):
+                lines.append(f"    Other: {info['other']}")
             lines.append(f"    Field Skill: {skill.get('name', 'None')} — {skill.get('description', '')}")
             lines.append(f"    Carrying: {equip_pm_str}")
             roster_lines.append("\n".join(lines))

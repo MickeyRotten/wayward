@@ -58,6 +58,8 @@ export interface BasicInfo {
   personality?: string
   /** What pushes the character forward — goal, want, or need. */
   drive?: string
+  /** Anything that doesn't fit the structured fields — quirks, history, relationships. */
+  other?: string
 }
 
 export interface FieldSkill {

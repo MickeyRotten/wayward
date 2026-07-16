@@ -8,7 +8,8 @@ export interface Backdrop {
   url: string
 }
 
-// The available set is static server art — fetch once per app load.
+// The available set is server art — fetch once per app load, invalidated when
+// the Config backdrop manager uploads/deletes.
 let cached: Promise<Backdrop[]> | null = null
 export function fetchBackdrops(): Promise<Backdrop[]> {
   if (!cached) {
@@ -18,6 +19,11 @@ export function fetchBackdrops(): Promise<Backdrop[]> {
     })
   }
   return cached
+}
+
+/** Drop the cached list so the next fetch re-reads the server (after upload/delete). */
+export function invalidateBackdrops(): void {
+  cached = null
 }
 
 // Narrator time-of-day values → the day/night vocabulary used in backdrop

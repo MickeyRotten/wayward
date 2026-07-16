@@ -173,6 +173,12 @@ async def init_db() -> None:
             st.active_adventure_id = adventure_id
             await s.commit()
 
+    # Safety net: snapshot the existing campaign BEFORE migrations touch it
+    # (fresh/legacy creations have nothing to lose yet). Throttled + rotated;
+    # never raises. See storage.snapshot_campaign.
+    if valid:
+        storage.snapshot_campaign(campaign_id)
+
     await switch_active(
         storage.campaign_db_path(campaign_id),
         storage.adventure_db_path(campaign_id, adventure_id),

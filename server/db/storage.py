@@ -13,9 +13,14 @@ relational data (attached at runtime — see database.py).
 """
 
 import datetime
+import io
 import json
 import logging
+import re
+import sqlite3
+import time
 import uuid
+import zipfile
 from pathlib import Path
 
 from sqlalchemy import text
@@ -57,6 +62,110 @@ def narrator_voice_path(cid: str) -> Path | None:
         if p.is_file():
             return p
     return None
+
+
+# ── Automatic backups ─────────────────────────────────────────────
+#
+# The SQLite files under DATA_DIR ARE the user's worlds and saves; one bad
+# migration or corruption loses a campaign. snapshot_campaign() writes a
+# self-contained campaign zip (the same format as the manual EXPORT, so a
+# backup restores through the battle-tested import path — always as a NEW
+# campaign, never overwriting live data) into DATA_DIR/backups/, throttled
+# per campaign and rotated to the newest BACKUP_KEEP.
+
+BACKUP_KEEP = 10
+BACKUP_MIN_INTERVAL_S = 6 * 3600  # at most one snapshot per campaign per 6h
+
+
+def backups_dir() -> Path:
+    return db.DATA_DIR / "backups"
+
+
+def adventure_character_ids(db_path: Path) -> set[str]:
+    """Character ids referenced by an adventure's party bindings (their identity
+    files carry the portraits, bundled into exports/backups separately)."""
+    ids: set[str] = set()
+    if not db_path.exists():
+        return ids
+    con = sqlite3.connect(str(db_path))
+    try:
+        try:
+            for (cid,) in con.execute("SELECT character_id FROM party_bindings"):
+                if cid:
+                    ids.add(cid)
+        except sqlite3.OperationalError:
+            pass
+    finally:
+        con.close()
+    return ids
+
+
+def build_campaign_zip(cid: str, adventure_ids: set[str] | None = None) -> io.BytesIO:
+    """Bundle a campaign into a self-contained zip (campaign.json + campaign.db,
+    narrator voice, each adventure's json + db, and every referenced character
+    folder). Shared by the manual EXPORT endpoint and automatic backups."""
+    from server.db import characters as char_files  # late import (import cycle)
+
+    meta = read_campaign_meta(cid) or {"id": cid, "name": "Campaign"}
+    all_advs = list_adventures(cid)
+    advs = [a for a in all_advs if adventure_ids is None or a["id"] in adventure_ids]
+
+    char_ids: set[str] = set()
+    for a in advs:
+        char_ids |= adventure_character_ids(adventure_db_path(cid, a["id"]))
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("campaign.json", json.dumps(meta, ensure_ascii=False))
+        z.write(campaign_db_path(cid), "campaign.db")
+        nv = narrator_voice_path(cid)
+        if nv:
+            z.write(nv, nv.name)
+        for a in advs:
+            base = f"adventures/{a['id']}"
+            z.writestr(f"{base}/adventure.json", json.dumps(a, ensure_ascii=False))
+            z.write(adventure_db_path(cid, a["id"]), f"{base}/adventure.db")
+        for ch_id in char_ids:
+            ch_dir = char_files.char_dir(ch_id)
+            if ch_dir.exists():
+                for p in ch_dir.iterdir():
+                    if p.is_file():
+                        z.write(p, f"characters/{ch_id}/{p.name}")
+    buf.seek(0)
+    return buf
+
+
+def snapshot_campaign(cid: str) -> Path | None:
+    """Write a rotating safety backup of a campaign (see module note above).
+    Never raises — a failed backup must not block boot or a campaign switch.
+    Returns the written path, or None when skipped/failed."""
+    try:
+        if not campaign_db_path(cid).exists():
+            return None
+        d = backups_dir()
+        d.mkdir(parents=True, exist_ok=True)
+
+        # Throttle: skip if this campaign already has a recent snapshot.
+        prefix = cid[:8]
+        mine = sorted(d.glob(f"{prefix}-*.zip"), key=lambda p: p.stat().st_mtime)
+        if mine and (time.time() - mine[-1].stat().st_mtime) < BACKUP_MIN_INTERVAL_S:
+            return None
+
+        meta = read_campaign_meta(cid) or {}
+        safe = re.sub(r"[^\w\-]+", "_", meta.get("name", "campaign")).strip("_") or "campaign"
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        path = d / f"{prefix}-{safe}-{stamp}.zip"
+        path.write_bytes(build_campaign_zip(cid).getvalue())
+
+        # Rotate: keep only the newest BACKUP_KEEP across all campaigns.
+        zips = sorted(d.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in zips[BACKUP_KEEP:]:
+            old.unlink(missing_ok=True)
+        log.info("Backup written: %s", path.name)
+        return path
+    except Exception:
+        log.exception("Automatic backup failed for campaign %s", cid)
+        return None
 
 
 def set_narrator_voice(cid: str, data: bytes, ext: str) -> None:

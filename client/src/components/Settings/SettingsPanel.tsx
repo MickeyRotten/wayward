@@ -11,6 +11,7 @@ import { useCampaignsStore } from '../../state/campaignsStore'
 import { useAppearanceStore, CHAT_FONT_SIZES, DEFAULT_CHAT_BG_OPACITY } from '../../state/appearanceStore'
 import { useTtsStore } from '../../state/ttsStore'
 import { api } from '../../lib/api'
+import { fetchBackdrops, invalidateBackdrops, type Backdrop } from '../../lib/backdrops'
 import { deleteNarratorVoice, uploadNarratorVoice } from '../../lib/voice'
 import type { LlmProvider, LoreCategory, LorebookConfig, OpenRouterModel, OpenRouterSettings } from '@shared/types/models'
 
@@ -1009,6 +1010,92 @@ function AppearanceSection() {
           </span>
         </span>
       </label>
+
+      <BackdropManager />
+    </div>
+  )
+}
+
+/** Manage the scene backdrop art (server/backdrops): thumbnail grid + upload +
+ *  delete. Filename words are matched to the declared location/time, so the
+ *  hint teaches the naming scheme. */
+function BackdropManager() {
+  const [backdrops, setBackdrops] = useState<Backdrop[]>([])
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const refresh = async () => {
+    invalidateBackdrops()
+    setBackdrops(await fetchBackdrops())
+  }
+  useEffect(() => { void refresh() }, [])
+
+  const upload = async (f: File) => {
+    setBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', f)
+      await fetch('/api/backdrops/upload', { method: 'POST', body: fd })
+      await refresh()
+    } finally {
+      setBusy(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const remove = async (file: string) => {
+    setBusy(true)
+    try {
+      await api.del(`/backdrops/${encodeURIComponent(file)}`)
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="pt-1 space-y-2">
+      <span className="block font-ui text-[10px] tracking-wider text-textsec uppercase">Backdrops</span>
+      <span className="block text-[10px] text-textdim font-body">
+        Scene art shown behind the chat. Name files after their scene — e.g.{' '}
+        <span className="text-textsec">city_day.png</span>, <span className="text-textsec">forest_night.png</span> —
+        the location words + day/night are matched to the narrator's declared scene automatically.
+      </span>
+      {backdrops.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {backdrops.map((b) => (
+            <div key={b.file} className="relative border border-line rounded overflow-hidden group">
+              <img src={b.url} alt={b.file} className="w-full h-16 object-cover" loading="lazy" />
+              <span className="block px-1.5 py-0.5 font-ui text-[8px] tracking-wider text-textdim truncate">{b.file}</span>
+              <button
+                type="button"
+                title={`Delete ${b.file}`}
+                className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded bg-bg0/80 text-textdim hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                disabled={busy}
+                onClick={() => void remove(b.file)}
+              >&times;</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {backdrops.length === 0 && (
+        <span className="block text-[10px] text-textdim font-body italic">No backdrops yet — the chat shows the plain dark background.</span>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f) }}
+      />
+      <button
+        type="button"
+        disabled={busy}
+        className="font-ui text-[9px] tracking-wider text-textsec border border-line px-3 py-1 hover:text-gold hover:border-line2 transition-colors disabled:opacity-40"
+        onClick={() => fileRef.current?.click()}
+      >
+        + ADD BACKDROP
+      </button>
     </div>
   )
 }

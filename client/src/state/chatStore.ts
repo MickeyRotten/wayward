@@ -89,6 +89,7 @@ interface ChatState {
   fetchHistory: () => Promise<void>
   fetchEvents: () => Promise<void>
   sendTurn: (message: string, image?: string | null) => Promise<void>
+  continueNarration: () => Promise<void>
   regenerate: (guidance?: string) => Promise<void>
   retryLastTurn: () => Promise<void>
   swipe: (turn: number) => Promise<void>
@@ -180,6 +181,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _lastSent = message
     await _handleStream('/api/chat/turn', { message, mode, ...(image ? { image } : {}) }, { appendOnDone: !planning })
+  },
+
+  // A true Continue: extends the latest narration in place (no new turn). When
+  // there's no narration yet to extend, falls back to the old "I wait" turn.
+  continueNarration: async () => {
+    const hasNarration = get().messages.some(
+      (m) => m.role === 'assistant' && (m.mode ?? 'narrator') === 'narrator',
+    )
+    if (!hasNarration) {
+      await get().sendTurn('I wait and let the scene unfold.')
+      return
+    }
+    set({ isLoading: true, error: null, streamingContent: '', thinkingStartedAt: Date.now() })
+    await _handleStream('/api/chat/continue', {})
   },
 
   regenerate: async (guidance) => {

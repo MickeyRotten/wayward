@@ -34,6 +34,7 @@ export function ChatScene() {
   const clearToolFailures = useChatStore((s) => s.clearToolFailures)
   const error = useChatStore((s) => s.error)
   const sendTurn = useChatStore((s) => s.sendTurn)
+  const continueNarration = useChatStore((s) => s.continueNarration)
   const regenerate = useChatStore((s) => s.regenerate)
   const retryLastTurn = useChatStore((s) => s.retryLastTurn)
   const swipe = useChatStore((s) => s.swipe)
@@ -792,10 +793,12 @@ export function ChatScene() {
               OR DO SOMETHING ELSE:
             </span>
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              {/* True Continue: extends the latest narration in place (no new
+                  turn) — also the rescue for a beat clipped by max tokens. */}
               <QuickActionButton
                 label="Continue"
                 disabled={inputLocked || !apiKeySet}
-                onClick={() => sendTurn('I wait and let the scene unfold.')}
+                onClick={() => void continueNarration()}
               />
               <QuickActionButton
                 label="Look Around"

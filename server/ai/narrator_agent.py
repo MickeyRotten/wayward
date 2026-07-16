@@ -339,11 +339,13 @@ async def run_narrator_agent(
                     repetition_penalty=settings.repetition_penalty,
                 )
 
+            streamed = False  # did this round stream any content (preamble) live?
             async for ev in agent_turn_with_retry(
                 _make_call, getattr(settings, "auto_retry_count", 0) or 0,
                 log_ctx=f" narrator turn={current_turn} round={round_idx}",
             ):
                 if ev["type"] == "content":
+                    streamed = True
                     yield {"type": "content", "text": ev["text"]}
                 elif ev["type"] == "result":
                     result = ev

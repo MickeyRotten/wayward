@@ -181,6 +181,16 @@ export function SaveLoadView() {
                     LOAD
                   </button>
                 )}
+                {isActive && (
+                  <button
+                    type="button"
+                    title="Download this adventure as a readable Markdown story"
+                    className="font-ui text-[9px] tracking-wider text-textsec border border-line px-3 py-1 hover:text-gold hover:border-line2 transition-colors"
+                    onClick={() => window.open('/api/adventure/story-export', '_blank')}
+                  >
+                    EXPORT STORY
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busy || adventures.length <= 1}

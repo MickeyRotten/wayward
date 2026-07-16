@@ -907,3 +907,17 @@ Fixed: in the agentic narrator loop (`run_narrator_agent`), the per-round preamb
 [ ] R14 (maintainability, low): Split the two megafiles. routes.py is 3,343 lines and ChatScene.tsx 2,254 — every change pays a navigation tax and merge risk. Split routes.py into domain routers (chat, campaigns/adventures, characters/party, items/inventory, lore/scenario, settings, tts) under server/api/, and carve ChatScene.tsx into Scene/ subcomponents (banner, action panel, message list, composer, indicators). Pure refactor, no behavior change.
 
 ---
+[ ] R15 (UX, mobile): Edit/Play mode toggle always accessible. On the APK the only mode toggle is the Play button in the chat banner, and the mobile shell shows one view at a time — so from Home/Items/Lore, or with the entry you want to edit already open in the Inspector slide-over, you have to navigate back to the Chat tab, toggle, then navigate back again.
+
+  Research notes: `planningMode` lives in chatStore (localStorage-persisted) and everything already reacts to it globally (Inspector editability, the +New buttons, the indigo edit-theme body class), and `setPlanningMode` is a pure client-side flip (no server call; selection is preserved across mode flips) — so the toggle can safely be rendered anywhere; this is purely a UI-placement task. Decided approach:
+  - Add an Edit Mode toggle entry to the mobile nav's More sheet (MobileNav), so the mode is reachable from every view, not just Chat.
+  - Make the Inspector header's read-only EDITING/VIEW badge (PartyInspector.tsx — its tooltip literally says "Toggle Edit Mode in chat to edit") a tappable toggle that flips the mode in place — desktop and mobile alike, and the open entry stays selected.
+  - Keep the chat-banner Play button as-is (desktop primary).
+
+---
+[ ] R16 (UX, small): Rename the "Home" tab to "Party" — rail tab label + icon tooltip and the mobile nav bar label (the view shows the PC + party roster, so the name should say so).
+
+---
+[ ] R17 (UX): Party Member sheet fields. Personality, Likes, and Dislikes are single-row `Field` inputs on the member sheet (PartyMemberEditor.tsx) — make them large multi-line text areas (the shared ExpandableTextarea, like Description/Field Skill). Also add an "Other" free-text field to basicInfo for anything that doesn't fit the structured fields. Wiring for `other`: extend the `_BASIC_KEYS` whitelist in server/db/characters.py (the drive field was silently dropped by it once already), surface it in the member sheet (view + edit), include it in the narrator's party roster block (prompt_builder.py), and expose it to the Editor's create_member/update_member tools.
+
+---

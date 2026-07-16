@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import shutil
-import sqlite3
 import uuid
 import zipfile
 from pathlib import Path
@@ -318,6 +317,9 @@ async def load_campaign_route(cid: str, session: AsyncSession = Depends(get_sess
         raise HTTPException(404, "Campaign not found")
     advs = storage.list_adventures(cid)
     await storage.refresh_active_adventure_meta()
+    # Safety net: snapshot the target campaign before its scope migrations run
+    # (throttled + rotated; never raises).
+    storage.snapshot_campaign(cid)
     if advs:
         aid = advs[-1]["id"]
         seed_pc = False
@@ -363,25 +365,6 @@ async def delete_campaign_route(cid: str, session: AsyncSession = Depends(get_se
     return {"deleted": cid, "switchedTo": switched_to}
 
 
-def _character_ids(db_path: Path) -> set[str]:
-    """Character ids referenced by an adventure's party bindings (their identity
-    files carry the portraits, bundled into the export separately)."""
-    ids: set[str] = set()
-    if not db_path.exists():
-        return ids
-    con = sqlite3.connect(str(db_path))
-    try:
-        try:
-            for (cid,) in con.execute("SELECT character_id FROM party_bindings"):
-                if cid:
-                    ids.add(cid)
-        except sqlite3.OperationalError:
-            pass
-    finally:
-        con.close()
-    return ids
-
-
 @router.get("/campaigns/{cid}/export")
 async def export_campaign(cid: str, adventures: str | None = None):
     """Export a campaign as a self-contained .zip (campaign + chosen adventures +
@@ -392,36 +375,8 @@ async def export_campaign(cid: str, adventures: str | None = None):
         raise HTTPException(404, "Campaign not found")
     await storage.refresh_active_adventure_meta()
     meta = storage.read_campaign_meta(cid) or {"id": cid, "name": "Campaign"}
-    all_advs = storage.list_adventures(cid)
-    if adventures is not None:
-        wanted = {a for a in adventures.split(",") if a}
-        advs = [a for a in all_advs if a["id"] in wanted]
-    else:
-        advs = all_advs
-
-    char_ids: set[str] = set()
-    for a in advs:
-        char_ids |= _character_ids(storage.adventure_db_path(cid, a["id"]))
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("campaign.json", json.dumps(meta, ensure_ascii=False))
-        z.write(storage.campaign_db_path(cid), "campaign.db")
-        nv = storage.narrator_voice_path(cid)
-        if nv:
-            z.write(nv, nv.name)
-        for a in advs:
-            base = f"adventures/{a['id']}"
-            z.writestr(f"{base}/adventure.json", json.dumps(a, ensure_ascii=False))
-            z.write(storage.adventure_db_path(cid, a["id"]), f"{base}/adventure.db")
-        # Bundle each referenced character's folder (identity json + portraits).
-        for ch_id in char_ids:
-            ch_dir = char_files.char_dir(ch_id)
-            if ch_dir.exists():
-                for p in ch_dir.iterdir():
-                    if p.is_file():
-                        z.write(p, f"characters/{ch_id}/{p.name}")
-    buf.seek(0)
+    wanted = {a for a in adventures.split(",") if a} if adventures is not None else None
+    buf = storage.build_campaign_zip(cid, wanted)
     safe = re.sub(r"[^\w\-]+", "_", meta.get("name", "campaign")).strip("_") or "campaign"
     return StreamingResponse(
         buf, media_type="application/zip",
@@ -435,6 +390,12 @@ async def import_campaign(file: UploadFile):
     portable as-is (scope is folder location, not a column); only folder ids +
     json id fields are regenerated. Portraits are restored to the global dir."""
     raw = await file.read()
+    return await _import_campaign_bytes(raw)
+
+
+async def _import_campaign_bytes(raw: bytes) -> dict:
+    """The campaign-zip import core, shared by the upload endpoint and backup
+    restore. Always creates a NEW campaign — never overwrites live data."""
     try:
         z = zipfile.ZipFile(io.BytesIO(raw))
     except zipfile.BadZipFile:
@@ -511,6 +472,38 @@ async def import_campaign(file: UploadFile):
                     dest.write_bytes(z.read(n))
 
     return {"id": new_cid, "name": name}
+
+
+# ── Automatic backups (see storage.snapshot_campaign) ─────────────
+
+@router.get("/backups")
+async def list_backups():
+    """Rotating automatic campaign snapshots, newest first."""
+    d = storage.backups_dir()
+    if not d.is_dir():
+        return []
+    return [
+        {
+            "file": p.name,
+            "size": p.stat().st_size,
+            "createdAt": datetime.datetime.fromtimestamp(
+                p.stat().st_mtime, datetime.timezone.utc
+            ).isoformat(),
+        }
+        for p in sorted(d.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    ]
+
+
+@router.post("/backups/{filename}/restore")
+async def restore_backup(filename: str):
+    """Restore a snapshot AS A NEW campaign (name-deduped, via the shared
+    import path) — live data is never overwritten."""
+    if Path(filename).name != filename or not filename.endswith(".zip"):
+        raise HTTPException(400, "Bad filename")
+    path = storage.backups_dir() / filename
+    if not path.is_file():
+        raise HTTPException(404, "No such backup")
+    return await _import_campaign_bytes(path.read_bytes())
 
 
 # ── Player Character ──────────────────────────────────────────────
@@ -679,6 +672,32 @@ async def get_backdrop(filename: str):
     if not path.is_file() or path.suffix.lower() not in _BACKDROP_EXTS:
         raise HTTPException(404, "No such backdrop")
     return FileResponse(str(path), headers=_MEDIA_CACHE)
+
+
+@router.post("/backdrops/upload")
+async def upload_backdrop(file: UploadFile):
+    """Add a backdrop image. The filename's words are what the scene matcher
+    scores against the declared location + time of day ("city_day.png" → city +
+    day), so the sanitized original name is kept."""
+    original = Path(file.filename or "").name
+    ext = Path(original).suffix.lower()
+    if ext not in _BACKDROP_EXTS:
+        raise HTTPException(400, "Backdrops must be .png, .jpg or .webp")
+    stem = re.sub(r"[^\w\-]+", "_", Path(original).stem).strip("_.") or "backdrop"
+    BACKDROPS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = BACKDROPS_DIR / f"{stem}{ext}"
+    dest.write_bytes(await file.read())
+    return {"file": dest.name, "url": f"/api/backdrops/{dest.name}"}
+
+
+@router.delete("/backdrops/{filename}", status_code=204)
+async def delete_backdrop(filename: str):
+    if Path(filename).name != filename:
+        raise HTTPException(400, "Bad filename")
+    path = BACKDROPS_DIR / filename
+    if not path.is_file() or path.suffix.lower() not in _BACKDROP_EXTS:
+        raise HTTPException(404, "No such backdrop")
+    path.unlink()
 
 
 @router.get("/characters/{cid}/portrait/{which}")
@@ -2802,6 +2821,140 @@ async def regenerate(
         player_deltas=player_deltas,
         inline_option_rules=_inline_option_rules(narrator),
     )
+
+
+# ── Continue (extend the latest narration in place) ───────────────
+
+_CONTINUE_NUDGE = (
+    "CONTINUE: Pick up the narration exactly where the previous passage stops — "
+    "same scene, same tense, mid-flow. Do NOT repeat or rephrase anything already "
+    "written, do not summarise, and do not open with a greeting or a scene reset. "
+    "Just write what comes next. Do not append an <<<OPTIONS>>> block."
+)
+
+# Characters that end a complete sentence/beat — used to pick the separator when
+# splicing the continuation onto the existing prose (a clipped beat continues
+# mid-sentence with a space; a complete one starts a new paragraph).
+_SENTENCE_END = tuple('.!?"”\'’*…_>)')
+
+
+@router.post("/chat/continue")
+async def continue_narration(session: AsyncSession = Depends(get_session)):
+    """A true Continue: EXTEND the latest narration message in place (no new
+    turn, no new player message) — also the rescue when a beat was clipped by
+    max_tokens_response. Prose-only: no tools, no action protocol, no inline
+    options; the appended text carries no reversible effects, so swipe/
+    regenerate/delete semantics for the turn are unchanged."""
+    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+
+    if not all_messages:
+        raise HTTPException(400, "Nothing to continue yet")
+    last_turn = max(m.turn_number for m in all_messages)
+    variants = [m for m in all_messages if m.turn_number == last_turn and m.role == "assistant"]
+    if not variants:
+        raise HTTPException(400, "No narration to continue")
+    target = max(variants, key=lambda m: m.variant)
+    last_user = next(
+        (m for m in reversed(all_messages) if m.turn_number == last_turn and m.role == "user"),
+        None,
+    )
+
+    history = [m for m in all_messages if m.turn_number < last_turn]
+    messages, _needs_summary, _signals = await _maybe_summarize_and_build(
+        settings, narrator, pc, party,
+        history=history,
+        summary=summary,
+        player_message=(last_user.content if last_user else "(continue the scene)"),
+        current_turn=last_turn,
+        session=session,
+        agentic=True,  # skips the legacy action protocol — continuation is prose-only
+        item_catalog=catalog,
+        tasks=tasks,
+        lore_entries=lore_entries,
+        lore_config=lore_config,
+    )
+    # The passage being extended goes last, then the continue instruction.
+    messages.append({"role": "assistant", "content": target.content})
+    messages.append({"role": "system", "content": _CONTINUE_NUDGE})
+
+    # Release the request session's transaction before streaming — the save at
+    # the end of the stream writes on its own session, and an open transaction
+    # here would hold the adventure DB lock against it (the turn route commits
+    # before streaming for the same reason).
+    await session.commit()
+
+    return _stream_continue_response(messages=messages, settings=settings, target_id=target.id)
+
+
+def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings, target_id: int):
+    context_tokens = estimate_prompt_tokens(messages)
+    max_context = settings.max_context_tokens
+    base_url, api_key, model_id = provider_endpoint(settings)
+    log.info("LLM CONTINUE REQUEST | model=%s | ~%s prompt tokens", model_id, context_tokens)
+
+    async def stream():
+        await _save_prompt_log(messages)
+        yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
+
+        def _make_stream():
+            return chat_completion_stream(
+                api_key=api_key,
+                model_id=model_id,
+                base_url=base_url,
+                messages=messages,
+                temperature=settings.temperature,
+                max_tokens=settings.max_tokens_response,
+                top_p=settings.top_p,
+                min_p=settings.min_p,
+                top_k=settings.top_k,
+                frequency_penalty=settings.frequency_penalty,
+                presence_penalty=settings.presence_penalty,
+                repetition_penalty=settings.repetition_penalty,
+            )
+
+        addition = ""
+        try:
+            async for ev in stream_with_retry(
+                _make_stream, getattr(settings, "auto_retry_count", 0) or 0,
+                log_ctx=" continue",
+            ):
+                if ev["type"] == "chunk":
+                    addition += ev["text"]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif ev["type"] == "discard":
+                    addition = ""
+                    yield f"data: {json.dumps({'type': 'discard'})}\n\n"
+                elif ev["type"] == "retry":
+                    yield f"data: {json.dumps({'type': 'retry', 'attempt': ev['attempt'], 'of': ev['of']})}\n\n"
+        except Exception as e:
+            log.exception("Continue stream failed")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            return
+
+        # Defensive: strip a stray inline-options block if the model added one.
+        addition, _ = parse_inline_options(addition.strip())
+        saved_message: dict | None = None
+        if addition:
+            try:
+                async with new_session() as save_session:
+                    msg = await save_session.get(ChatMessage, target_id)
+                    if msg is not None:
+                        existing = (msg.content or "").rstrip()
+                        sep = "\n\n" if existing.endswith(_SENTENCE_END) else " "
+                        msg.content = f"{existing}{sep}{addition}" if existing else addition
+                        await save_session.commit()
+                        await save_session.refresh(msg)
+                        saved_message = _msg_response(msg).model_dump()
+            except Exception:
+                log.exception("Failed to save continuation")
+
+        done_payload: dict = {'type': 'done', 'maxContextTokens': max_context,
+                              'contextTokens': context_tokens + len(addition) // 4}
+        if saved_message is not None:
+            done_payload['message'] = saved_message
+        yield f"data: {json.dumps(done_payload)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 # ── Summary endpoint ──────────────────────────────────────────────

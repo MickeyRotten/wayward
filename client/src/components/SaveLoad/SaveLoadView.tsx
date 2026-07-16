@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAdventuresStore } from '../../state/adventuresStore'
+import { useCampaignsStore } from '../../state/campaignsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { api } from '../../lib/api'
 import type { Adventure } from '@shared/types/models'
 
 function portraitSrc(p: string): string | null {
@@ -212,6 +214,76 @@ export function SaveLoadView() {
           message={`Delete "${confirmDelete.name}"? This save and its progress are gone for good.`}
           onConfirm={() => { remove(confirmDelete.id); setConfirmDelete(null) }}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      <BackupsSection />
+    </div>
+  )
+}
+
+interface BackupInfo {
+  file: string
+  size: number
+  createdAt: string
+}
+
+/** Automatic rotating campaign snapshots (taken at launch and on campaign
+ *  switch). Restoring imports the snapshot as a NEW campaign — live data is
+ *  never overwritten. */
+function BackupsSection() {
+  const loadCampaign = useCampaignsStore((s) => s.load)
+  const [backups, setBackups] = useState<BackupInfo[]>([])
+  const [confirmRestore, setConfirmRestore] = useState<BackupInfo | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.get<BackupInfo[]>('/backups').then(setBackups).catch(() => setBackups([]))
+  }, [])
+
+  const restore = async (b: BackupInfo) => {
+    setBusy(true)
+    try {
+      const res = await api.post<{ id: string; name: string }>(`/backups/${encodeURIComponent(b.file)}/restore`, {})
+      await loadCampaign(res.id) // switch to the freshly restored campaign
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (backups.length === 0) return null
+
+  return (
+    <div className="shrink-0 border-t border-line px-4 py-3">
+      <span className="block font-ui text-[10px] tracking-wider text-textsec uppercase mb-1">Backups</span>
+      <span className="block text-[10px] text-textdim font-body mb-2">
+        Automatic campaign snapshots, taken at launch and on campaign switch. Restoring
+        creates a <span className="text-textsec">new</span> campaign — nothing is overwritten.
+      </span>
+      <div className="space-y-1 max-h-40 overflow-y-auto">
+        {backups.map((b) => (
+          <div key={b.file} className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate font-body text-[11px] text-textsec" title={b.file}>
+              {b.file.replace(/\.zip$/, '')}
+            </span>
+            <span className="shrink-0 font-ui text-[9px] text-textdim">{relativeTime(b.createdAt)}</span>
+            <button
+              type="button"
+              disabled={busy}
+              className="shrink-0 font-ui text-[9px] tracking-wider text-textsec border border-line px-2 py-0.5 hover:text-gold hover:border-line2 transition-colors disabled:opacity-40"
+              onClick={() => setConfirmRestore(b)}
+            >
+              RESTORE
+            </button>
+          </div>
+        ))}
+      </div>
+      {confirmRestore && (
+        <ConfirmDialog
+          confirmLabel="RESTORE"
+          message={`Restore "${confirmRestore.file}" as a new campaign? Your current campaigns stay untouched.`}
+          onConfirm={() => { void restore(confirmRestore); setConfirmRestore(null) }}
+          onCancel={() => setConfirmRestore(null)}
         />
       )}
     </div>

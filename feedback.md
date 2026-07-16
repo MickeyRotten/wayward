@@ -898,9 +898,6 @@ Fixed: in the agentic narrator loop (`run_narrator_agent`), the per-round preamb
 [ ] R10 (safety/UX): Editor undo. Editor create/edit ops apply immediately — a misunderstood instruction silently overwrites lore/scenario/instructions (E4 only added guidance to announce it). Snapshot the pre-state per tool action (the Chronicler already does exactly this with its `_prev` payloads) and add an UNDO button next to each action in the Editor's action feed, plus a "revert this turn" that unwinds the whole batch.
 
 ---
-[ ] R11 (security): Optional access token for remote play. Run-Remote binds the app to 0.0.0.0 with zero auth — anyone on the LAN gets full world CRUD, chat as the player, and can spend the configured API key's credits. Add an opt-in shared secret: Run.ps1 -Remote generates/prints it, the API requires it (header or query) when set, the client asks once and stores it. Localhost and Tailscale-only setups can stay tokenless.
-
----
 [ ] R12 (safety): Automatic local backups. The SQLite files under server/data ARE the user's worlds and saves; one bad migration or corruption loses a campaign, and the only protection is manual zip export. Cheap insurance: copy campaign.db/adventure.db into a rotating backups/ folder (keep last N) on campaign switch and on app boot before migrations run, with a restore path surfaced in the Saves tab.
 
 ---

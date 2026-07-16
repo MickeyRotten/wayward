@@ -1860,6 +1860,69 @@ async def clear_chat(session: AsyncSession = Depends(get_session)):
 
 # ── Adventure Export / Import / Reset ─────────────────────────────
 
+@router.get("/adventure/story-export")
+async def export_story(session: AsyncSession = Depends(get_session)):
+    """Export the active adventure's narrator thread as a readable Markdown
+    story: active variants only (highest variant per turn — the client's
+    default view), the player's actions italicised under the PC's name,
+    day/location headers where the declared scene state changes, and no
+    planner/tool noise. The narration is already markdown-ish (bold/italics,
+    "> " inscriptions, "* * *" dividers), so prose passes through untouched."""
+    narrator = (await session.execute(select(NarratorConfig))).scalars().first()
+    pc = await party_ops.load_pc(session)
+    msgs = (await session.execute(
+        select(ChatMessage)
+        .where(func.coalesce(ChatMessage.mode, "narrator") != "planner")
+        .order_by(ChatMessage.id)
+    )).scalars().all()
+
+    latest_variant: dict[int, int] = {}
+    for m in msgs:
+        if m.role == "assistant" and m.variant > latest_variant.get(m.turn_number, -1):
+            latest_variant[m.turn_number] = m.variant
+
+    st = (await session.execute(select(AppState))).scalars().first()
+    camp = storage.read_campaign_meta(st.active_campaign_id) if st and st.active_campaign_id else None
+    adv = (storage.read_adventure_meta(st.active_campaign_id, st.active_adventure_id)
+           if st and st.active_campaign_id and st.active_adventure_id else None)
+
+    pc_name = ((pc.basic_info.get("name") if pc else "") or "You").strip() or "You"
+    lines: list[str] = []
+    title = " — ".join(b for b in [(camp or {}).get("name"), (adv or {}).get("name")] if b)
+    lines += [f"# {title or 'A Wayward Adventure'}", ""]
+
+    first_message = (getattr(narrator, "first_message", "") or "").strip()
+    if first_message:
+        lines += [first_message, ""]
+
+    day: int | None = None
+    location: str | None = None
+    for m in msgs:
+        content = (m.content or "").strip()
+        if not content:
+            continue
+        if m.role == "assistant":
+            if m.variant != latest_variant.get(m.turn_number, 0):
+                continue
+            new_day = m.day or day
+            new_loc = m.location or location
+            if (m.day or m.location) and (new_day, new_loc) != (day, location):
+                day, location = new_day, new_loc
+                header = " — ".join(x for x in [f"Day {day}" if day else None, location] if x)
+                lines += [f"## {header}", ""]
+            lines += [content, ""]
+        elif m.role == "user":
+            lines += [f"**{pc_name}:** *{content}*", ""]
+
+    md = "\n".join(lines).rstrip() + "\n"
+    safe = re.sub(r"[^\w\-]+", "_", ((adv or {}).get("name") or "story")).strip("_") or "story"
+    return StreamingResponse(
+        io.BytesIO(md.encode("utf-8")),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.md"'},
+    )
+
+
 @router.get("/adventure/export")
 async def export_adventure(session: AsyncSession = Depends(get_session)):
     pc = await party_ops.load_pc(session)

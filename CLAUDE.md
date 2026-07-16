@@ -455,6 +455,12 @@ wayward/
 
 ---
 
+## Testing
+
+- **Server:** `python -m pytest server/tests` (deps: `pip install -r server/requirements-dev.txt`). Pure-function tests for the deterministic seams (lore injector, prompt builder, spotlight, action options, provider resolution, summariser helpers) plus TestClient integration tests (story export, narrator item tools + reversal, Chronicler `_prev` restore, background summary with a stubbed LLM). **`WAYWARD_DATA_DIR`** overrides the data root (`server/db/database.py`); conftest sets it to a temp dir before any server import so tests never touch a real `server/data` — keep it that way when adding tests.
+- **Client:** `npm test` in `client/` (vitest; dedicated `vitest.config.ts`, node env) — unit tests for the pure libs (`narration.ts`, `weather.ts`, `backdrops.ts`, `sortEntries.ts`) as `src/**/*.test.ts` siblings.
+- **CI:** [`.github/workflows/test.yml`](.github/workflows/test.yml) runs both suites (+ client `tsc`) on every push/PR touching `server/`/`client/`/`shared/`; the Android workflow builds the APK separately.
+
 ## Status & conventions
 
 The original alpha is **done** (editable narrator/PC/party, persistent SQLite, OpenRouter picker, end-to-end chat, working spotlight, the design system, the Seraphine+Tifa+Rosalina seed). Everything in "What's built" above is live and verified. Notes for future work:

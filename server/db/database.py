@@ -12,6 +12,7 @@ Switching campaign/adventure just swaps the attached paths and disposes pooled
 connections so they re-attach. See storage.py for the folder layout + bootstrap.
 """
 
+import os
 import uuid
 from pathlib import Path
 
@@ -21,7 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from server.db.models import Base
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = SERVER_DIR / "data"
+# WAYWARD_DATA_DIR overrides where all user data lives (worlds, saves,
+# characters, tts cache). Set by the test suite so tests can never touch a real
+# server/data; also usable for self-hosted deploys that keep data elsewhere.
+DATA_DIR = Path(os.environ.get("WAYWARD_DATA_DIR") or (SERVER_DIR / "data")).resolve()
 APP_DB_PATH = DATA_DIR / "app.db"
 CAMPAIGNS_DIR = DATA_DIR / "campaigns"
 LEGACY_DB_PATH = SERVER_DIR.parent / "wayward.db"

@@ -292,6 +292,8 @@ export interface LorebookEntry {
 export interface LorebookConfig {
   injectionOrder: Record<LoreCategory, number>
   injectionPosition: Record<LoreCategory, 'top' | 'bottom' | 'before_input'>
+  /** Recent turns (player + narrator) scanned for keywords, besides the new message. */
+  scanDepth: number
 }
 
 export interface ScenarioFields {

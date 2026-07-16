@@ -192,6 +192,9 @@ class LorebookConfig(Base):
             "monsters": "top", "spells": "top",
         },
     )
+    # How many recent TURNS (player + narrator messages) keyword matching scans,
+    # in addition to the new player message. 0 = newest message only.
+    scan_depth: Mapped[int] = mapped_column(Integer, default=3)
 
 
 # ── Adventure (a save file) ───────────────────────────────────────

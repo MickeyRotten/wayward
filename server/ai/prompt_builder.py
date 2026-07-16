@@ -157,10 +157,17 @@ def build_prompt(
     if spotlight_block:
         messages.append({"role": "system", "content": spotlight_block})
 
-    # 7. Lorebook — match entries and group by injection position
+    # 7. Lorebook — match entries and group by injection position. The scan
+    #    window is the new player message PLUS the last `scan_depth` turns of
+    #    history (both roles, ~2 messages per turn), so lore the narrator just
+    #    introduced still injects when the player's reply doesn't repeat the
+    #    keyword ("tell me more about it").
     lore_groups: dict[str, list[LorebookEntry]] = {"top": [], "before_input": [], "bottom": []}
     if lore_entries and lore_config:
-        matched = match_entries(player_message, lore_entries)
+        scan_depth = max(0, int(getattr(lore_config, "scan_depth", 3) or 0))
+        recent = [m.content or "" for m in chat_history[-(scan_depth * 2):]] if scan_depth else []
+        scan_text = "\n".join([*recent, player_message])
+        matched = match_entries(scan_text, lore_entries)
         if matched:
             lore_groups = group_by_position(matched, lore_config)
 

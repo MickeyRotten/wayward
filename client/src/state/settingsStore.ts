@@ -22,6 +22,7 @@ interface SettingsState {
   maxPartySize: number
   maxToolRounds: number
   autoRetryCount: number
+  reasoningEffort: string
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
@@ -69,6 +70,7 @@ function applyResponse(s: SettingsResponse) {
     maxPartySize: s.maxPartySize,
     maxToolRounds: s.maxToolRounds,
     autoRetryCount: s.autoRetryCount,
+    reasoningEffort: s.reasoningEffort,
     useTools: s.useTools,
     worldbuildingMode: s.worldbuildingMode,
     worldbuildingModelId: s.worldbuildingModelId,
@@ -105,6 +107,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   maxPartySize: 3,
   maxToolRounds: 6,
   autoRetryCount: 2,
+  reasoningEffort: '',
   useTools: true,
   worldbuildingMode: 'confirmation',
   worldbuildingModelId: '',
@@ -145,6 +148,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       maxPartySize: update.maxPartySize ?? state.maxPartySize,
       maxToolRounds: update.maxToolRounds ?? state.maxToolRounds,
       autoRetryCount: update.autoRetryCount ?? state.autoRetryCount,
+      reasoningEffort: update.reasoningEffort ?? state.reasoningEffort,
       useTools: update.useTools ?? state.useTools,
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,

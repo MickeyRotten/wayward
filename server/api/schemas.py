@@ -167,6 +167,7 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxPartySize: int = 3
     maxToolRounds: int = 6
     autoRetryCount: int = 2
+    reasoningEffort: str = ""  # '' = provider default | low | medium | high
     useTools: bool = True
     worldbuildingMode: str = "confirmation"
     worldbuildingModelId: str = ""
@@ -201,6 +202,7 @@ class OpenRouterSettingsResponse(BaseModel):
     maxPartySize: int
     maxToolRounds: int
     autoRetryCount: int
+    reasoningEffort: str
     useTools: bool
     worldbuildingMode: str
     worldbuildingModelId: str
@@ -256,6 +258,10 @@ class ChatMessageResponse(BaseModel):
     editorActions: list[dict] | None = None  # Editor turns: {name, result} tool actions taken
     imageUrl: str | None = None          # player-attached image (served from the adventure folder)
     imageDescription: str | None = None  # the vision agent's description of it
+    # Real provider accounting (assistant messages; None when unreported).
+    promptTokens: int | None = None
+    completionTokens: int | None = None
+    cost: float | None = None
     createdAt: str
 
 

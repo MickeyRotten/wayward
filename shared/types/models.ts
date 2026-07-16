@@ -134,6 +134,8 @@ export interface OpenRouterSettings {
   maxPartySize: number
   maxToolRounds: number
   autoRetryCount: number
+  /** '' = provider default | 'low' | 'medium' | 'high' (OpenRouter reasoning models). */
+  reasoningEffort: string
   useTools: boolean
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
@@ -221,6 +223,10 @@ export interface ChatMessage {
   editorActions?: EditorAction[] | null  // Editor turns: tool actions taken that turn
   imageUrl?: string | null          // player-attached image (user messages)
   imageDescription?: string | null  // the vision agent's description of it
+  /** Real provider accounting (assistant messages; absent when unreported). */
+  promptTokens?: number | null
+  completionTokens?: number | null
+  cost?: number | null
   createdAt: string
 }
 

@@ -1043,6 +1043,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         maxPartySize=s.max_party_size,
         maxToolRounds=s.max_tool_rounds,
         autoRetryCount=int(getattr(s, "auto_retry_count", 2) or 0),
+        reasoningEffort=getattr(s, "reasoning_effort", "") or "",
         useTools=bool(s.use_tools),
         worldbuildingMode=s.worldbuilding_mode,
         worldbuildingModelId=s.worldbuilding_model_id,
@@ -1101,6 +1102,7 @@ async def update_openrouter_settings(
     s.max_party_size = data.maxPartySize
     s.max_tool_rounds = data.maxToolRounds
     s.auto_retry_count = max(0, min(5, data.autoRetryCount))
+    s.reasoning_effort = data.reasoningEffort if data.reasoningEffort in ("", "low", "medium", "high") else ""
     s.use_tools = data.useTools
     s.worldbuilding_mode = data.worldbuildingMode
     s.worldbuilding_model_id = data.worldbuildingModelId
@@ -1731,6 +1733,9 @@ def _msg_response(m: ChatMessage) -> ChatMessageResponse:
         editorActions=getattr(m, "editor_actions", None),
         imageUrl=_image_url(m),
         imageDescription=getattr(m, "image_description", None),
+        promptTokens=getattr(m, "prompt_tokens", None),
+        completionTokens=getattr(m, "completion_tokens", None),
+        cost=getattr(m, "gen_cost", None),
         createdAt=m.created_at.isoformat() if m.created_at else "",
     )
 
@@ -2005,6 +2010,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "maxPartySize": settings.max_party_size if settings else 3,
             "maxToolRounds": settings.max_tool_rounds if settings else 6,
             "autoRetryCount": int(getattr(settings, "auto_retry_count", 2) or 0) if settings else 2,
+            "reasoningEffort": (getattr(settings, "reasoning_effort", "") or "") if settings else "",
             "useTools": bool(settings.use_tools) if settings else True,
             "worldbuildingMode": settings.worldbuilding_mode if settings else "confirmation",
             "worldbuildingModelId": settings.worldbuilding_model_id if settings else "",
@@ -2135,6 +2141,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         max_party_size=s.get("maxPartySize", 3),
         max_tool_rounds=s.get("maxToolRounds", 6),
         auto_retry_count=s.get("autoRetryCount", 2),
+        reasoning_effort=s.get("reasoningEffort", ""),
         use_tools=s.get("useTools", True),
         worldbuilding_mode=s.get("worldbuildingMode", "confirmation"),
         worldbuilding_model_id=s.get("worldbuildingModelId", ""),
@@ -2910,9 +2917,13 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
                 frequency_penalty=settings.frequency_penalty,
                 presence_penalty=settings.presence_penalty,
                 repetition_penalty=settings.repetition_penalty,
+                reasoning_effort=getattr(settings, "reasoning_effort", "") or None,
+                yield_events=True,
             )
 
         addition = ""
+        usage: dict | None = None
+        reasoning_seen = False
         try:
             async for ev in stream_with_retry(
                 _make_stream, getattr(settings, "auto_retry_count", 0) or 0,
@@ -2921,6 +2932,11 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
                 if ev["type"] == "chunk":
                     addition += ev["text"]
                     yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif ev["type"] == "reasoning":
+                    reasoning_seen = True
+                    yield f"data: {json.dumps({'type': 'reasoning', 'content': ev['text']})}\n\n"
+                elif ev["type"] == "usage":
+                    usage = {k: v for k, v in ev.items() if k != "type"}
                 elif ev["type"] == "discard":
                     addition = ""
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
@@ -2929,6 +2945,10 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
         except Exception as e:
             log.exception("Continue stream failed")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            return
+
+        if not addition.strip() and reasoning_seen:
+            yield f"data: {json.dumps({'type': 'error', 'content': _REASONING_ATE_BUDGET})}\n\n"
             return
 
         # Defensive: strip a stray inline-options block if the model added one.
@@ -2942,6 +2962,12 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
                         existing = (msg.content or "").rstrip()
                         sep = "\n\n" if existing.endswith(_SENTENCE_END) else " "
                         msg.content = f"{existing}{sep}{addition}" if existing else addition
+                        # Fold the continuation's spend into the message's accounting.
+                        if usage:
+                            if usage.get("completion_tokens") is not None:
+                                msg.completion_tokens = (msg.completion_tokens or 0) + int(usage["completion_tokens"])
+                            if usage.get("cost") is not None:
+                                msg.gen_cost = (msg.gen_cost or 0.0) + float(usage["cost"])
                         await save_session.commit()
                         await save_session.refresh(msg)
                         saved_message = _msg_response(msg).model_dump()
@@ -3224,6 +3250,15 @@ def _inline_option_rules(narrator) -> list[str] | None:
     return normalize_option_rules(getattr(narrator, "action_option_rules", None))
 
 
+# Reasoning models can burn the whole response budget on thinking; surface a
+# useful explanation instead of a silent empty beat.
+_REASONING_ATE_BUDGET = (
+    "The model spent its entire response budget on reasoning and wrote no "
+    "narration. Raise Max Response Tokens (Config → AI & Model), or lower the "
+    "Reasoning Effort setting."
+)
+
+
 def _stream_llm_response(
     messages: list[dict],
     settings: OpenRouterSettings,
@@ -3287,12 +3322,16 @@ def _stream_llm_response(
                 frequency_penalty=frequency_penalty,
                 presence_penalty=presence_penalty,
                 repetition_penalty=repetition_penalty,
+                reasoning_effort=getattr(settings, "reasoning_effort", "") or None,
+                yield_events=True,  # reasoning deltas + usage ride along
             )
 
         # Auto-retry on error/safety block (configurable). The legacy path has no
         # mid-stream DB mutations, so a full re-stream is always safe; a partial
         # attempt emits `discard` (client clears it) before the retry.
         full_text = ""
+        usage: dict | None = None
+        reasoning_seen = False
         try:
             async for ev in stream_with_retry(
                 _make_stream, getattr(settings, "auto_retry_count", 0) or 0,
@@ -3302,6 +3341,13 @@ def _stream_llm_response(
                 if et == "chunk":
                     full_text += ev["text"]
                     yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif et == "reasoning":
+                    # Reasoning models (often tool-less, so they land on THIS
+                    # path): surface the thinking phase live.
+                    reasoning_seen = True
+                    yield f"data: {json.dumps({'type': 'reasoning', 'content': ev['text']})}\n\n"
+                elif et == "usage":
+                    usage = {k: v for k, v in ev.items() if k != "type"}
                 elif et == "discard":
                     full_text = ""
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
@@ -3312,8 +3358,12 @@ def _stream_llm_response(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             return
 
+        if not full_text.strip() and reasoning_seen:
+            yield f"data: {json.dumps({'type': 'error', 'content': _REASONING_ATE_BUDGET})}\n\n"
+            return
+
         # Terminal log: size at INFO, full raw output only at DEBUG.
-        log.info("LLM RESPONSE turn=%s variant=%s (%d chars)", current_turn, variant, len(full_text))
+        log.info("LLM RESPONSE turn=%s variant=%s (%d chars) | usage=%s", current_turn, variant, len(full_text), usage)
         log.debug("LLM RESPONSE text:\n%s", full_text)
 
         # Parse and strip the action block before saving
@@ -3400,6 +3450,9 @@ def _stream_llm_response(
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=combined_inv_deltas if combined_inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,
+                    prompt_tokens=(usage or {}).get("prompt_tokens"),
+                    completion_tokens=(usage or {}).get("completion_tokens"),
+                    gen_cost=(usage or {}).get("cost"),
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()
@@ -3408,11 +3461,13 @@ def _stream_llm_response(
         except Exception as e:
             log.exception("Failed to save response to DB")
 
+        # Prefer the provider's real accounting over the chars/4 estimate.
         response_tokens = len(clean_text) // 4
+        real_total = ((usage or {}).get("prompt_tokens") or 0) + ((usage or {}).get("completion_tokens") or 0)
         combined_inv_deltas = [*player_deltas, *inv_deltas]
         done_payload: dict = {
             'type': 'done',
-            'contextTokens': context_tokens + response_tokens,
+            'contextTokens': real_total or (context_tokens + response_tokens),
             'maxContextTokens': max_context,
         }
         # The persisted message rides on `done` so a plain send can append it
@@ -3484,6 +3539,8 @@ def _stream_agent_response(
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
         tool_failures: list[str] = []
+        usage: dict | None = None
+        reasoning_seen = False
         saved_message: dict | None = None
 
         try:
@@ -3496,6 +3553,9 @@ def _stream_agent_response(
                 etype = ev["type"]
                 if etype == "content":
                     yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
+                elif etype == "reasoning":
+                    # Reasoning models: the thinking phase, surfaced live.
+                    yield f"data: {json.dumps({'type': 'reasoning', 'content': ev['text']})}\n\n"
                 elif etype == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
                 elif etype == "retry":
@@ -3508,14 +3568,22 @@ def _stream_agent_response(
                     inv_deltas = ev["inv_deltas"]
                     equip_changes = ev["equip_changes"]
                     tool_failures = ev.get("tool_failures", [])
+                    usage = ev.get("usage")
+                    reasoning_seen = bool(ev.get("reasoning_seen"))
         except Exception as e:
             log.exception("Agent loop failed")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             return
 
+        # A reasoning model can spend the whole response budget thinking and
+        # deliver no prose — explain that instead of saving an empty beat.
+        if not final_content.strip() and reasoning_seen:
+            yield f"data: {json.dumps({'type': 'error', 'content': _REASONING_ATE_BUDGET})}\n\n"
+            return
+
         log.info(
-            "LLM AGENT RESPONSE turn=%s variant=%s (%d chars) | scene=%s | inv_deltas=%s | equip_changes=%s",
-            current_turn, variant, len(final_content), scene, inv_deltas, equip_changes,
+            "LLM AGENT RESPONSE turn=%s variant=%s (%d chars) | scene=%s | inv_deltas=%s | equip_changes=%s | usage=%s",
+            current_turn, variant, len(final_content), scene, inv_deltas, equip_changes, usage,
         )
 
         inline_suggestions: list[str] = []
@@ -3557,6 +3625,9 @@ def _stream_agent_response(
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=inv_deltas if inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,
+                    prompt_tokens=(usage or {}).get("prompt_tokens"),
+                    completion_tokens=(usage or {}).get("completion_tokens"),
+                    gen_cost=(usage or {}).get("cost"),
                 )
                 save_session.add(assistant_msg)
                 await save_session.commit()
@@ -3565,10 +3636,12 @@ def _stream_agent_response(
         except Exception:
             log.exception("Failed to save agent response to DB")
 
+        # Prefer the provider's real accounting over the chars/4 estimate.
         response_tokens = len(final_content) // 4
+        real_total = ((usage or {}).get("prompt_tokens") or 0) + ((usage or {}).get("completion_tokens") or 0)
         done_payload: dict = {
             'type': 'done',
-            'contextTokens': context_tokens + response_tokens,
+            'contextTokens': real_total or (context_tokens + response_tokens),
             'maxContextTokens': max_context,
         }
         # The persisted message rides on `done` so a plain send can append it

@@ -72,6 +72,11 @@ class OpenRouterSettings(Base):
     # this many extra attempts before surfacing the error (0 = off). Retries
     # happen per model call, so tools that already ran are never re-applied.
     auto_retry_count: Mapped[int] = mapped_column(Integer, default=2)
+    # Reasoning effort for reasoning-capable models ('' = provider default;
+    # 'low' | 'medium' | 'high'). Sent as OpenRouter's `reasoning.effort` on the
+    # narrator's calls only — other OpenAI-compatible providers may reject the
+    # field, so it is never sent off-OpenRouter.
+    reasoning_effort: Mapped[str] = mapped_column(String, default="")
     # Chronicler (world-building agent): when/how it creates lore/quests/members.
     # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
     worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")
@@ -281,6 +286,12 @@ class ChatMessage(Base):
     # description is what the (possibly text-only) narrator/editor actually sees.
     image_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     image_description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # Real token/cost accounting from the provider's usage block (assistant
+    # messages only; summed across tool rounds). None when the provider didn't
+    # report usage — the UI then keeps its chars/4 estimate.
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    gen_cost: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

@@ -75,6 +75,9 @@ interface ChatState {
   streamingContent: string
   thinkingStartedAt: number | null
   toolStatus: string | null
+  // Reasoning models: characters of thinking streamed so far this turn (shown
+  // as a live word count in the indicator; 0 = no reasoning phase).
+  reasoningChars: number
   // Live feed of the Editor's tool actions during a planning turn (real-time;
   // the same list is also persisted on the finished planner message).
   editorActions: { name: string; result: string }[]
@@ -121,6 +124,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingContent: '',
   thinkingStartedAt: null,
   toolStatus: null,
+  reasoningChars: 0,
   editorActions: [],
   toolFailures: [],
   error: null,
@@ -351,10 +355,14 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
             if (event.maxContextTokens !== undefined) set({ maxContextTokens: event.maxContextTokens })
           } else if (event.type === 'chunk') {
             // Final narration has begun — drop the thinking + tool status.
-            if (get().thinkingStartedAt !== null || get().toolStatus !== null) {
-              set({ thinkingStartedAt: null, toolStatus: null })
+            if (get().thinkingStartedAt !== null || get().toolStatus !== null || get().reasoningChars > 0) {
+              set({ thinkingStartedAt: null, toolStatus: null, reasoningChars: 0 })
             }
             set({ streamingContent: get().streamingContent + event.content })
+          } else if (event.type === 'reasoning') {
+            // A reasoning model's thinking phase — count it so the indicator
+            // shows live progress instead of a silent stall.
+            set({ reasoningChars: get().reasoningChars + String(event.content ?? '').length })
           } else if (event.type === 'discard') {
             // Agentic loop: content streamed on a tool-calling round was
             // preamble, not the final narration — clear it.
@@ -366,6 +374,7 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
               streamingContent: '',
               toolStatus: `Retrying (${event.attempt}/${event.of})`,
               thinkingStartedAt: Date.now(),
+              reasoningChars: 0,
             })
           } else if (event.type === 'tool') {
             // A tool ran mid-turn — surface it as ephemeral status so multi-round
@@ -479,6 +488,6 @@ async function _handleStream(url: string, body: object, opts: { appendOnDone?: b
   } finally {
     _activeReader = null
     _aborted = false
-    set({ isLoading: false, isSummarizing: false, streamingContent: '', thinkingStartedAt: null, toolStatus: null, editorActions: [] })
+    set({ isLoading: false, isSummarizing: false, streamingContent: '', thinkingStartedAt: null, toolStatus: null, reasoningChars: 0, editorActions: [] })
   }
 }

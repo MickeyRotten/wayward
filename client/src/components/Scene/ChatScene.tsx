@@ -1463,6 +1463,7 @@ const MessageBubble = memo(function MessageBubble({
           onDelete={onDelete}
           onEdit={message.id > 0 ? () => setEditing(true) : undefined}
           copyText={message.content}
+          usageText={usageLabel(message)}
         />
       </div>
     )
@@ -1527,6 +1528,7 @@ const MessageBubble = memo(function MessageBubble({
             : undefined
         }
         speaking={speakingThis}
+        usageText={usageLabel(message)}
       />
     </div>
   )
@@ -1658,6 +1660,15 @@ function ChangeNotices({
 
 // ── Shared Actions Bar ──────────────────────────────────────────────
 
+/** Real provider accounting for a message ("12,345 → 512 tok · $0.0042"),
+ *  or null when the provider didn't report usage. */
+function usageLabel(m: ChatMessage): string | null {
+  if (m.promptTokens == null && m.completionTokens == null) return null
+  const fmt = (n?: number | null) => (n ?? 0).toLocaleString()
+  const cost = m.cost != null && m.cost > 0 ? ` · $${m.cost.toFixed(4)}` : ''
+  return `${fmt(m.promptTokens)} → ${fmt(m.completionTokens)} tok${cost}`
+}
+
 function ActionsBar({
   editing,
   isUser,
@@ -1671,6 +1682,7 @@ function ActionsBar({
   copyText,
   onSpeak,
   speaking,
+  usageText,
 }: {
   editing: boolean
   isUser: boolean
@@ -1684,6 +1696,7 @@ function ActionsBar({
   copyText?: string
   onSpeak?: () => void
   speaking?: boolean
+  usageText?: string | null
 }) {
   if (editing) return null
 
@@ -1726,6 +1739,14 @@ function ActionsBar({
         </>
       )}
       <div className="flex items-center gap-2 ml-auto">
+        {usageText && (
+          <span
+            className="font-ui text-[8px] text-textdim tracking-wider"
+            title="Real token usage reported by the provider (prompt → response) and its cost"
+          >
+            {usageText}
+          </span>
+        )}
         {onSpeak && (
           <button
             type="button"
@@ -1965,6 +1986,7 @@ function StreamingWindow({
   const thinkingStartedAt = useChatStore((s) => s.thinkingStartedAt)
   const toolStatus = useChatStore((s) => s.toolStatus)
   const isSummarizing = useChatStore((s) => s.isSummarizing)
+  const reasoningChars = useChatStore((s) => s.reasoningChars)
   const editorActions = useChatStore((s) => s.editorActions)
 
   // Follow the stream while the user is pinned to the bottom (rAF-batched so
@@ -2019,7 +2041,14 @@ function StreamingWindow({
           <span className="font-disp text-[16px] text-gold pt-[2px]">{planningMode ? 'P' : 'N'}</span>
         </div>
         <div className="pt-2">
-          {toolStatus ? (
+          {reasoningChars > 0 ? (
+            // A reasoning model's thinking phase — show live progress instead
+            // of a silent stall (~6 chars per word is close enough).
+            <span className="font-ui text-[10px] text-gold/80 tracking-wider">
+              REASONING · ~{Math.max(1, Math.round(reasoningChars / 6))} WORDS
+              <Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
+            </span>
+          ) : toolStatus ? (
             <span className="font-ui text-[10px] text-gold/80 tracking-wider">
               {toolStatus.toUpperCase()}<Elapsed startedAt={thinkingStartedAt} /><span className="animate-pulse"> ···</span>
             </span>

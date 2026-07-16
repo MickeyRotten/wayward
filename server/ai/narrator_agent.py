@@ -299,6 +299,9 @@ async def run_narrator_agent(
     scene: dict = {}
     final_content = ""
     tool_failures: list[str] = []
+    # Real token/cost accounting, summed over every round of the turn.
+    usage_total: dict = {}
+    reasoning_seen = False
 
     max_rounds = max(1, settings.max_tool_rounds or 6)
     full_max_tokens = settings.max_tokens_response
@@ -337,6 +340,7 @@ async def run_narrator_agent(
                     frequency_penalty=settings.frequency_penalty,
                     presence_penalty=settings.presence_penalty,
                     repetition_penalty=settings.repetition_penalty,
+                    reasoning_effort=getattr(settings, "reasoning_effort", "") or None,
                 )
 
             streamed = False  # did this round stream any content (preamble) live?
@@ -347,6 +351,11 @@ async def run_narrator_agent(
                 if ev["type"] == "content":
                     streamed = True
                     yield {"type": "content", "text": ev["text"]}
+                elif ev["type"] == "reasoning":
+                    # Reasoning models: surface the thinking phase live instead
+                    # of a silent stall.
+                    reasoning_seen = True
+                    yield ev
                 elif ev["type"] == "result":
                     result = ev
                 elif ev["type"] in ("discard", "retry"):
@@ -354,6 +363,13 @@ async def run_narrator_agent(
 
             tool_calls = (result or {}).get("tool_calls") or []
             content = (result or {}).get("content") or ""
+            round_usage = (result or {}).get("usage") or None
+            if round_usage:
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    if round_usage.get(k) is not None:
+                        usage_total[k] = usage_total.get(k, 0) + int(round_usage[k])
+                if round_usage.get("cost") is not None:
+                    usage_total["cost"] = usage_total.get("cost", 0.0) + float(round_usage["cost"])
 
             if not tool_calls:
                 # No tool calls → this is the final narration (streamed live above).
@@ -403,6 +419,8 @@ async def run_narrator_agent(
         "inv_deltas": inv_deltas,
         "equip_changes": equip_changes,
         "tool_failures": tool_failures,
+        "usage": usage_total or None,
+        "reasoning_seen": reasoning_seen,
     }
 
 

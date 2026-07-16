@@ -863,3 +863,47 @@ Built a **lightweight direct provider abstraction** instead (zero new deps — o
 Fixed: in the agentic narrator loop (`run_narrator_agent`), the per-round preamble-discard branch referenced a local `streamed` flag that no longer existed — it was dropped when live streaming moved into `agent_turn_with_retry` (the auto-retry refactor). Because `if streamed:` is reached on **every tool-calling round**, any turn where the narrator called a tool raised `NameError` and surfaced as the generic Generation Error — hence "frequently, regardless of provider" (tool use is provider-independent). Re-introduced the flag: `streamed` is set False at the top of each round and True whenever a content delta is streamed, so the tool-round preamble is discarded correctly. The Editor loop (`planner.py`) was unaffected — it tracks `_round_started`/`content_parts` and accumulates prose across rounds. Verified end-to-end by driving `run_narrator_agent` through a real set_scene tool round then final narration against a local OpenAI-compatible SSE stub: pre-fix reproduced the exact NameError, post-fix emits content → discard → tool → final cleanly.
 
 ---
+[x] Analyse the project and suggest improvements, add them as tasks in feedback.md
+
+  Analysed the server hot paths (the chat-turn route + prompt assembly, lore injection, spotlight, all three agent loops, provider streaming in openrouter.py), the client stores/ChatScene, and the launch/CI setup. Suggestions added below as open tasks R1–R14, roughly ordered by expected impact. Not implemented yet — pick and choose.
+
+---
+[ ] R1 (logic, high): Lorebook keyword matching should scan recent history, not just the newest player message. `build_prompt` calls `match_entries(player_message, …)` — so a keyword the NARRATOR just introduced never injects its lore (narrator names "Kal-Toth", player replies "I ask about the ruin" → no injection), and short player replies ("Yes", "I follow her") inject nothing at all. Match against the last N turns of history (narrator + player, active variants), with a configurable scan depth on LorebookConfig (default ~3 turns). Consider also treating the entry title as an implicit keyword so entries work without manual keyword setup.
+
+---
+[ ] R2 (perf/UX, high): Move threshold summarisation out of the turn. When the context threshold trips, `_maybe_summarize_and_build` runs a full summariser LLM call BEFORE narration starts — the player just sees a long stall on exactly the turns that are already slowest (long adventures). Run summarisation post-turn in the background instead (like the Chronicler): after a turn completes, check the threshold and compress then, so the NEXT turn's prompt is already trimmed. Keep an in-turn fallback only for the degenerate case where the prompt genuinely won't fit the context even after trimming.
+
+---
+[ ] R3 (compat): Reasoning-model support. The stream parsers in openrouter.py read only `delta.content` and ignore reasoning deltas (`delta.reasoning`/`reasoning_content`). With a reasoning model (e.g. DeepSeek R1 — plausible on NIM, whose default is a DeepSeek id) the UI sits on a silent THINKING indicator for the whole reasoning phase, and reasoning tokens spend `max_tokens` so the narration can arrive truncated or empty with no explanation. Surface reasoning deltas as live status (word count or a collapsible "thinking" block in the streaming window), make sure an all-reasoning/empty-content result gives a useful error, and consider exposing OpenRouter's `reasoning` effort param in Config → AI & Model.
+
+---
+[ ] R4 (infra): Committed test suite + CI. Every verification so far has been a throwaway script — nothing is committed (no tests/ directory), so regressions like the `streamed` NameError only surface in play. Codify the load-bearing invariants into a real pytest suite (prompt budget/trimming, spotlight regexes, instance grant/equip/reversal, Chronicler reversal incl. `_prev` restore, inline-options parsing, template application, provider endpoint resolution) plus client unit tests for the pure libs (narration.ts segmenter, weather.ts, backdrops.ts, sortEntries.ts), and run both in CI on every push/PR — the workflow currently only builds the APK.
+
+---
+[ ] R5 (UX): A true Continue. The current Continue pill sends "I wait and let the scene unfold." as a NEW player turn. Add a real continuation that EXTENDS the last narration: re-send the prompt with the assistant message last plus a continue nudge, and append the result to the same message/variant (no new turn). This is also the rescue for narration clipped by max_tokens_response — right now a clipped beat just ends mid-sentence with no recovery.
+
+---
+[ ] R6 (observability): Real token/cost accounting. The provider's `usage` block is never requested or read — the context meter is a chars/4 estimate. Request usage on the streaming calls, record real prompt/completion tokens (and OpenRouter's reported cost) per message, and surface them in the prompt-log modal + a small per-turn meta line. Also lets us calibrate the chars/4 trim margin against reality instead of the blanket 10% safety haircut.
+
+---
+[ ] R7 (feature/UX): Backdrop manager. `server/backdrops/` is populated by hand and isn't committed — and on the APK there is no way to add backdrops at all (the folder lives inside app storage). Add upload/list/delete endpoints and a Config → Appearance manager (thumbnail grid, upload, delete, filename hint showing how location/time matching works). Consider bundling one or two default arts in the repo so fresh clones/the APK aren't plain, and including backdrops in the campaign export zip.
+
+---
+[ ] R8 (feature): Export the adventure as a readable story. A markdown/text download of the narrator thread — active variants only, dialogue formatted, day/location headers from the declared scene state, no planner/tool noise — from the Saves tab. Cheap to build and makes finished adventures shareable/archivable.
+
+---
+[ ] R9 (feature): SillyTavern character-card import/export. The planned .png card parser (CLAUDE.md notes character folders were built as its foundation): on import, read the v2 `chara` tEXt chunk and map name/description/personality/first_mes onto character.json + the png as the portrait; on export, embed our fields back into the card. Makes the character library interoperable with the existing card ecosystem.
+
+---
+[ ] R10 (safety/UX): Editor undo. Editor create/edit ops apply immediately — a misunderstood instruction silently overwrites lore/scenario/instructions (E4 only added guidance to announce it). Snapshot the pre-state per tool action (the Chronicler already does exactly this with its `_prev` payloads) and add an UNDO button next to each action in the Editor's action feed, plus a "revert this turn" that unwinds the whole batch.
+
+---
+[ ] R12 (safety): Automatic local backups. The SQLite files under server/data ARE the user's worlds and saves; one bad migration or corruption loses a campaign, and the only protection is manual zip export. Cheap insurance: copy campaign.db/adventure.db into a rotating backups/ folder (keep last N) on campaign switch and on app boot before migrations run, with a restore path surfaced in the Saves tab.
+
+---
+[ ] R13 (feature, small): Alternate openings. Allow several First Messages per campaign (like SillyTavern's alternate greetings): at turn 0 the swipe arrows cycle them, and the chosen one anchors the adventure. `first_message_options` already made the opening beat structured — this is the narration-side sibling, and templates could ship variety.
+
+---
+[ ] R14 (maintainability, low): Split the two megafiles. routes.py is 3,343 lines and ChatScene.tsx 2,254 — every change pays a navigation tax and merge risk. Split routes.py into domain routers (chat, campaigns/adventures, characters/party, items/inventory, lore/scenario, settings, tts) under server/api/, and carve ChatScene.tsx into Scene/ subcomponents (banner, action panel, message list, composer, indicators). Pure refactor, no behavior change.
+
+---

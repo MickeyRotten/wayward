@@ -113,6 +113,9 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
             {d.basicInfo.dislikes && (
               <ViewField label="Dislikes" value={d.basicInfo.dislikes} />
             )}
+            {d.basicInfo.other && (
+              <ViewField label="Other" value={d.basicInfo.other} />
+            )}
             {d.basicInfo.description && (
               <p className="font-body text-sm text-text2 leading-relaxed mt-2">{d.basicInfo.description}</p>
             )}
@@ -175,9 +178,10 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
             <NumField label="Weight (kg)" value={d.basicInfo.weightKg} onChange={(v) => updateBasic('weightKg', v)} onBlur={(v) => updateBasic('weightKg', v, true)} />
           </div>
           <TextArea label="Description" value={d.basicInfo.description} onChange={(v) => updateBasic('description', v)} onBlur={(v) => updateBasic('description', v, true)} />
-          <Field label="Personality" value={d.basicInfo.personality ?? ''} onChange={(v) => updateBasic('personality', v)} onBlur={(v) => updateBasic('personality', v, true)} placeholder="e.g. Warm, protective, quietly stubborn" />
-          <Field label="Likes" value={d.basicInfo.likes ?? ''} onChange={(v) => updateBasic('likes', v)} onBlur={(v) => updateBasic('likes', v, true)} placeholder="e.g. Cooking, stargazing, friendly sparring" />
-          <Field label="Dislikes" value={d.basicInfo.dislikes ?? ''} onChange={(v) => updateBasic('dislikes', v)} onBlur={(v) => updateBasic('dislikes', v, true)} placeholder="e.g. Bullies, being idle, cold weather" />
+          <TextArea label="Personality" value={d.basicInfo.personality ?? ''} onChange={(v) => updateBasic('personality', v)} onBlur={(v) => updateBasic('personality', v, true)} placeholder="e.g. Warm, protective, quietly stubborn" />
+          <TextArea label="Likes" value={d.basicInfo.likes ?? ''} onChange={(v) => updateBasic('likes', v)} onBlur={(v) => updateBasic('likes', v, true)} placeholder="e.g. Cooking, stargazing, friendly sparring" />
+          <TextArea label="Dislikes" value={d.basicInfo.dislikes ?? ''} onChange={(v) => updateBasic('dislikes', v)} onBlur={(v) => updateBasic('dislikes', v, true)} placeholder="e.g. Bullies, being idle, cold weather" />
+          <TextArea label="Other" value={d.basicInfo.other ?? ''} onChange={(v) => updateBasic('other', v)} onBlur={(v) => updateBasic('other', v, true)} placeholder="Anything else worth knowing — quirks, history, relationships…" />
         </div>
       </Section>
 

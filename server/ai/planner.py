@@ -142,6 +142,7 @@ TOOL_SCHEMAS: list[dict] = [
          "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
          "description": {"type": "string"}, "personality": {"type": "string"},
          "likes": {"type": "string"}, "dislikes": {"type": "string"},
+         "other": {"type": "string", "description": "Anything that doesn't fit the other fields — quirks, history, relationships."},
          "fieldSkillName": {"type": "string"}, "fieldSkillDescription": {"type": "string"}}, ["name"]),
     _fn("update_member", "Edit a party member's details/field skill, by name. Pass newName to rename.",
         {"name": {"type": "string", "description": "Which member to edit (their current name)."},
@@ -150,6 +151,7 @@ TOOL_SCHEMAS: list[dict] = [
          "age": {"type": "integer"}, "heightCm": {"type": "integer"}, "weightKg": {"type": "integer"},
          "description": {"type": "string"}, "personality": {"type": "string"},
          "likes": {"type": "string"}, "dislikes": {"type": "string"},
+         "other": {"type": "string", "description": "Anything that doesn't fit the other fields — quirks, history, relationships."},
          "fieldSkillName": {"type": "string"}, "fieldSkillDescription": {"type": "string"}}, ["name"]),
     _fn("delete_member", "Remove a party member entirely (queued for confirmation), by name.",
         {"name": {"type": "string"}}, ["name"]),
@@ -381,7 +383,8 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
                         "description": args.get("description", ""), "personality": args.get("personality", ""),
                         "gender": args.get("gender", ""), "age": args.get("age", 0) or 0,
                         "heightCm": args.get("heightCm", 0) or 0, "weightKg": args.get("weightKg", 0) or 0,
-                        "likes": args.get("likes", ""), "dislikes": args.get("dislikes", "")},
+                        "likes": args.get("likes", ""), "dislikes": args.get("dislikes", ""),
+                        "other": args.get("other", "")},
             field_skill={"name": args.get("fieldSkillName", ""), "description": args.get("fieldSkillDescription", "")},
         )
         return f"Created party member: {mname}.", None
@@ -395,7 +398,7 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             if args.get("newName"):
                 bi["name"] = args["newName"]
             for k in ("species", "gender", "age", "heightCm", "weightKg",
-                      "description", "personality", "likes", "dislikes"):
+                      "description", "personality", "likes", "dislikes", "other"):
                 if args.get(k) is not None:
                     bi[k] = args[k]
             fs = dict(member.field_skill or {})

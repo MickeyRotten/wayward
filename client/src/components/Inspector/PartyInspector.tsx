@@ -30,6 +30,7 @@ export function PartyInspector() {
   // Edit Mode → always editing; Narration → always viewing. (Game-engine style:
   // Play vs Edit.) The current selection is preserved when you toggle modes.
   const editMode = useChatStore((s) => s.planningMode)
+  const setPlanningMode = useChatStore((s) => s.setPlanningMode)
   const mode: 'view' | 'edit' = editMode ? 'edit' : 'view'
 
   if (!everSelected) return <EmptyState />
@@ -132,15 +133,20 @@ export function PartyInspector() {
                   title="Unsaved changes"
                 />
               )}
-              {/* Mode is driven by the chat's Edit Mode — read-only badge */}
-              <span
-                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border ${
-                  mode === 'edit' ? 'text-gold border-gold/40' : 'text-textdim border-line'
+              {/* Mode follows the chat's Edit Mode — tap to toggle it in place
+                  (the selection is preserved across mode flips). */}
+              <button
+                type="button"
+                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
+                  mode === 'edit'
+                    ? 'text-gold border-gold/40 hover:border-gold'
+                    : 'text-textdim border-line hover:text-textsec hover:border-line2'
                 }`}
-                title={mode === 'edit' ? 'Edit Mode is on' : 'Toggle Edit Mode in chat to edit'}
+                title={mode === 'edit' ? 'Switch to Play mode (view)' : 'Switch to Edit Mode to edit'}
+                onClick={() => setPlanningMode(!editMode)}
               >
                 {mode === 'edit' ? 'EDITING' : 'VIEW'}
-              </span>
+              </button>
             </div>
           </div>
         </div>

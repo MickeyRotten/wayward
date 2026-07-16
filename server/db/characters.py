@@ -33,7 +33,7 @@ _JSON_NAME = "character.json"
 # the portrait is the sibling image files).
 _BASIC_KEYS = (
     "name", "gender", "species", "age", "heightCm", "weightKg",
-    "description", "likes", "dislikes", "personality", "drive",
+    "description", "likes", "dislikes", "personality", "drive", "other",
 )
 
 

@@ -52,6 +52,7 @@ export function SettingsPanel() {
   const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
   const [maxToolRounds, setMaxToolRounds] = useState(settings.maxToolRounds)
   const [autoRetryCount, setAutoRetryCount] = useState(settings.autoRetryCount)
+  const [reasoningEffort, setReasoningEffort] = useState(settings.reasoningEffort)
   const [useTools, setUseTools] = useState(settings.useTools)
   const [wbMode, setWbMode] = useState(settings.worldbuildingMode)
   const [wbModelId, setWbModelId] = useState(settings.worldbuildingModelId)
@@ -93,6 +94,7 @@ export function SettingsPanel() {
     setMaxPartySize(settings.maxPartySize)
     setMaxToolRounds(settings.maxToolRounds)
     setAutoRetryCount(settings.autoRetryCount)
+    setReasoningEffort(settings.reasoningEffort)
     setUseTools(settings.useTools)
     setWbMode(settings.worldbuildingMode)
     setWbModelId(settings.worldbuildingModelId)
@@ -104,7 +106,7 @@ export function SettingsPanel() {
     setVisionInstructions(settings.visionInstructions)
     setTtsEnabled(settings.ttsEnabled)
     setTtsAutoplay(settings.ttsAutoplay)
-  }, [settings.provider, settings.modelId, settings.nimModelId, settings.customBaseUrl, settings.customModelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.autoRetryCount, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
+  }, [settings.provider, settings.modelId, settings.nimModelId, settings.customBaseUrl, settings.customModelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.autoRetryCount, settings.reasoningEffort, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
 
   useEffect(() => {
     setInstructions(narrator.instructions)
@@ -150,6 +152,7 @@ export function SettingsPanel() {
       maxPartySize,
       maxToolRounds,
       autoRetryCount,
+      reasoningEffort,
       useTools,
       worldbuildingMode: wbMode,
       worldbuildingModelId: wbModelId,
@@ -424,6 +427,23 @@ export function SettingsPanel() {
                   value={maxTokens}
                   onChange={(e) => setMaxTokens(Number(e.target.value) || 1000)}
                 />
+              </label>
+              <label className="block">
+                <span className="text-[11px] text-textdim font-body">Reasoning Effort</span>
+                <select
+                  className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2"
+                  value={reasoningEffort}
+                  onChange={(e) => setReasoningEffort(e.target.value)}
+                >
+                  <option value="">Provider default</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+                <span className="block text-[10px] text-textdim font-body mt-0.5">
+                  Reasoning models only; sent via OpenRouter. Thinking spends the
+                  Max Tokens budget — the chat shows the phase live.
+                </span>
               </label>
             </div>
           </SubSection>

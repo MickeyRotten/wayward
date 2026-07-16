@@ -201,13 +201,14 @@ def _apply_sampling(
     presence_penalty: float | None,
     repetition_penalty: float | None,
     openai_strict: bool = False,
+    reasoning_effort: str | None = None,
 ) -> None:
     """Forward optional sampling params only when set to a meaningful (non-no-op)
     value, so default settings don't constrain providers that reject e.g.
     top_k=0. OpenRouter passes its superset through to the underlying model; when
     ``openai_strict`` (NVIDIA NIM / custom endpoints) only the OpenAI-standard
-    params are sent — min_p/top_k/repetition_penalty are OpenRouter-only and
-    would be rejected."""
+    params are sent — min_p/top_k/repetition_penalty (and the OpenRouter
+    ``reasoning``/``usage`` extensions) would be rejected."""
     if top_p is not None and top_p < 1.0:
         body["top_p"] = top_p
     if frequency_penalty:
@@ -222,6 +223,18 @@ def _apply_sampling(
         body["top_k"] = top_k
     if repetition_penalty is not None and repetition_penalty != 1.0:
         body["repetition_penalty"] = repetition_penalty
+    # Reasoning effort for reasoning-capable models (OpenRouter extension).
+    if reasoning_effort in ("low", "medium", "high"):
+        body["reasoning"] = {"effort": reasoning_effort}
+    # Ask for real token/cost accounting in the final stream chunk.
+    body["usage"] = {"include": True}
+
+
+def _delta_reasoning(delta: dict) -> str:
+    """Reasoning text from a stream delta — OpenRouter normalizes to
+    ``reasoning``; some OpenAI-compatible providers (DeepSeek-style) send
+    ``reasoning_content``."""
+    return delta.get("reasoning") or delta.get("reasoning_content") or ""
 
 
 async def chat_completion_stream(
@@ -237,7 +250,14 @@ async def chat_completion_stream(
     presence_penalty: float | None = None,
     repetition_penalty: float | None = None,
     base_url: str = OPENROUTER_BASE,
-) -> AsyncGenerator[str, None]:
+    reasoning_effort: str | None = None,
+    yield_events: bool = False,
+) -> AsyncGenerator[str | dict, None]:
+    """Stream one completion. Default: yields content strings (the original
+    contract — summariser/continue callers unchanged). With ``yield_events``
+    it yields dicts instead — ``{"type":"content"|"reasoning","text"}`` plus a
+    terminal ``{"type":"usage", ...}`` when the provider reports usage — so a
+    reasoning model's thinking phase is visible instead of a silent stall."""
     body: dict = {
         "model": model_id,
         "messages": messages,
@@ -246,10 +266,12 @@ async def chat_completion_stream(
         "stream": True,
     }
     _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty,
-                    repetition_penalty, openai_strict=not is_openrouter(base_url))
+                    repetition_penalty, openai_strict=not is_openrouter(base_url),
+                    reasoning_effort=reasoning_effort)
 
     client = _client()
     for attempt in range(_MAX_ATTEMPTS):
+        usage: dict | None = None
         async with client.stream(
             "POST",
             f"{base_url}/chat/completions",
@@ -278,15 +300,24 @@ async def chat_completion_stream(
                     continue
                 if isinstance(chunk, dict) and chunk.get("error"):
                     raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
+                if isinstance(chunk, dict) and chunk.get("usage"):
+                    usage = chunk["usage"]
                 try:
                     choice = chunk["choices"][0]
                 except (KeyError, IndexError):
                     continue
                 if choice.get("finish_reason") == "content_filter":
                     raise RuntimeError("The model's safety filter blocked this response.")
-                content = (choice.get("delta") or {}).get("content", "")
+                delta = choice.get("delta") or {}
+                if yield_events:
+                    reasoning = _delta_reasoning(delta)
+                    if reasoning:
+                        yield {"type": "reasoning", "text": reasoning}
+                content = delta.get("content", "")
                 if content:
-                    yield content
+                    yield {"type": "content", "text": content} if yield_events else content
+            if yield_events and usage:
+                yield {"type": "usage", **usage}
             return
 
 
@@ -305,13 +336,16 @@ async def chat_completion_agent_turn(
     presence_penalty: float | None = None,
     repetition_penalty: float | None = None,
     base_url: str = OPENROUTER_BASE,
+    reasoning_effort: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """One streaming model turn with tool calling.
 
-    Yields content deltas as ``{"type": "content", "text": ...}`` while they
-    arrive, then a single terminal ``{"type": "result", "content": <full text>,
-    "tool_calls": [...], "finish_reason": ...}``. Tool-call argument fragments
-    are accumulated by index into the OpenAI/OpenRouter tool-call shape.
+    Yields content deltas as ``{"type": "content", "text": ...}`` (and reasoning
+    deltas as ``{"type": "reasoning", "text": ...}`` for reasoning models) while
+    they arrive, then a single terminal ``{"type": "result", "content": <full
+    text>, "tool_calls": [...], "finish_reason": ..., "usage": <dict|None>}``.
+    Tool-call argument fragments are accumulated by index into the
+    OpenAI/OpenRouter tool-call shape.
     """
     body: dict = {
         "model": model_id,
@@ -324,11 +358,13 @@ async def chat_completion_agent_turn(
         body["tools"] = tools
         body["tool_choice"] = tool_choice
     _apply_sampling(body, top_p, min_p, top_k, frequency_penalty, presence_penalty,
-                    repetition_penalty, openai_strict=not is_openrouter(base_url))
+                    repetition_penalty, openai_strict=not is_openrouter(base_url),
+                    reasoning_effort=reasoning_effort)
 
     content_parts: list[str] = []
     tool_acc: dict[int, dict] = {}
     finish_reason: str | None = None
+    usage: dict | None = None
 
     client = _client()
     for attempt in range(_MAX_ATTEMPTS):
@@ -360,6 +396,8 @@ async def chat_completion_agent_turn(
                     continue
                 if isinstance(chunk, dict) and chunk.get("error"):
                     raise RuntimeError(f"Model error: {_error_text(chunk['error'])}")
+                if isinstance(chunk, dict) and chunk.get("usage"):
+                    usage = chunk["usage"]
                 try:
                     choice = chunk["choices"][0]
                 except (KeyError, IndexError):
@@ -371,6 +409,9 @@ async def chat_completion_agent_turn(
                         raise RuntimeError("The model's safety filter blocked this response.")
 
                 delta = choice.get("delta", {})
+                reasoning = _delta_reasoning(delta)
+                if reasoning:
+                    yield {"type": "reasoning", "text": reasoning}
                 content = delta.get("content")
                 if content:
                     content_parts.append(content)
@@ -394,6 +435,7 @@ async def chat_completion_agent_turn(
         "content": "".join(content_parts),
         "tool_calls": tool_calls,
         "finish_reason": finish_reason,
+        "usage": usage,
     }
 
 
@@ -434,19 +476,28 @@ async def agent_turn_with_retry(
 async def stream_with_retry(
     make_stream, retries: int, *, log_ctx: str = ""
 ) -> AsyncGenerator[dict, None]:
-    """Like ``agent_turn_with_retry`` but for the plain-text ``chat_completion_stream``
-    (yields str chunks). Yields dict events: ``{"type":"chunk","text"}`` per chunk,
-    ``{"type":"discard"}`` when a failed attempt had streamed, ``{"type":"retry",...}``
-    before a retry. Re-raises if all attempts fail."""
+    """Like ``agent_turn_with_retry`` but for ``chat_completion_stream``. Accepts
+    both of its modes: plain str chunks become ``{"type":"chunk","text"}``;
+    event dicts (``yield_events=True``) pass through with content mapped to
+    ``chunk`` and reasoning/usage forwarded as-is. Yields ``{"type":"discard"}``
+    when a failed attempt had streamed content, ``{"type":"retry",...}`` before
+    a retry. Re-raises if all attempts fail."""
     import logging
     log = logging.getLogger("wayward.retry")
     attempt = 0
     while True:
         streamed = False
         try:
-            async for chunk in make_stream():
-                streamed = True
-                yield {"type": "chunk", "text": chunk}
+            async for item in make_stream():
+                if isinstance(item, dict):
+                    if item.get("type") == "content":
+                        streamed = True
+                        yield {"type": "chunk", "text": item["text"]}
+                    else:  # reasoning / usage
+                        yield item
+                else:
+                    streamed = True
+                    yield {"type": "chunk", "text": item}
             return
         except Exception as e:  # noqa: BLE001
             if attempt >= max(0, retries):

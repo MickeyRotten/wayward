@@ -48,9 +48,12 @@ def test_strict_sampling_drops_openrouter_only_params():
     body: dict = {}
     _apply_sampling(body, top_p=0.9, min_p=0.05, top_k=40,
                     frequency_penalty=0.1, presence_penalty=0.1,
-                    repetition_penalty=1.1, openai_strict=True)
+                    repetition_penalty=1.1, openai_strict=True,
+                    reasoning_effort="high")
     assert "top_p" in body and "frequency_penalty" in body and "presence_penalty" in body
     assert "min_p" not in body and "top_k" not in body and "repetition_penalty" not in body
+    # OpenRouter-only extensions are never sent to strict providers.
+    assert "reasoning" not in body and "usage" not in body
 
 
 def test_openrouter_sampling_passes_superset_but_skips_noops():
@@ -58,7 +61,19 @@ def test_openrouter_sampling_passes_superset_but_skips_noops():
     _apply_sampling(body, top_p=1.0, min_p=0.05, top_k=0,
                     frequency_penalty=0.0, presence_penalty=0.0,
                     repetition_penalty=1.0, openai_strict=False)
-    assert body == {"min_p": 0.05}, body  # every no-op default omitted
+    # Every no-op sampling default omitted; usage accounting always requested.
+    assert body == {"min_p": 0.05, "usage": {"include": True}}, body
+
+
+def test_reasoning_effort_sent_only_when_valid():
+    body: dict = {}
+    _apply_sampling(body, None, None, None, None, None, None,
+                    openai_strict=False, reasoning_effort="medium")
+    assert body["reasoning"] == {"effort": "medium"}
+    body2: dict = {}
+    _apply_sampling(body2, None, None, None, None, None, None,
+                    openai_strict=False, reasoning_effort="bogus")
+    assert "reasoning" not in body2
 
 
 # ── summarisation helpers ─────────────────────────────────────────

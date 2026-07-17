@@ -41,6 +41,9 @@ interface NarratorState {
   hasVoice: boolean
   fetchConfig: () => Promise<void>
   save: (update: Partial<NarratorConfigResponse>) => Promise<void>
+  /** Optimistic local update (no network) — Config pairs this with a debounced
+   *  save() flush so edits show instantly and nothing clobbers an unsaved one. */
+  patchLocal: (partial: Partial<NarratorConfigResponse>) => void
 }
 
 export const useNarratorStore = create<NarratorState>((set) => ({
@@ -98,4 +101,6 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       hasVoice: n.hasVoice,
     })
   },
+
+  patchLocal: (partial) => set(partial as Partial<NarratorState>),
 }))

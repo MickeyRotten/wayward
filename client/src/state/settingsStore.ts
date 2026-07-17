@@ -39,6 +39,10 @@ interface SettingsState {
   availableModels: OpenRouterModel[]
   fetchSettings: () => Promise<void>
   saveSettings: (update: Partial<OpenRouterSettings> & { apiKey?: string; visionApiKey?: string; nimApiKey?: string; customApiKey?: string }) => Promise<void>
+  /** Optimistic local update — reflects an edit instantly without a network
+   *  call. Config pairs this with a debounced saveSettings({}) flush so the
+   *  store is always current and no auto-save can clobber an unsaved edit. */
+  patchLocal: (partial: Partial<OpenRouterSettings>) => void
   fetchModels: () => Promise<void>
 }
 
@@ -168,6 +172,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const s = await api.put<SettingsResponse>('/settings/openrouter', payload)
     set(applyResponse(s))
   },
+
+  patchLocal: (partial) => set(partial as Partial<SettingsState>),
 
   fetchModels: async () => {
     try {

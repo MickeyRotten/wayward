@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSettingsStore } from '../../state/settingsStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { usePartyStore } from '../../state/partyStore'
@@ -30,211 +30,224 @@ const INJECTION_POSITIONS: LorebookConfig['injectionPosition'][LoreCategory][] =
   'before_input',
 ]
 
+/** Returns a stable callback that runs `fn` after `delay` ms of quiet, so rapid
+ *  edits coalesce into a single trailing call (used to debounce auto-save). */
+function useDebounced(fn: () => void, delay: number) {
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const fnRef = useRef(fn)
+  fnRef.current = fn
+  return useCallback(() => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => fnRef.current(), delay)
+  }, [delay])
+}
+
+// Sections in nav order — id (for scroll target + open state), label, and
+// scope (omitted where a section mixes scopes; its sub-sections carry chips).
+const SECTIONS: { id: string; title: string; nav: string; scope?: Scope }[] = [
+  { id: 'campaign', title: 'Campaign', nav: 'Campaign', scope: 'Campaign' },
+  { id: 'ai', title: 'AI & Model', nav: 'AI', scope: 'Global' },
+  { id: 'agents', title: 'Agents & Tools', nav: 'Agents' },
+  { id: 'world', title: 'World', nav: 'World', scope: 'Campaign' },
+  { id: 'voice', title: 'Voice & Audio', nav: 'Voice', scope: 'Global' },
+  { id: 'appearance', title: 'Appearance', nav: 'Look', scope: 'Device' },
+]
+
 export function SettingsPanel() {
   const settings = useSettingsStore()
   const narrator = useNarratorStore()
 
-  const [provider, setProvider] = useState(settings.provider)
+  // Write-only API keys are the one thing not mirrored in the store — keep them
+  // local and persist on blur.
   const [apiKey, setApiKey] = useState('')
-  const [modelId, setModelId] = useState(settings.modelId)
-  const [nimModelId, setNimModelId] = useState(settings.nimModelId)
   const [nimApiKey, setNimApiKey] = useState('')
-  const [customBaseUrl, setCustomBaseUrl] = useState(settings.customBaseUrl)
-  const [customModelId, setCustomModelId] = useState(settings.customModelId)
   const [customApiKey, setCustomApiKey] = useState('')
-  const [temperature, setTemperature] = useState(settings.temperature)
-  const [topP, setTopP] = useState(settings.topP)
-  const [minP, setMinP] = useState(settings.minP)
-  const [topK, setTopK] = useState(settings.topK)
-  const [freqPen, setFreqPen] = useState(settings.frequencyPenalty)
-  const [presPen, setPresPen] = useState(settings.presencePenalty)
-  const [repPen, setRepPen] = useState(settings.repetitionPenalty)
-  const [maxTokens, setMaxTokens] = useState(settings.maxTokensResponse)
-  const [maxPartySize, setMaxPartySize] = useState(settings.maxPartySize)
-  const [maxToolRounds, setMaxToolRounds] = useState(settings.maxToolRounds)
-  const [autoRetryCount, setAutoRetryCount] = useState(settings.autoRetryCount)
-  const [reasoningEffort, setReasoningEffort] = useState(settings.reasoningEffort)
-  const [useTools, setUseTools] = useState(settings.useTools)
-  const [wbMode, setWbMode] = useState(settings.worldbuildingMode)
-  const [wbModelId, setWbModelId] = useState(settings.worldbuildingModelId)
-  const [actionSuggestionsModelId, setActionSuggestionsModelId] = useState(settings.actionSuggestionsModelId)
-  const [summaryThreshold, setSummaryThreshold] = useState(settings.summaryThreshold)
-  const [summaryModelId, setSummaryModelId] = useState(settings.summaryModelId)
-  const [visionModelId, setVisionModelId] = useState(settings.visionModelId)
-  const [visionUseSameKey, setVisionUseSameKey] = useState(settings.visionUseSameKey)
   const [visionApiKey, setVisionApiKey] = useState('')
-  const [visionInstructions, setVisionInstructions] = useState(settings.visionInstructions)
-  const [ttsEnabled, setTtsEnabled] = useState(settings.ttsEnabled)
-  const [ttsAutoplay, setTtsAutoplay] = useState(settings.ttsAutoplay)
   const [showAllModels, setShowAllModels] = useState(false)
-  const [instructions, setInstructions] = useState(narrator.instructions)
-  const [spotlightRule, setSpotlightRule] = useState(narrator.spotlightRule)
-  const [postHistory, setPostHistory] = useState(narrator.postHistoryInstructions)
-  const [plannerInstructions, setPlannerInstructions] = useState(narrator.plannerInstructions)
-  const [actionSuggestionsEnabled, setActionSuggestionsEnabled] = useState(narrator.actionSuggestionsEnabled)
-  const [actionSuggestionsInstructions, setActionSuggestionsInstructions] = useState(narrator.actionSuggestionsInstructions)
-  const [actionOptionRules, setActionOptionRules] = useState<string[]>(narrator.actionOptionRules)
-  const [actionSuggestionsMode, setActionSuggestionsMode] = useState(narrator.actionSuggestionsMode)
-  const [diceEnabled, setDiceEnabled] = useState(narrator.diceEnabled)
-  const [saved, setSaved] = useState(false)
 
-  useEffect(() => {
-    setProvider(settings.provider)
-    setModelId(settings.modelId)
-    setNimModelId(settings.nimModelId)
-    setCustomBaseUrl(settings.customBaseUrl)
-    setCustomModelId(settings.customModelId)
-    setTemperature(settings.temperature)
-    setTopP(settings.topP)
-    setMinP(settings.minP)
-    setTopK(settings.topK)
-    setFreqPen(settings.frequencyPenalty)
-    setPresPen(settings.presencePenalty)
-    setRepPen(settings.repetitionPenalty)
-    setMaxTokens(settings.maxTokensResponse)
-    setMaxPartySize(settings.maxPartySize)
-    setMaxToolRounds(settings.maxToolRounds)
-    setAutoRetryCount(settings.autoRetryCount)
-    setReasoningEffort(settings.reasoningEffort)
-    setUseTools(settings.useTools)
-    setWbMode(settings.worldbuildingMode)
-    setWbModelId(settings.worldbuildingModelId)
-    setActionSuggestionsModelId(settings.actionSuggestionsModelId)
-    setSummaryThreshold(settings.summaryThreshold)
-    setSummaryModelId(settings.summaryModelId)
-    setVisionModelId(settings.visionModelId)
-    setVisionUseSameKey(settings.visionUseSameKey)
-    setVisionInstructions(settings.visionInstructions)
-    setTtsEnabled(settings.ttsEnabled)
-    setTtsAutoplay(settings.ttsAutoplay)
-  }, [settings.provider, settings.modelId, settings.nimModelId, settings.customBaseUrl, settings.customModelId, settings.temperature, settings.topP, settings.minP, settings.topK, settings.frequencyPenalty, settings.presencePenalty, settings.repetitionPenalty, settings.maxTokensResponse, settings.maxPartySize, settings.maxToolRounds, settings.autoRetryCount, settings.reasoningEffort, settings.useTools, settings.worldbuildingMode, settings.worldbuildingModelId, settings.actionSuggestionsModelId, settings.summaryThreshold, settings.summaryModelId, settings.visionModelId, settings.visionUseSameKey, settings.visionInstructions, settings.ttsEnabled, settings.ttsAutoplay])
-
-  useEffect(() => {
-    setInstructions(narrator.instructions)
-    setSpotlightRule(narrator.spotlightRule)
-    setPostHistory(narrator.postHistoryInstructions)
-    setPlannerInstructions(narrator.plannerInstructions)
-    setActionSuggestionsEnabled(narrator.actionSuggestionsEnabled)
-    setActionSuggestionsInstructions(narrator.actionSuggestionsInstructions)
-    setActionOptionRules(narrator.actionOptionRules)
-    setActionSuggestionsMode(narrator.actionSuggestionsMode)
-    setDiceEnabled(narrator.diceEnabled)
-  }, [narrator.instructions, narrator.spotlightRule, narrator.postHistoryInstructions, narrator.plannerInstructions, narrator.actionSuggestionsEnabled, narrator.actionSuggestionsInstructions, narrator.actionOptionRules, narrator.actionSuggestionsMode, narrator.diceEnabled])
-
-  // Load the model list automatically when Config opens. OpenRouter's model
-  // list is public, so this works even before an API key is entered — the
-  // dropdown is ready to pick from immediately.
-  useEffect(() => {
-    const s = useSettingsStore.getState()
-    if (s.availableModels.length === 0) {
-      s.fetchModels()
-    }
+  // Auto-save status shown in the sticky header (also surfaces save errors).
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const track = useCallback((p: Promise<unknown>) => {
+    setSaveState('saving')
+    p.then(() => {
+      setSaveState('saved')
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setSaveState('idle'), 1500)
+    }).catch(() => setSaveState('error'))
+    return p
   }, [])
 
-  const saveAll = async () => {
-    await settings.saveSettings({
-      provider,
-      ...(apiKey ? { apiKey } : {}),
-      modelId,
-      nimModelId,
-      ...(nimApiKey ? { nimApiKey } : {}),
-      customBaseUrl,
-      customModelId,
-      ...(customApiKey ? { customApiKey } : {}),
-      temperature,
-      topP,
-      minP,
-      topK,
-      frequencyPenalty: freqPen,
-      presencePenalty: presPen,
-      repetitionPenalty: repPen,
-      maxTokensResponse: maxTokens,
-      maxContextTokens: settings.maxContextTokens,
-      maxPartySize,
-      maxToolRounds,
-      autoRetryCount,
-      reasoningEffort,
-      useTools,
-      worldbuildingMode: wbMode,
-      worldbuildingModelId: wbModelId,
-      actionSuggestionsModelId,
-      summaryThreshold,
-      summaryModelId,
-      visionModelId,
-      visionUseSameKey,
-      visionInstructions,
-      ttsEnabled,
-      ttsAutoplay,
-      ...(visionApiKey ? { visionApiKey } : {}),
-    })
-    await narrator.save({ instructions, spotlightRule, postHistoryInstructions: postHistory, plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions, actionOptionRules, actionSuggestionsMode, diceEnabled })
-    // The TTS enable toggle affects server-reported availability.
-    void useTtsStore.getState().fetchStatus()
-    setApiKey('')
-    setVisionApiKey('')
-    setNimApiKey('')
-    setCustomApiKey('')
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+  // Collapsible section open-state, lifted so the jump-nav can force-open one.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ campaign: true })
+  const toggleSection = (id: string) => setOpenSections((s) => ({ ...s, [id]: !(s[id] ?? false) }))
+  const goToSection = (id: string) => {
+    setOpenSections((s) => ({ ...s, [id]: true }))
+    requestAnimationFrame(() =>
+      document.getElementById(`cfg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    )
   }
 
-  // Reset-to-defaults handlers (local edits; persisted on SAVE). Blank text
-  // fields fall back to the built-in defaults server-side.
-  const resetAiModel = () => {
-    setTemperature(0.7); setTopP(1); setMinP(0); setTopK(0)
-    setFreqPen(0); setPresPen(0); setRepPen(1); setMaxTokens(1000)
+  // Debounced network flushes. Edits are applied optimistically via patchLocal,
+  // so the store is always current and saveSettings({}) PUTs the whole of it —
+  // rapid edits coalesce into one request, and nothing can clobber an edit.
+  const flushSettings = useCallback(() => {
+    void track(useSettingsStore.getState().saveSettings({}))
+  }, [track])
+  const flushNarrator = useCallback(() => {
+    const n = useNarratorStore.getState()
+    void track(n.save({
+      instructions: n.instructions,
+      spotlightRule: n.spotlightRule,
+      postHistoryInstructions: n.postHistoryInstructions,
+      plannerInstructions: n.plannerInstructions,
+      actionSuggestionsEnabled: n.actionSuggestionsEnabled,
+      actionSuggestionsInstructions: n.actionSuggestionsInstructions,
+      actionOptionRules: n.actionOptionRules,
+      actionSuggestionsMode: n.actionSuggestionsMode,
+      diceEnabled: n.diceEnabled,
+    }))
+  }, [track])
+  const scheduleSettings = useDebounced(flushSettings, 400)
+  const scheduleNarrator = useDebounced(flushNarrator, 400)
+
+  // Optimistic-patch + schedule-flush. Names mirror the old useState setters so
+  // the (large) JSX below and the per-section Reset handlers stay unchanged.
+  const setS = (p: Partial<OpenRouterSettings>) => { settings.patchLocal(p); scheduleSettings() }
+  const setN = (p: Partial<typeof narrator>) => { narrator.patchLocal(p); scheduleNarrator() }
+  // TTS availability re-checks when the enable toggle changes.
+  const setTtsEnabled = (v: boolean) => { setS({ ttsEnabled: v }); void useTtsStore.getState().fetchStatus() }
+
+  // Read straight from the stores (aliases preserve the old local-var names).
+  const { provider, modelId, nimModelId, customBaseUrl, customModelId,
+    temperature, topP, minP, topK, frequencyPenalty: freqPen, presencePenalty: presPen,
+    repetitionPenalty: repPen, maxTokensResponse: maxTokens, maxPartySize, maxToolRounds,
+    autoRetryCount, reasoningEffort, useTools, worldbuildingMode: wbMode,
+    worldbuildingModelId: wbModelId, actionSuggestionsModelId, summaryThreshold,
+    summaryModelId, visionModelId, visionUseSameKey, visionInstructions,
+    ttsEnabled, ttsAutoplay } = settings
+  const { instructions, spotlightRule, postHistoryInstructions: postHistory,
+    plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions,
+    actionOptionRules, actionSuggestionsMode, diceEnabled } = narrator
+
+  const setTemperature = (v: number) => setS({ temperature: v })
+  const setTopP = (v: number) => setS({ topP: v })
+  const setMinP = (v: number) => setS({ minP: v })
+  const setTopK = (v: number) => setS({ topK: v })
+  const setFreqPen = (v: number) => setS({ frequencyPenalty: v })
+  const setPresPen = (v: number) => setS({ presencePenalty: v })
+  const setRepPen = (v: number) => setS({ repetitionPenalty: v })
+  const setMaxTokens = (v: number) => setS({ maxTokensResponse: v })
+  const setMaxPartySize = (v: number) => setS({ maxPartySize: v })
+  const setMaxToolRounds = (v: number) => setS({ maxToolRounds: v })
+  const setAutoRetryCount = (v: number) => setS({ autoRetryCount: v })
+  const setReasoningEffort = (v: string) => setS({ reasoningEffort: v })
+  const setUseTools = (v: boolean) => setS({ useTools: v })
+  const setWbMode = (v: OpenRouterSettings['worldbuildingMode']) => setS({ worldbuildingMode: v })
+  const setWbModelId = (v: string) => setS({ worldbuildingModelId: v })
+  const setActionSuggestionsModelId = (v: string) => setS({ actionSuggestionsModelId: v })
+  const setSummaryThreshold = (v: number) => setS({ summaryThreshold: v })
+  const setSummaryModelId = (v: string) => setS({ summaryModelId: v })
+  const setVisionModelId = (v: string) => setS({ visionModelId: v })
+  const setVisionUseSameKey = (v: boolean) => setS({ visionUseSameKey: v })
+  const setVisionInstructions = (v: string) => setS({ visionInstructions: v })
+  const setTtsAutoplay = (v: boolean) => setS({ ttsAutoplay: v })
+  const setNimModelId = (v: string) => setS({ nimModelId: v })
+  const setCustomBaseUrl = (v: string) => setS({ customBaseUrl: v })
+  const setCustomModelId = (v: string) => setS({ customModelId: v })
+
+  const setInstructions = (v: string) => setN({ instructions: v })
+  const setSpotlightRule = (v: string) => setN({ spotlightRule: v })
+  const setPostHistory = (v: string) => setN({ postHistoryInstructions: v })
+  const setPlannerInstructions = (v: string) => setN({ plannerInstructions: v })
+  const setActionSuggestionsEnabled = (v: boolean) => setN({ actionSuggestionsEnabled: v })
+  const setActionSuggestionsInstructions = (v: string) => setN({ actionSuggestionsInstructions: v })
+  const setActionOptionRules = (v: string[]) => setN({ actionOptionRules: v })
+  const setActionSuggestionsMode = (v: string) => setN({ actionSuggestionsMode: v })
+  const setDiceEnabled = (v: boolean) => setN({ diceEnabled: v })
+
+  // Load the model list automatically when Config opens (public for OpenRouter).
+  useEffect(() => {
+    const s = useSettingsStore.getState()
+    if (s.availableModels.length === 0) s.fetchModels()
+  }, [])
+
+  // API keys persist on blur (write-only; never mirrored in the store).
+  const saveKey = (field: 'apiKey' | 'nimApiKey' | 'customApiKey' | 'visionApiKey', value: string, clear: () => void) => {
+    if (!value.trim()) return
+    void track(useSettingsStore.getState().saveSettings({ [field]: value }))
+    clear()
   }
+
+  // Reset-to-defaults (applies immediately now — each setter auto-saves). Blank
+  // text fields fall back to the built-in defaults server-side.
+  const resetAiModel = () => setS({ temperature: 0.7, topP: 1, minP: 0, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokensResponse: 1000 })
   const resetAgents = () => {
-    setUseTools(true); setMaxToolRounds(6); setAutoRetryCount(2)
-    setWbMode('confirmation'); setWbModelId('')
-    setSummaryThreshold(0.7); setSummaryModelId('')
-    setActionSuggestionsEnabled(false); setActionSuggestionsModelId('')
-    setVisionModelId('google/gemma-3-4b-it'); setVisionUseSameKey(true); setVisionInstructions('')
+    setS({ useTools: true, maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
+    setN({ actionSuggestionsEnabled: false })
   }
-  const resetWorld = () => {
-    setInstructions(''); setSpotlightRule(''); setPostHistory(''); setPlannerInstructions('')
-    setDiceEnabled(true)
-  }
-  const resetVoice = () => {
-    setTtsEnabled(false); setTtsAutoplay(true)
-  }
+  const resetWorld = () => setN({ instructions: '', spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
+  const resetVoice = () => setS({ ttsEnabled: false, ttsAutoplay: true })
   const resetAppearance = () => {
     useAppearanceStore.getState().setChatFontSize('medium')
     useAppearanceStore.getState().setChatBgOpacity(DEFAULT_CHAT_BG_OPACITY)
     useAppearanceStore.getState().setWeatherFx(true)
   }
 
-  // The active provider's model id is stored in a provider-specific field; the
-  // model dropdown (fed by /models for the *saved* provider) drives whichever
-  // one is active. Picking a model auto-saves it (as OpenRouter's flow does).
+  // The active provider's model id lives in a provider-specific field; the
+  // dropdown drives whichever one is active. Picking a model auto-saves it.
   const activeModelId = provider === 'nvidia_nim' ? nimModelId : provider === 'custom' ? customModelId : modelId
-  const setActiveModelId = provider === 'nvidia_nim' ? setNimModelId : provider === 'custom' ? setCustomModelId : setModelId
+  const setActiveModelId = provider === 'nvidia_nim' ? setNimModelId : provider === 'custom' ? setCustomModelId : (v: string) => setS({ modelId: v })
   const modelSaveKey = provider === 'nvidia_nim' ? 'nimModelId' : provider === 'custom' ? 'customModelId' : 'modelId'
 
   const switchProvider = (p: LlmProvider) => {
-    setProvider(p)
     // Persist immediately so /models serves the new provider, then reload its
     // list. Prefill NIM's default model on first switch.
     const patch: Partial<OpenRouterSettings> = { provider: p }
-    if (p === 'nvidia_nim' && !nimModelId) {
-      setNimModelId('deepseek-ai/deepseek-v4-pro')
-      patch.nimModelId = 'deepseek-ai/deepseek-v4-pro'
-    }
-    void settings.saveSettings(patch).then(() => settings.fetchModels())
+    if (p === 'nvidia_nim' && !nimModelId) patch.nimModelId = 'deepseek-ai/deepseek-v4-pro'
+    settings.patchLocal(patch)
+    void track(settings.saveSettings(patch).then(() => settings.fetchModels()))
   }
+
+  const sectionProps = (id: string) => ({
+    id,
+    open: openSections[id] ?? false,
+    onToggle: () => toggleSection(id),
+  })
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-5 pt-5 pb-3">
-        <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">CONFIG</h2>
+      {/* Sticky header: title + live save status + jump-nav. Never scrolls. */}
+      <div className="px-5 pt-5 pb-2 border-b border-line">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">CONFIG</h2>
+          <SaveStatus state={saveState} onRetry={() => { flushSettings(); flushNarrator() }} />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="font-ui text-[9px] tracking-wider uppercase text-textdim border border-line rounded-sm px-2 py-0.5 hover:text-gold hover:border-gold/50 transition-colors"
+              onClick={() => goToSection(s.id)}
+            >
+              {s.nav}
+            </button>
+          ))}
+        </div>
+        <div className="mt-1.5 flex items-center gap-2 text-[9px] text-textdim font-body">
+          <span>Changes save automatically.</span>
+          <span className="flex items-center gap-1"><ScopeChip scope="Global" /> app</span>
+          <span className="flex items-center gap-1"><ScopeChip scope="Campaign" /> this world</span>
+          <span className="flex items-center gap-1"><ScopeChip scope="Device" /> this device</span>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
         {/* Campaign */}
-        <Section title="Campaign" defaultOpen>
+        <Section title="Campaign" scope="Campaign" {...sectionProps('campaign')}>
           <CampaignSection />
-          <SubSection title="Party">
+          <SubSection title="Party" scope="Global">
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Max Party Size</span>
               <input
@@ -252,7 +265,7 @@ export function SettingsPanel() {
         </Section>
 
         {/* AI & Model */}
-        <Section title="AI &amp; Model" onReset={resetAiModel}>
+        <Section title="AI &amp; Model" scope="Global" onReset={resetAiModel} {...sectionProps('ai')}>
           <SubSection title="API &amp; Model">
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Provider</span>
@@ -278,8 +291,9 @@ export function SettingsPanel() {
                   placeholder={settings.apiKeySet ? '••••••••' : 'Enter your OpenRouter API key'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
+                  onBlur={() => saveKey('apiKey', apiKey, () => setApiKey(''))}
                 />
-                <span className="text-[10px] text-textdim font-body">Get a key at openrouter.ai/keys.</span>
+                <span className="text-[10px] text-textdim font-body">Get a key at openrouter.ai/keys. Saved when you click away.</span>
               </label>
             )}
 
@@ -294,6 +308,7 @@ export function SettingsPanel() {
                   placeholder={settings.nimApiKeySet ? '••••••••' : 'nvapi-...'}
                   value={nimApiKey}
                   onChange={(e) => setNimApiKey(e.target.value)}
+                  onBlur={() => saveKey('nimApiKey', nimApiKey, () => setNimApiKey(''))}
                 />
                 <span className="text-[10px] text-textdim font-body">Get an <code>nvapi-…</code> key at build.nvidia.com.</span>
               </label>
@@ -322,6 +337,7 @@ export function SettingsPanel() {
                     placeholder={settings.customApiKeySet ? '••••••••' : 'Enter the endpoint API key'}
                     value={customApiKey}
                     onChange={(e) => setCustomApiKey(e.target.value)}
+                    onBlur={() => saveKey('customApiKey', customApiKey, () => setCustomApiKey(''))}
                   />
                 </label>
               </>
@@ -354,13 +370,13 @@ export function SettingsPanel() {
                   className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none"
                   value={activeModelId}
                   onChange={(e) => {
-                    setActiveModelId(e.target.value)
                     const model = settings.availableModels.find((m) => m.id === e.target.value)
                     // OpenRouter reports contextLength; NIM/custom don't, so only
                     // update the context budget when we actually know it.
                     const patch: Partial<OpenRouterSettings> = { [modelSaveKey]: e.target.value }
                     if (model && model.contextLength > 0) patch.maxContextTokens = model.contextLength
-                    void settings.saveSettings(patch)
+                    settings.patchLocal(patch)
+                    void track(settings.saveSettings(patch))
                   }}
                 >
                   <option value="">Select a model...</option>
@@ -451,12 +467,12 @@ export function SettingsPanel() {
         </Section>
 
         {/* Agents & Tools */}
-        <Section title="Agents &amp; Tools" onReset={resetAgents}>
+        <Section title="Agents &amp; Tools" onReset={resetAgents} {...sectionProps('agents')}>
           <p className="text-[10px] text-textdim font-body leading-relaxed">
             Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story. The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/tasks/companions after each turn.
           </p>
 
-          <SubSection title="Narrator Tools">
+          <SubSection title="Narrator Tools" scope="Global">
             <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
               <input
                 type="checkbox"
@@ -494,7 +510,7 @@ export function SettingsPanel() {
             </p>
           </SubSection>
 
-          <SubSection title="Chronicler">
+          <SubSection title="Chronicler" scope="Global">
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Mode</span>
               <select
@@ -524,7 +540,7 @@ export function SettingsPanel() {
             </label>
           </SubSection>
 
-          <SubSection title="Summarisation">
+          <SubSection title="Summarisation" scope="Global">
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Summarise at {Math.round(summaryThreshold * 100)}% of context</span>
               <input
@@ -555,7 +571,7 @@ export function SettingsPanel() {
             </label>
           </SubSection>
 
-          <SubSection title="Action Suggestions">
+          <SubSection title="Action Suggestions" scope="Campaign">
             <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
               <input
                 type="checkbox"
@@ -660,12 +676,12 @@ export function SettingsPanel() {
                 </button>
               </div>
               <span className="mt-1 block text-[10px] text-textdim font-body">
-                Each rule shapes one option — by default they differ morally (good / neutral / dark) plus a wildcard. 1-6 options; saved with SAVE (reset applies immediately).
+                Each rule shapes one option — by default they differ morally (good / neutral / dark) plus a wildcard. 1-6 options; saved automatically.
               </span>
             </div>
           </SubSection>
 
-          <SubSection title="Vision">
+          <SubSection title="Vision" scope="Global">
             <span className="text-[10px] text-textdim font-body">
               When you attach an image to a chat message, the Vision agent looks at it and describes it for the Narrator or Editor (which may be text-only models). Runs once per attached image.
             </span>
@@ -714,6 +730,7 @@ export function SettingsPanel() {
                   placeholder={settings.visionApiKeySet ? '••••••••' : 'sk-or-...'}
                   value={visionApiKey}
                   onChange={(e) => setVisionApiKey(e.target.value)}
+                  onBlur={() => saveKey('visionApiKey', visionApiKey, () => setVisionApiKey(''))}
                 />
                 <span className="text-[10px] text-textdim font-body">
                   A separate OpenRouter key just for the vision agent (e.g. a free-tier key).
@@ -724,7 +741,7 @@ export function SettingsPanel() {
         </Section>
 
         {/* World */}
-        <Section title="World" onReset={resetWorld}>
+        <Section title="World" scope="Campaign" onReset={resetWorld} {...sectionProps('world')}>
           <SubSection title="Narrator Instructions">
             <ExpandableTextarea
               label="Narrator Instructions"
@@ -795,7 +812,7 @@ export function SettingsPanel() {
         </Section>
 
         {/* Voice & Audio */}
-        <Section title="Voice &amp; Audio" onReset={resetVoice}>
+        <Section title="Voice &amp; Audio" scope="Global" onReset={resetVoice} {...sectionProps('voice')}>
           <TtsStatusLine />
           <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
             <input
@@ -821,26 +838,15 @@ export function SettingsPanel() {
             on this machine — it is slow without a GPU.
           </span>
 
-          <SubSection title="Narrator Voice">
+          <SubSection title="Narrator Voice" scope="Campaign">
             <NarratorVoiceSample />
           </SubSection>
         </Section>
 
         {/* Appearance */}
-        <Section title="Appearance" onReset={resetAppearance}>
+        <Section title="Appearance" scope="Device" onReset={resetAppearance} {...sectionProps('appearance')}>
           <AppearanceSection />
         </Section>
-
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            type="button"
-            className="font-ui text-[10px] bg-golddeep text-bg0 px-4 py-2 hover:bg-gold transition-colors"
-            onClick={saveAll}
-          >
-            SAVE
-          </button>
-          {saved && <span className="font-ui text-[10px] text-gold">SAVED</span>}
-        </div>
 
         {/* Adventure Management */}
         <AdventureManagement />
@@ -1481,28 +1487,71 @@ function FragmentRow({
   )
 }
 
+type Scope = 'Global' | 'Campaign' | 'Device'
+
+function ScopeChip({ scope }: { scope: Scope }) {
+  const cls = scope === 'Campaign'
+    ? 'text-gold border-gold/40'
+    : scope === 'Device'
+      ? 'text-textsec border-line2'
+      : 'text-blue border-blue/40'
+  return (
+    <span
+      title={
+        scope === 'Campaign' ? 'Saved with this world (campaign)'
+          : scope === 'Device' ? 'Saved on this device only'
+            : 'App-wide setting'
+      }
+      className={`font-ui text-[8px] tracking-wider uppercase px-1 py-px border rounded-sm ${cls}`}
+    >
+      {scope}
+    </span>
+  )
+}
+
+function SaveStatus({ state, onRetry }: { state: 'idle' | 'saving' | 'saved' | 'error'; onRetry: () => void }) {
+  if (state === 'idle') return null
+  if (state === 'saving') return <span className="font-ui text-[9px] tracking-wider text-textdim">SAVING…</span>
+  if (state === 'saved') return <span className="font-ui text-[9px] tracking-wider text-gold">ALL CHANGES SAVED</span>
+  return (
+    <button
+      type="button"
+      onClick={onRetry}
+      className="font-ui text-[9px] tracking-wider text-danger border border-danger-border rounded-sm px-1.5 py-0.5 hover:text-danger-hover transition-colors"
+    >
+      SAVE FAILED ↻ RETRY
+    </button>
+  )
+}
+
 function Section({
+  id,
   title,
-  defaultOpen = false,
+  scope,
+  open,
+  onToggle,
   onReset,
   children,
 }: {
+  id: string
   title: string
-  defaultOpen?: boolean
+  scope?: Scope
+  open: boolean
+  onToggle: () => void
   onReset?: () => void
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="border border-line rounded-md">
+    <section id={`cfg-${id}`} className="border border-line rounded-md scroll-mt-2">
       <div className="w-full flex items-center justify-between px-3 py-2 hover:bg-bg2 transition-colors">
         <button
           type="button"
           className="flex-1 flex items-center gap-2 text-left"
           aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
+          onClick={onToggle}
         >
           <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">{title}</span>
+          {scope && <ScopeChip scope={scope} />}
         </button>
         <div className="flex items-center gap-3">
           {onReset && (
@@ -1519,7 +1568,7 @@ function Section({
             type="button"
             className="font-ui text-[10px] text-textdim"
             aria-label={open ? 'Collapse' : 'Expand'}
-            onClick={() => setOpen((o) => !o)}
+            onClick={onToggle}
           >
             {open ? '−' : '+'}
           </button>
@@ -1534,10 +1583,12 @@ function Section({
 // top-level Section. Open by default so the group's contents are visible.
 function SubSection({
   title,
+  scope,
   defaultOpen = true,
   children,
 }: {
   title: string
+  scope?: Scope
   defaultOpen?: boolean
   children: React.ReactNode
 }) {
@@ -1550,7 +1601,10 @@ function SubSection({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="font-ui text-[9px] tracking-wider text-textdim uppercase">{title}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="font-ui text-[9px] tracking-wider text-textdim uppercase">{title}</span>
+          {scope && <ScopeChip scope={scope} />}
+        </span>
         <span className="font-ui text-[9px] text-textdim">{open ? '−' : '+'}</span>
       </button>
       {open && <div className="pt-1 pb-1 space-y-2">{children}</div>}

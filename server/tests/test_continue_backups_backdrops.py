@@ -22,7 +22,7 @@ def _sse_events(body: str) -> list[dict]:
 
 def test_continue_extends_latest_narration(client, monkeypatch):
     client.post("/api/adventures", json={"name": "Continue Test"})
-    from server.api import routes
+    from server.api import chat as chat_routes
     from server.db.database import new_session
     from server.db.models import ChatMessage, OpenRouterSettings
 
@@ -42,7 +42,7 @@ def test_continue_extends_latest_narration(client, monkeypatch):
     async def fake_stream(**_kwargs):
         yield "Then a twig snaps"
         yield " behind you."
-    monkeypatch.setattr(routes, "chat_completion_stream", lambda **kw: fake_stream(**kw))
+    monkeypatch.setattr(chat_routes, "chat_completion_stream", lambda **kw: fake_stream(**kw))
 
     res = client.post("/api/chat/continue")
     assert res.status_code == 200, res.text
@@ -61,7 +61,7 @@ def test_continue_extends_latest_narration(client, monkeypatch):
 
 def test_continue_splices_a_clipped_beat_with_a_space(client, monkeypatch):
     client.post("/api/adventures", json={"name": "Continue Clip Test"})
-    from server.api import routes
+    from server.api import chat as chat_routes
     from server.db.database import new_session
     from server.db.models import ChatMessage
 
@@ -75,7 +75,7 @@ def test_continue_splices_a_clipped_beat_with_a_space(client, monkeypatch):
 
     async def fake_stream(**_kwargs):
         yield "darkness beyond the torchlight."
-    monkeypatch.setattr(routes, "chat_completion_stream", lambda **kw: fake_stream(**kw))
+    monkeypatch.setattr(chat_routes, "chat_completion_stream", lambda **kw: fake_stream(**kw))
 
     res = client.post("/api/chat/continue")
     done = next(e for e in _sse_events(res.text) if e["type"] == "done")
@@ -121,9 +121,9 @@ def test_snapshot_backup_and_restore(client):
     import pytest
     from fastapi import HTTPException
 
-    from server.api import routes
+    from server.api import campaigns as campaign_routes
     with pytest.raises(HTTPException):
-        run(routes.restore_backup("../app.db.zip"))
+        run(campaign_routes.restore_backup("../app.db.zip"))
 
 
 def test_backup_rotation_keeps_newest(client):
@@ -184,6 +184,6 @@ def test_backdrop_upload_rejects_bad_types_and_traversal(client):
     import pytest
     from fastapi import HTTPException
 
-    from server.api import routes
+    from server.api import backdrops as backdrop_routes
     with pytest.raises(HTTPException):
-        run(routes.delete_backdrop("../main.py"))
+        run(backdrop_routes.delete_backdrop("../main.py"))

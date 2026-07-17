@@ -188,7 +188,7 @@ def test_background_summary_with_stubbed_llm(client):
     _new_adventure(client, "Summary Test")
     from sqlalchemy import select
 
-    from server.api import routes
+    from server.api import chat as chat_routes
     from server.db.database import new_session
     from server.db.models import ChatMessage, OpenRouterSettings, StorySummary
 
@@ -208,12 +208,12 @@ def test_background_summary_with_stubbed_llm(client):
 
     async def fake_generate_summary(api_key, model_id, messages_to_summarize, existing_summary, base_url):
         return "THE STORY SO FAR (stub)."
-    real = routes.generate_summary
-    routes.generate_summary = fake_generate_summary
+    real = chat_routes.generate_summary
+    chat_routes.generate_summary = fake_generate_summary
     try:
-        run(routes._summarize_in_background())
+        run(chat_routes._summarize_in_background())
     finally:
-        routes.generate_summary = real
+        chat_routes.generate_summary = real
 
     async def check():
         async with new_session() as s:

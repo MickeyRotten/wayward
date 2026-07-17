@@ -105,6 +105,7 @@ class NarratorUpdate(BaseModel):
     actionSuggestionsMode: str | None = None  # 'separate' | 'inline'
     actionOptionRules: list[str] | None = None
     firstMessageOptions: list[str] | None = None
+    firstMessageAlternates: list[str] | None = None
     diceEnabled: bool | None = None
 
 
@@ -122,6 +123,7 @@ class NarratorResponse(BaseModel):
     actionSuggestionsMode: str
     actionOptionRules: list[str]
     firstMessageOptions: list[str]
+    firstMessageAlternates: list[str]
 
 
 # --- Scenario ---
@@ -277,6 +279,10 @@ class ChatEventResponse(BaseModel):
 class ChatTurnRequest(BaseModel):
     message: str
     mode: str = "narrator"  # 'narrator' | 'planner'
+    # The opening greeting the player had selected at turn 0 (R13 alternate
+    # openings). Sent only on the first narrator turn; the server anchors it to
+    # the adventure so it drives display + prompt from then on.
+    opening: str | None = None
     # Optional player-attached image as a data URL (image/jpeg|png|webp). The
     # vision agent describes it for the narrator/editor; the file is saved in
     # the adventure's chat_images/ folder for display in the chat log.

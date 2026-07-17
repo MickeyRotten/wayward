@@ -51,6 +51,22 @@ def test_first_message_prepends_history_and_survives_trimming():
     assert estimate_prompt_tokens(msgs) <= 4000
 
 
+def test_first_message_override_anchors_alternate_opening():
+    # R13: an anchored alternate greeting replaces the campaign's primary.
+    cfg = _cfg(first_message="Primary opening.")
+    msgs = build_prompt(narrator_config=cfg, player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi",
+                        include_action_protocol=False,
+                        first_message_override="An alternate opening.")
+    assistants = [m for m in msgs if m["role"] == "assistant"]
+    assert assistants and assistants[0]["content"] == "An alternate opening."
+    # A blank/None override falls back to the primary first_message.
+    msgs2 = build_prompt(narrator_config=cfg, player_character=_pc(), party_members=[],
+                         chat_history=[], player_message="Hi",
+                         include_action_protocol=False, first_message_override=None)
+    assert [m for m in msgs2 if m["role"] == "assistant"][0]["content"] == "Primary opening."
+
+
 def test_trimming_drops_oldest_history_first():
     history = [_msg("user", f"turn {t} " + "x" * 2000, t) for t in range(1, 30)]
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],

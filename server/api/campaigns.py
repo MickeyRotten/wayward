@@ -415,7 +415,10 @@ async def export_story(session: AsyncSession = Depends(get_session)):
     title = " — ".join(b for b in [(camp or {}).get("name"), (adv or {}).get("name")] if b)
     lines += [f"# {title or 'A Wayward Adventure'}", ""]
 
-    first_message = (getattr(narrator, "first_message", "") or "").strip()
+    # Use the greeting anchored to this adventure (R13) if present, else primary.
+    _summary = (await session.execute(select(StorySummary))).scalars().first()
+    anchored = (getattr(_summary, "opening_message", None) if _summary else None)
+    first_message = (anchored if anchored is not None else (getattr(narrator, "first_message", "") or "")).strip()
     if first_message:
         lines += [first_message, ""]
 
@@ -469,6 +472,7 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             "actionInstruction": narrator.action_instruction if narrator else "",
             "spotlightRule": narrator.spotlight_rule if narrator else "",
             "firstMessage": narrator.first_message if narrator else "",
+            "firstMessageAlternates": (getattr(narrator, "first_message_alternates", None) or []) if narrator else [],
             "postHistoryInstructions": narrator.post_history_instructions if narrator else "",
             "plannerInstructions": getattr(narrator, "planner_instructions", "") if narrator else "",
             "actionSuggestionsEnabled": bool(getattr(narrator, "action_suggestions_enabled", False)) if narrator else False,
@@ -587,6 +591,7 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
         action_instruction=nar.get("actionInstruction", ""),
         spotlight_rule=nar.get("spotlightRule", ""),
         first_message=nar.get("firstMessage", ""),
+        first_message_alternates=nar.get("firstMessageAlternates") or None,
         post_history_instructions=nar.get("postHistoryInstructions", ""),
         planner_instructions=nar.get("plannerInstructions", ""),
         action_suggestions_enabled=nar.get("actionSuggestionsEnabled", False),

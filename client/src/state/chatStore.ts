@@ -51,6 +51,7 @@ const TOOL_STATUS: Record<string, string> = {
   set_narrator_instructions: 'Updating Narrator instructions',
   get_narrator_instructions: 'Reading Narrator instructions',
   set_first_message: 'Setting the opening',
+  set_first_message_alternates: 'Setting alternate openings',
   list_world: 'Reviewing the world',
   get_entry: 'Reading an entry',
 }
@@ -89,6 +90,12 @@ interface ChatState {
   contextTokens: number | null
   maxContextTokens: number | null
   activeVariants: Record<number, number>
+  // R13 alternate openings. `anchoredOpening` is the greeting locked to this
+  // adventure once play begins (null before the first turn); `openingIndex` is
+  // the transient turn-0 selection into [firstMessage, ...alternates].
+  anchoredOpening: string | null
+  openingIndex: number
+  setOpeningIndex: (i: number) => void
   fetchHistory: () => Promise<void>
   fetchEvents: () => Promise<void>
   sendTurn: (message: string, image?: string | null) => Promise<void>
@@ -132,6 +139,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   contextTokens: null,
   maxContextTokens: null,
   activeVariants: {},
+  anchoredOpening: null,
+  openingIndex: 0,
+
+  setOpeningIndex: (i) => set({ openingIndex: i }),
 
   fetchHistory: async () => {
     const messages = await api.get<ChatMessage[]>('/chat/messages')
@@ -148,6 +159,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set({ messages, currentTurn: maxTurn, activeVariants: variants })
     void get().fetchEvents()
+    // The greeting anchored to this adventure (null until the first turn).
+    try {
+      const { message } = await api.get<{ message: string | null }>('/chat/opening')
+      set({ anchoredOpening: message })
+    } catch { /* opening is non-critical */ }
   },
 
   fetchEvents: async () => {
@@ -160,6 +176,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const planning = get().planningMode
     const mode = planning ? 'planner' : 'narrator'
     const turn = threadMaxTurn(get().messages, planning) + 1
+
+    // R13: on the opening narrator turn, lock in the greeting the player has
+    // selected in the turn-0 swipe (see ChatScene) so the server anchors it.
+    let opening: string | undefined
+    if (!planning && !get().messages.some((m) => m.role === 'user' && (m.mode ?? 'narrator') === 'narrator')) {
+      const n = useNarratorStore.getState()
+      const greetings = [n.firstMessage, ...n.firstMessageAlternates].filter((g) => g.trim())
+      opening = greetings[get().openingIndex] ?? greetings[0]
+    }
 
     const optimisticMsg: ChatMessage = {
       id: nextOptimisticId--,
@@ -184,7 +209,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
 
     _lastSent = message
-    await _handleStream('/api/chat/turn', { message, mode, ...(image ? { image } : {}) }, { appendOnDone: !planning })
+    await _handleStream('/api/chat/turn', { message, mode, ...(image ? { image } : {}), ...(opening !== undefined ? { opening } : {}) }, { appendOnDone: !planning })
   },
 
   // A true Continue: extends the latest narration in place (no new turn). When
@@ -265,7 +290,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   clearHistory: async () => {
     useTtsStore.getState().stop()
     await api.del('/chat/messages')
-    set({ messages: [], currentTurn: 0, activeVariants: {}, contextTokens: null, maxContextTokens: null })
+    set({ messages: [], currentTurn: 0, activeVariants: {}, contextTokens: null, maxContextTokens: null, anchoredOpening: null, openingIndex: 0 })
   },
 
   setPlanningMode: (v) => {

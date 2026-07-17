@@ -38,6 +38,7 @@ def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorRe
         actionSuggestionsMode=getattr(n, "action_suggestions_mode", "separate") or "separate",
         actionOptionRules=normalize_option_rules(getattr(n, "action_option_rules", None)),
         firstMessageOptions=[str(o) for o in (getattr(n, "first_message_options", None) or [])],
+        firstMessageAlternates=[str(o) for o in (getattr(n, "first_message_alternates", None) or [])],
         diceEnabled=bool(getattr(n, "dice_enabled", True)),
         hasVoice=has_voice,
     )
@@ -91,6 +92,8 @@ async def update_narrator(
         n.action_option_rules = [r.strip() for r in data.actionOptionRules if r.strip()]
     if data.firstMessageOptions is not None:
         n.first_message_options = [o.strip() for o in data.firstMessageOptions if o.strip()]
+    if data.firstMessageAlternates is not None:
+        n.first_message_alternates = [o.strip() for o in data.firstMessageAlternates if o.strip()]
     if data.diceEnabled is not None:
         n.dice_enabled = data.diceEnabled
     await session.commit()

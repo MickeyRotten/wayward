@@ -159,6 +159,7 @@ async def apply_template(name: str) -> bool:
             first_message=nar.get("firstMessage", ""),
             action_option_rules=nar.get("actionOptionRules") or None,
             first_message_options=nar.get("firstMessageOptions") or None,
+            first_message_alternates=nar.get("firstMessageAlternates") or None,
         ))
 
         # --- Lorebook injection config (campaign scope) ---

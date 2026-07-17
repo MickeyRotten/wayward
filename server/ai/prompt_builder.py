@@ -71,6 +71,7 @@ def build_prompt(
     max_context_tokens: int = 128000,
     max_response_tokens: int = 1000,
     include_action_protocol: bool = True,
+    first_message_override: str | None = None,
 ) -> list[dict]:
     messages: list[dict] = []
 
@@ -186,7 +187,12 @@ def build_prompt(
 
     # The editable opening narration is prepended to history below and is ALWAYS
     # kept, so it must be reserved here or it can push the prompt over budget.
-    first_message = getattr(narrator_config, "first_message", "") or ""
+    # An adventure that anchored an alternate greeting overrides the primary.
+    first_message = (
+        first_message_override
+        if (first_message_override and first_message_override.strip())
+        else (getattr(narrator_config, "first_message", "") or "")
+    )
     first_msg_tokens = (len(first_message) // 4 + 4) if first_message.strip() else 0
 
     budget = max_context_tokens - max_response_tokens - preamble_tokens - player_msg_tokens - lore_extra_tokens - first_msg_tokens

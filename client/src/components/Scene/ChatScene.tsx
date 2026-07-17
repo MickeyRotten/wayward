@@ -70,6 +70,10 @@ export function ChatScene() {
   const setActiveVariant = useChatStore((s) => s.setActiveVariant)
   const apiKeySet = useSettingsStore((s) => s.apiKeySet)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const firstMessageAlternates = useNarratorStore((s) => s.firstMessageAlternates)
+  const anchoredOpening = useChatStore((s) => s.anchoredOpening)
+  const openingIndex = useChatStore((s) => s.openingIndex)
+  const setOpeningIndex = useChatStore((s) => s.setOpeningIndex)
   const planningMode = useChatStore((s) => s.planningMode)
   const setPlanningMode = useChatStore((s) => s.setPlanningMode)
   const pendingDeletes = useChatStore((s) => s.pendingDeletes)
@@ -208,15 +212,29 @@ export function ChatScene() {
       (lastVisibleMsg && lastVisibleMsg.role === 'user')
     )
 
+  // R13 alternate openings: the pool the player can swipe at turn 0 (primary
+  // first, then alternates), and the greeting actually shown. Once the
+  // adventure has anchored a greeting, that one wins and the arrows retire.
+  const greetings = useMemo(
+    () => [firstMessage, ...firstMessageAlternates].filter((g) => g.trim()),
+    [firstMessage, firstMessageAlternates],
+  )
+  // Clamp the transient selection so a stale index (e.g. after an adventure
+  // switch to a campaign with fewer greetings) can't fall out of range.
+  const openIdx = greetings.length ? ((openingIndex % greetings.length) + greetings.length) % greetings.length : 0
+  const displayedOpening = anchoredOpening ?? (greetings[openIdx] ?? firstMessage)
+
   // Find first narrator message index for drop-cap. When a configured First
   // Message is shown, IT carries the drop-cap, so real messages never do.
-  const hasFirstMessage = !planningMode && !!firstMessage.trim()
+  const hasFirstMessage = !planningMode && !!displayedOpening.trim()
 
   // The unified text-adventure action panel: numbered choice options (scripted
   // on the opening beat, AI-generated afterwards) + the fixed actions. Shown
   // whenever the player could act — idle after a narrator beat, or on a fresh
   // adventure showing only the First Message.
   const isOpening = !visibleMessages.some((m) => m.role === 'user')
+  // Swipe arrows to cycle greetings — only pre-anchor, with more than one.
+  const showOpeningSwipe = isOpening && !anchoredOpening && greetings.length > 1
   const panelOptions = isOpening
     ? (hasFirstMessage ? firstMessageOptions : [])
     : (actionSuggestionsEnabled ? actionSuggestions : [])
@@ -435,15 +453,39 @@ export function ChatScene() {
           </div>
         )}
 
-        {/* Configured opening narration (drop-capped, not editable in chat) */}
+        {/* Configured opening narration (drop-capped, not editable in chat).
+            Pre-anchor, swipe arrows cycle the alternate greetings (R13). */}
         {hasFirstMessage && (
           <div className="max-w-[85%] max-lg:max-w-full mr-auto">
             <div className="px-4 py-3">
               <NarrationHtml
                 className="chat-prose font-body text-text2 whitespace-pre-wrap first-narrator-dropcap"
-                html={applyEntityChips(formatNarrationWithDropCap(firstMessage), chipEntities)}
+                html={applyEntityChips(formatNarrationWithDropCap(displayedOpening), chipEntities)}
               />
             </div>
+            {showOpeningSwipe && (
+              <div className="px-4 pb-1 flex items-center gap-3 text-gold">
+                <button
+                  type="button"
+                  aria-label="Previous opening"
+                  className="font-ui text-[13px] leading-none px-1.5 py-0.5 border border-line hover:border-gold/50 hover:text-gold2 transition-colors"
+                  onClick={() => setOpeningIndex((openIdx - 1 + greetings.length) % greetings.length)}
+                >
+                  ‹
+                </button>
+                <span className="font-ui text-[10px] tracking-wider text-textsec tabular-nums">
+                  OPENING {openIdx + 1} / {greetings.length}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next opening"
+                  className="font-ui text-[13px] leading-none px-1.5 py-0.5 border border-line hover:border-gold/50 hover:text-gold2 transition-colors"
+                  onClick={() => setOpeningIndex((openIdx + 1) % greetings.length)}
+                >
+                  ›
+                </button>
+              </div>
+            )}
           </div>
         )}
 

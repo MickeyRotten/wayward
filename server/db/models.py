@@ -120,8 +120,13 @@ class NarratorConfig(Base):
     # Appended after everything else, immediately before the user's message.
     post_history_instructions: Mapped[str] = mapped_column(Text, default="")
     # The opening narration shown before the player's first turn (drop-capped,
-    # included in context). Editable in Config.
+    # included in context). Editable in Config. This is the PRIMARY greeting;
+    # first_message_alternates holds additional ones.
     first_message: Mapped[str] = mapped_column(Text, default="")
+    # Alternate opening narrations (like SillyTavern's alternate greetings). At
+    # turn 0 the swipe arrows cycle [first_message, *alternates]; the chosen one
+    # is anchored per-adventure (StorySummary.opening_message). Null/empty => none.
+    first_message_alternates = mapped_column(JSON, nullable=True)
     # Core instructions for the Planner persona (Planning mode). Editable in
     # Config; falls back to the built-in default when blank.
     planner_instructions: Mapped[str] = mapped_column(Text, default="")
@@ -255,6 +260,10 @@ class StorySummary(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     content: Mapped[str] = mapped_column(Text, default="")
     summary_up_to_turn: Mapped[int] = mapped_column(Integer, default=0)
+    # The opening narration anchored to THIS adventure — the greeting the player
+    # had selected when they took their first turn (see R13 alternate openings).
+    # Null => not yet anchored; fall back to the campaign's primary first_message.
+    opening_message: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
 
 class ChatMessage(Base):

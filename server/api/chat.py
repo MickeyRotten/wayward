@@ -138,6 +138,15 @@ async def get_chat_events(session: AsyncSession = Depends(get_session)):
     ]
 
 
+@router.get("/chat/opening")
+async def get_chat_opening(session: AsyncSession = Depends(get_session)):
+    """The opening greeting anchored to this adventure (R13 alternate openings).
+    Null until the player takes their first turn — before that the client cycles
+    the campaign's greetings locally; after, this is the fixed opening shown."""
+    s = (await session.execute(select(StorySummary))).scalars().first()
+    return {"message": getattr(s, "opening_message", None) if s else None}
+
+
 @router.put("/chat/messages/{msg_id}", response_model=ChatMessageResponse)
 async def edit_message(
     msg_id: int,
@@ -206,6 +215,16 @@ async def delete_message_and_after(
     await session.execute(
         delete(ChatMessage).where(ChatMessage.id >= msg.id)
     )
+    # If the narrator thread is now empty we're back at the opening — release the
+    # anchor so the greeting swipe arrows return (R13 alternate openings).
+    remaining = (await session.execute(
+        select(func.count()).select_from(ChatMessage)
+        .where(func.coalesce(ChatMessage.mode, "narrator") != "planner")
+    )).scalar_one()
+    if not remaining:
+        summary = (await session.execute(select(StorySummary))).scalars().first()
+        if summary:
+            summary.opening_message = None
     await session.commit()
 
 
@@ -256,6 +275,10 @@ async def clear_chat(session: AsyncSession = Depends(get_session)):
     await event_ops.clear_events(session)  # wipe all toasts with the chat
     for b in await party_ops.all_bindings(session):
         b.last_spoke_turn = 0
+    # Back at the opening — release the anchored greeting (R13 alternate openings).
+    summary = (await session.execute(select(StorySummary))).scalars().first()
+    if summary:
+        summary.opening_message = None
     await session.commit()
 
 
@@ -460,6 +483,7 @@ async def _maybe_summarize_and_build(
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
         include_action_protocol=not agentic,
+        first_message_override=getattr(summary, "opening_message", None),
     )
 
     preamble_tokens = estimate_prompt_tokens(test_prompt)
@@ -547,6 +571,14 @@ async def chat_turn(
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
+
+    # Anchor the opening: on the very first narrator turn, lock in whichever
+    # greeting the player had selected (R13 alternate openings). Falls back to
+    # the campaign's primary first_message when none was sent. From here on the
+    # anchored text drives both the chat display and the prompt.
+    if max_turn == 0 and getattr(summary, "opening_message", None) is None:
+        summary.opening_message = (data.opening or "").strip() or (narrator.first_message or "")
+        session.add(summary)
 
     # Player-attached image: save it with the adventure, have the vision agent
     # describe it (the narrator itself may be text-only), and record both on the

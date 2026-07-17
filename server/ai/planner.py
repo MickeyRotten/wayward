@@ -183,6 +183,8 @@ TOOL_SCHEMAS: list[dict] = [
     _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
     _fn("set_first_message", "Set the opening narration shown before the player's first turn (the campaign's First Message).",
         {"content": {"type": "string"}}, ["content"]),
+    _fn("set_first_message_alternates", "Set the ALTERNATE opening narrations (like alternate greetings): the full list of additional openings the player can swipe between at turn 0, besides the primary First Message. Pass the complete list (replaces the existing one); pass [] to clear.",
+        {"alternates": {"type": "array", "items": {"type": "string"}}}, ["alternates"]),
     _fn("list_world", "List the current world: lore by category, tasks, party members, and the PC.", {}, []),
     _fn("get_entry", "Read the full content of a lore entry, task, or member by name.",
         {"name": {"type": "string"}}, ["name"]),
@@ -476,6 +478,15 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             session.add(cfg)
         cfg.first_message = args.get("content", "")
         return "Set the opening narration (First Message).", None
+
+    if name == "set_first_message_alternates":
+        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
+        if not cfg:
+            cfg = NarratorConfig()
+            session.add(cfg)
+        alts = [str(a).strip() for a in (args.get("alternates") or []) if str(a).strip()]
+        cfg.first_message_alternates = alts or None
+        return f"Set {len(alts)} alternate opening(s).", None
 
     # ---- Read ----
     if name == "list_world":

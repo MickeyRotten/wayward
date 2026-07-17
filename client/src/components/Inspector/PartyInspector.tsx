@@ -1335,6 +1335,7 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
   const saveScenario = useScenarioStore((s) => s.save)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
   const firstMessageOptions = useNarratorStore((s) => s.firstMessageOptions)
+  const firstMessageAlternates = useNarratorStore((s) => s.firstMessageAlternates)
   const saveNarrator = useNarratorStore((s) => s.save)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
 
@@ -1344,6 +1345,15 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
   const commitOptions = (next: string[]) => {
     setOptions(next)
     void saveNarrator({ firstMessageOptions: next })
+  }
+
+  // Alternate openings (R13): additional First Messages the player swipes
+  // between at turn 0. The chosen one anchors the adventure.
+  const [alternates, setAlternates] = useState<string[]>(firstMessageAlternates)
+  useEffect(() => { setAlternates(firstMessageAlternates) }, [firstMessageAlternates])
+  const commitAlternates = (next: string[]) => {
+    setAlternates(next)
+    void saveNarrator({ firstMessageAlternates: next })
   }
 
   const stored = isFirstMessage ? firstMessage : scenarioValue
@@ -1393,6 +1403,17 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
               {firstMessageOptions.map((opt, i) => (
                 <p key={i} className="font-body text-sm text-text2 leading-relaxed">
                   <span className="font-ui text-[11px] text-golddeep mr-2">{i + 1}.</span>{opt}
+                </p>
+              ))}
+            </div>
+          </LoreSection>
+        )}
+        {isFirstMessage && firstMessageAlternates.length > 0 && (
+          <LoreSection title="Alternate Openings">
+            <div className="space-y-2">
+              {firstMessageAlternates.map((alt, i) => (
+                <p key={i} className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">
+                  <span className="font-ui text-[11px] text-golddeep mr-2">{i + 2}.</span>{alt}
                 </p>
               ))}
             </div>
@@ -1452,6 +1473,46 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
           </div>
           <span className="mt-1 block text-[10px] text-textdim font-body">
             Scripted choices shown with the First Message, before the player's first turn — the AI generates options only after real turns begin.
+          </span>
+        </LoreSection>
+      )}
+      {isFirstMessage && (
+        <LoreSection title="Alternate Openings">
+          <div className="space-y-2">
+            {alternates.map((alt, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <span className="font-ui text-[10px] text-golddeep w-4 text-right shrink-0 pt-2">{i + 2}.</span>
+                <div className="flex-1">
+                  <ExpandableTextarea
+                    label={`Alternate opening ${i + 2}`}
+                    className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
+                    rows={4}
+                    value={alt}
+                    placeholder="Another way the story could open…"
+                    onChange={(v) => setAlternates(alternates.map((a, j) => (j === i ? v : a)))}
+                    onBlur={() => commitAlternates(alternates)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  title="Remove this opening"
+                  className="font-ui text-[11px] text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors"
+                  onClick={() => commitAlternates(alternates.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
+              onClick={() => setAlternates([...alternates, ''])}
+            >
+              + ADD OPENING
+            </button>
+          </div>
+          <span className="mt-1 block text-[10px] text-textdim font-body">
+            Alternate opening narrations. At turn 0 the player swipes between these and the First Message; the one showing when they act anchors the adventure.
           </span>
         </LoreSection>
       )}

@@ -180,7 +180,7 @@ The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](
 3. `max_tool_rounds` (default 6, configurable) caps the loop; the final round drops `tools` to force narration.
 
 **Tools** (handlers in [`server/ai/narrator_actions.py`](server/ai/narrator_actions.py)):
-- *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`. (History summarisation is deterministic and server-side: when the prompt crosses the threshold, compression runs as a **post-turn background pass** — `_summarize_in_background` in routes.py — never blocking the player's turn.)
+- *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`. (History summarisation is deterministic and server-side: when the prompt crosses the threshold, compression runs as a **post-turn background pass** — `_summarize_in_background` in server/api/chat.py — never blocking the player's turn.)
 - *Read:* `lookup_item`, `search_items`, `list_inventory`, `get_character` — let the model validate before acting (e.g. confirm an item exists and its slot before `equip`).
 - *Dice:* `skill_check(characterName, skill, difficulty)` — offered only when `NarratorConfig.dice_enabled` (schema + `DICE_GUIDANCE` appended conditionally in `run_narrator_agent`). **The server rolls the d20** (DC map easy 8 / normal 12 / hard 16 / heroic 19, nat 1/20 = crits) and returns roll/DC/outcome, so the model narrates a result it was *given* and can't fudge. Each roll writes a **tethered `ChatEvent` (`kind='dice'`)** rendered as a gold/red dice chip in chat; being tethered, it vanishes with the turn on swipe/regenerate/delete and the retelling re-rolls fresh. Agentic path only (no legacy `<<<ACTIONS>>>` equivalent).
 
@@ -271,7 +271,7 @@ The framing premise for the whole world, edited as **6 structured fields** in a 
 
 A **foreground** world-builder. Engine-style framing: **Play mode = Narration** (runtime), **Edit Mode = building the game**. Toggle it with the Unity-style **Play button on the left of the chat location banner** (lit gold while playing). When on, the chat's primary agent becomes the **Editor** ([`server/ai/planner.py`](server/ai/planner.py) — internal names still say "planner"/`planner_instructions`/`/planner/...`) with full CRUD over lore (all categories incl. dedicated `create_item`/`update_item` with type/slot/rarity + `equip`/`unequip`), tasks, party members, the PC, the **Scenario**, and the **Narrator's instructions**. You converse with it and it creates/edits many things per turn, then replies conversationally.
 
-- **Separate thread.** Editor messages are tagged `ChatMessage.mode = 'planner'` and live in their own conversation (the toggle swaps the chat view). They **never enter narration context** — the narrator path filters `mode != 'planner'` in [`_load_game_context`](server/api/routes.py). Each thread numbers its own turns.
+- **Separate thread.** Editor messages are tagged `ChatMessage.mode = 'planner'` and live in their own conversation (the toggle swaps the chat view). They **never enter narration context** — the narrator path filters `mode != 'planner'` in [`_load_game_context`](server/api/chat.py). Each thread numbers its own turns.
 - **Create/edit apply immediately** (committed each round, via `run_planner_agent` — same loop shape as the narrator; multi-round prose is accumulated, not discarded). **Deletes are queued**: the turn's `done` event carries `pendingDeletes`; the client shows a ConfirmDialog → `POST /planner/deletes/apply`. Locked entries (the Scenario) can be edited via `set_scenario` — a structured, per-field partial update (see "The Scenario") — but never deleted.
 - **Live action feed:** each Editor tool call streams a `{name, result}` `tool` SSE event; the client prints these under the ⚙ EDITOR heading **in real time** as the turn runs (`chatStore.editorActions`, rendered by `EditorActionsFeed` with a friendly label from the shared `editorActionLabel` map). The ordered list is also persisted on the finished planner `ChatMessage` (`editor_actions` JSON column, additive migration; surfaced as `editorActions`) so the record of what was built/edited stays on the message — the same component renders the live feed and the persisted one.
 - **Edit Mode drives the rest of the UI:** the right-hand Inspector is editable in Edit Mode and read-only (view) in Play; "+ New Entry" (Lore) and "+ Add Member" appear only in Edit Mode; the whole app re-skins to the indigo theme. (Exception: **equipment** on the PC/party sheets is editable in Play mode too — managing gear is a play action.)
@@ -390,7 +390,11 @@ A placeholder/example shown in the empty Field Skill text field in the UI is wor
 wayward/
 ├── client/src/
 │   ├── components/
-│   │   ├── Scene/ChatScene.tsx     Chat + banner; JRPG dialogue blocks, action panel, formatting
+│   │   ├── Scene/ChatScene.tsx     Chat orchestrator (message list, backdrop, modals, shortcuts)
+│   │   ├── Scene/                  its subcomponents: SceneBanner, ActionPanel, Composer,
+│   │   │                           MessageBubble, StreamingWindow, Narration (JRPG segments +
+│   │   │                           entity chips), EditorActionsFeed, EventToast, SearchBar,
+│   │   │                           PromptLogModal, Indicators, chatDerived.ts
 │   │   ├── Scene/WeatherEffects.tsx  canvas weather over the backdrop (rain/storm/snow/fog)
 │   │   ├── Home/                   PC + party (HomeView)
 │   │   ├── CharacterSheet/, PartyMember/   PC / member editors (view+edit)
@@ -438,7 +442,13 @@ wayward/
 │   │   │                migrate_to_item_instances (idempotent back-fill)
 │   │   ├── storage.py   campaign/adventure folders + json + legacy migration
 │   │   └── seed.py      default demo content (Seraphine + Tifa + Rosalina + world)
-│   ├── api/routes.py    all REST + /chat/turn (+ swipe/regenerate) + agents + zip I/O
+│   ├── api/routes.py    thin /api aggregator over the domain routers below
+│   ├── api/             domain routers: chat.py (turn/swipe/regenerate/continue +
+│   │                    streaming drivers + background summary), campaigns.py
+│   │                    (adventures/backups/zip I/O), characters.py, items.py,
+│   │                    lore.py, narrator.py, settings.py, tasks.py, tts.py,
+│   │                    backdrops.py, worldbuild.py, planner.py; shared helpers
+│   │                    in common.py; pydantic schemas in schemas.py
 │   ├── main.py          FastAPI app, lifespan → init_db, wayward stdout logger
 │   ├── requirements-tts.txt   optional voice deps (chatterbox-tts + torch)
 │   └── data/            (gitignored) per-campaign/per-adventure SQLite + json + tts-cache

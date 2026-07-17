@@ -62,10 +62,10 @@ EMPTY_EQUIPMENT = {
 }
 
 _DEFAULT_INJECTION_ORDER = {
-    "world": 0, "characters": 10, "items": 20, "monsters": 30, "spells": 40,
+    "pillars": 0, "world": 10, "characters": 20, "items": 30, "monsters": 40, "spells": 50,
 }
 _DEFAULT_INJECTION_POSITION = {
-    "world": "top", "characters": "top", "items": "top",
+    "pillars": "top", "world": "top", "characters": "top", "items": "top",
     "monsters": "top", "spells": "top",
 }
 

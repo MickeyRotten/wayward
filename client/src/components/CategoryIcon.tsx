@@ -7,8 +7,10 @@ export function CategoryIcon({ cat, className }: { cat: string; className?: stri
     className,
   }
   switch (cat) {
-    case 'world': // globe
-      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.5 2.5 15.5 0 18M12 3c-2.5 2.5-2.5 15.5 0 18" /></svg>
+    case 'pillars': // classical columns (world rules)
+      return <svg {...common}><path d="M3 8l9-4 9 4M4 8v9M9 8v9M15 8v9M20 8v9M3 21h18M3 17h18" /></svg>
+    case 'world': // map pin (locations)
+      return <svg {...common}><path d="M12 21s7-6.3 7-11a7 7 0 0 0-14 0c0 4.7 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>
     case 'monsters': // fanged maw
       return <svg {...common}><path d="M4 8a8 8 0 0 1 16 0v5a7 7 0 0 1-16 0z" /><path d="M8 13l1.5 3 1.5-3 1.5 3 1.5-3 1.5 3 1.5-3" /></svg>
     case 'spells': // sparkle

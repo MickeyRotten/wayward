@@ -29,6 +29,17 @@ def test_permanent_entries_always_match():
     assert match_entries("totally unrelated", [e]) == [e]
 
 
+def test_pillars_always_match():
+    # Pillars are world rules — injected regardless of keywords.
+    e = _entry(title="Magic has a price", cat="pillars", permanent=False)
+    assert match_entries("totally unrelated", [e]) == [e]
+
+
+def test_disabled_pillars_never_match():
+    e = _entry(title="Magic has a price", cat="pillars", enabled=False)
+    assert match_entries("totally unrelated", [e]) == []
+
+
 def test_no_match_returns_empty():
     entries = [_entry(title="Murkwood"), _entry(title="Goblin", keywords=["goblin"])]
     assert match_entries("nothing relevant here", entries) == []

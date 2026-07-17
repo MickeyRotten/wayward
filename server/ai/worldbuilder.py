@@ -35,7 +35,9 @@ from server.db.models import (
 
 log = logging.getLogger("wayward.worldbuilder")
 
-LORE_CATS = {"world", "characters", "items", "monsters", "spells"}
+LORE_CATS = {"pillars", "world", "characters", "items", "monsters", "spells"}
+# Display order for world-state listings (Pillars first, then Locations, ...).
+LORE_CAT_ORDER = ("pillars", "world", "characters", "items", "monsters", "spells")
 TASK_STATUSES = {"active", "completed", "failed"}
 
 # Tool-emitting call — doesn't need the full narration budget.
@@ -118,7 +120,7 @@ def _is_bolded(title: str, narration: str) -> bool:
 CHRONICLER_GUIDANCE = """You are the Chronicler: a quiet archivist who keeps the world's records as an adventure unfolds. You do NOT narrate. After each turn you review what just happened and record only what genuinely changed.
 
 Use your tools to:
-- create_lore / update_lore — record new places, characters (NPCs), items, monsters, or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
+- create_lore / update_lore — record new world rules (pillars), places (world/locations), characters (NPCs), items, monsters, or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
 - create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). update_task_status — mark an existing task completed or failed when the fiction resolves it.
 - create_member — ONLY when a character has clearly and deliberately joined the party as a travelling companion.
 
@@ -134,7 +136,8 @@ Rules (strict — follow them exactly):
 
 Per-category rules (write the entry as a timeless world fact, NOT a diary of this turn):
 - items — Describe the item ITSELF, generically: what it is, looks like, does. Do NOT mention who currently holds or wears it, or the scene it appeared in. ALWAYS set its "itemType" (Equipment, Tool, Consumable, Key Item, Artifact, or Other); for Equipment also set a body "slot" (Head, Neck, Torso, Hands, Waist, Legs, Feet, or Accessory); set "rarity" if the fiction implies one (c=common, u=uncommon, r=rare, e=epic, l=legendary; default common).
-- world (places) — Describe the place generically and permanently. Nothing about the party, what they did there this turn, or transient events.
+- pillars — A foundational RULE of the world/universe (how magic works, a law of nature, a societal absolute), not a place or thing. Only file one when the fiction firmly establishes such a rule. These are always in context, so keep them few and load-bearing.
+- world (places / locations) — Describe the place generically and permanently. Nothing about the party, what they did there this turn, or transient events.
 - monsters — Describe the creature/type in general (appearance, behaviour, danger), not this one encounter's outcome.
 - spells — Describe the spell's effect and limits in general, not who cast it just now.
 - characters (NPCs) — Describe the person: who they are, appearance, role. Not the party's momentary interaction with them."""
@@ -285,7 +288,7 @@ async def _build_world_state(session: AsyncSession) -> str:
     members = [m for m in await party_ops.load_party(session) if m.in_party]
 
     lines = ["CURRENT WORLD STATE (reuse these exact names; update rather than duplicate):"]
-    for cat in ("world", "characters", "items", "monsters", "spells"):
+    for cat in LORE_CAT_ORDER:
         titles = by_cat.get(cat, [])
         lines.append(f"  {cat}: {', '.join(titles) if titles else '(none)'}")
     if tasks:

@@ -12,7 +12,8 @@ def match_entries(
     scan_text: str,
     entries: list[LorebookEntry],
 ) -> list[LorebookEntry]:
-    """Return all entries that match: permanent=True OR any keyword — or the
+    """Return all entries that match: permanent=True, cat='pillars' (world
+    rules — always injected for their high impact), OR any keyword — or the
     entry's own title, an implicit keyword — appears in ``scan_text``
     (case-insensitive). Disabled entries are skipped.
 
@@ -25,7 +26,8 @@ def match_entries(
     for entry in entries:
         if not entry.enabled:
             continue
-        if entry.permanent:
+        # Pillars are the world's foundational rules — always in context.
+        if entry.permanent or entry.cat == "pillars":
             matched.append(entry)
             continue
         title = (entry.title or "").strip().lower()

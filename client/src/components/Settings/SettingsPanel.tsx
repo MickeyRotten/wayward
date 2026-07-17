@@ -16,7 +16,8 @@ import { deleteNarratorVoice, uploadNarratorVoice } from '../../lib/voice'
 import type { LlmProvider, LoreCategory, LorebookConfig, OpenRouterModel, OpenRouterSettings } from '@shared/types/models'
 
 const LORE_CATEGORIES: { id: LoreCategory; label: string }[] = [
-  { id: 'world', label: 'World' },
+  { id: 'pillars', label: 'Pillars' },
+  { id: 'world', label: 'Locations' },
   { id: 'characters', label: 'Characters' },
   { id: 'items', label: 'Items' },
   { id: 'monsters', label: 'Monsters' },

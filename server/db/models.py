@@ -186,14 +186,14 @@ class LorebookConfig(Base):
     injection_order: Mapped[dict] = mapped_column(
         JSON,
         default=lambda: {
-            "world": 0, "characters": 10, "items": 20,
-            "monsters": 30, "spells": 40,
+            "pillars": 0, "world": 10, "characters": 20, "items": 30,
+            "monsters": 40, "spells": 50,
         },
     )
     injection_position: Mapped[dict] = mapped_column(
         JSON,
         default=lambda: {
-            "world": "top", "characters": "top", "items": "top",
+            "pillars": "top", "world": "top", "characters": "top", "items": "top",
             "monsters": "top", "spells": "top",
         },
     )

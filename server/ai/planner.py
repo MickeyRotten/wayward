@@ -30,7 +30,7 @@ from server.ai.narrator_actions import (
 from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
-from server.ai.worldbuilder import LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
+from server.ai.worldbuilder import LORE_CAT_ORDER, LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
 from server.db.models import (
     ChatMessage,
@@ -57,7 +57,7 @@ PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assista
 How you work:
 - Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a task, or a character's full set of gear.
 - Prefer updating an existing entry over creating a duplicate; you are given the current world state.
-- Pick the right lore category for lore (world, characters, monsters, spells). For NPCs use 'characters'.
+- Pick the right lore category for lore (pillars, world, characters, monsters, spells). For NPCs use 'characters'. Use 'world' for places/locations. Use 'pillars' for foundational RULES of the world/universe (how magic works, laws of nature, societal absolutes) — these are always kept in the narrator's context, so reserve them for load-bearing rules, not ordinary facts.
 - WHO is being referred to: the player will usually name someone without saying what they are. Use the current world state to resolve the name. There are three distinct kinds, and only the first two have equipment:
     1. The PLAYER CHARACTER and 2. PARTY MEMBERS — real sheets with equipment slots. Edit them with update_pc / update_member, and give them gear with create_item + equip.
     3. LOREBOOK CHARACTERS (NPCs in lore → characters) — descriptive entries only, with NO equipment system. If asked to give an NPC gear or change their appearance, write it into their lore entry with update_lore. NEVER call equip on a lorebook NPC, and don't invent equipment slots for them.
@@ -211,7 +211,7 @@ async def _build_planner_context(session) -> str:
     pc = await party_ops.load_pc(session)
 
     lines = ["CURRENT WORLD STATE (reuse exact names; edit rather than duplicate):"]
-    for cat in ("world", "characters", "items", "monsters", "spells"):
+    for cat in LORE_CAT_ORDER:
         titles = by_cat.get(cat, [])
         lines.append(f"  {cat}: {', '.join(titles) if titles else '(none)'}")
     if tasks:

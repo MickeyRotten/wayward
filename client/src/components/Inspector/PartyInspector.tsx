@@ -1014,7 +1014,8 @@ function TaskTextArea({ value, onChange, onBlur, placeholder }: {
 // ── Lore Inspector ──────────────────────────────────────────────
 
 const LORE_CATEGORIES: { value: LoreCategory; label: string }[] = [
-  { value: 'world', label: 'World' },
+  { value: 'pillars', label: 'Pillars' },
+  { value: 'world', label: 'Locations' },
   { value: 'characters', label: 'Characters' },
   { value: 'items', label: 'Items' },
   { value: 'monsters', label: 'Monsters' },
@@ -1022,6 +1023,7 @@ const LORE_CATEGORIES: { value: LoreCategory; label: string }[] = [
 ]
 
 const CATEGORY_BADGE_COLORS: Record<LoreCategory, string> = {
+  pillars: 'text-[#d0a15a]',
   world: 'text-gold',
   characters: 'text-[#7aa6cf]',
   items: 'text-[#5a9e6f]',

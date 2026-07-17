@@ -544,8 +544,8 @@ async def export_adventure(session: AsyncSession = Depends(get_session)):
             for e in lore_entries
         ],
         "lorebookConfig": {
-            "injectionOrder": lore_config.injection_order if lore_config else {"world": 0, "characters": 10, "items": 20, "monsters": 30, "spells": 40},
-            "injectionPosition": lore_config.injection_position if lore_config else {"world": "top", "characters": "top", "items": "top", "monsters": "top", "spells": "top"},
+            "injectionOrder": lore_config.injection_order if lore_config else {"pillars": 0, "world": 10, "characters": 20, "items": 30, "monsters": 40, "spells": 50},
+            "injectionPosition": lore_config.injection_position if lore_config else {"pillars": "top", "world": "top", "characters": "top", "items": "top", "monsters": "top", "spells": "top"},
         },
     }
 
@@ -705,8 +705,8 @@ async def import_adventure(data: dict, session: AsyncSession = Depends(get_sessi
     # Restore lorebook config
     lc_data = data.get("lorebookConfig", {})
     session.add(LorebookConfig(
-        injection_order=lc_data.get("injectionOrder", {"world": 0, "characters": 10, "items": 20, "monsters": 30, "spells": 40}),
-        injection_position=lc_data.get("injectionPosition", {"world": "top", "characters": "top", "items": "top", "monsters": "top", "spells": "top"}),
+        injection_order=lc_data.get("injectionOrder", {"pillars": 0, "world": 10, "characters": 20, "items": 30, "monsters": 40, "spells": 50}),
+        injection_position=lc_data.get("injectionPosition", {"pillars": "top", "world": "top", "characters": "top", "items": "top", "monsters": "top", "spells": "top"}),
     ))
 
     await session.commit()

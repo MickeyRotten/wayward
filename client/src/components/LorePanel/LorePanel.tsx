@@ -15,7 +15,8 @@ import { ItemTypeTabs } from '../ItemTypeTabs'
 import type { LoreCategory, LorebookEntry } from '@shared/types/models'
 
 const CATEGORY_TABS: { id: LoreCategory; label: string }[] = [
-  { id: 'world', label: 'World' },
+  { id: 'pillars', label: 'Pillars' },
+  { id: 'world', label: 'Locations' },
   { id: 'characters', label: 'Characters' },
   { id: 'items', label: 'Items' },
   { id: 'monsters', label: 'Monsters' },

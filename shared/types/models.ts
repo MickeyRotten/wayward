@@ -282,7 +282,9 @@ export interface Task {
   notes: string
 }
 
-export type LoreCategory = 'world' | 'characters' | 'items' | 'monsters' | 'spells'
+// Note: 'world' is the internal id for the "Locations" tab (kept for data
+// stability — existing entries and the locked Scenario are cat='world').
+export type LoreCategory = 'pillars' | 'world' | 'characters' | 'items' | 'monsters' | 'spells'
 
 export interface LorebookEntry {
   id: string

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useTasksStore } from '../../state/tasksStore'
@@ -11,7 +11,7 @@ import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
-import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID } from '../../lib/scenarioFields'
+import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID, openingIndexOf } from '../../lib/scenarioFields'
 import type { ItemCatalogEntry, ItemType, Rarity, Task, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
 
 export function PartyInspector() {
@@ -80,9 +80,12 @@ export function PartyInspector() {
           : selIsLore
             ? (selLore!.title || 'Untitled Entry')
             : selIsScenario
-              ? (selScenarioId === FIRST_MESSAGE_ID
-                  ? 'First Message'
-                  : SCENARIO_FIELD_DEFS.find((d) => d.key === selScenarioId)?.label ?? 'Scenario')
+              ? (() => {
+                  const oi = selScenarioId ? openingIndexOf(selScenarioId) : null
+                  if (oi === 0) return 'First Message'
+                  if (oi !== null) return `Alternate ${oi}`
+                  return SCENARIO_FIELD_DEFS.find((d) => d.key === selScenarioId)?.label ?? 'Scenario'
+                })()
               : ''
 
   const entityLabel = selIsPC
@@ -96,7 +99,7 @@ export function PartyInspector() {
           : selIsLore
             ? 'LOREBOOK ENTRY'
             : selIsScenario
-              ? (selScenarioId === FIRST_MESSAGE_ID ? 'OPENING NARRATION' : 'SCENARIO')
+              ? (selScenarioId && openingIndexOf(selScenarioId) !== null ? 'OPENING NARRATION' : 'SCENARIO')
               : ''
 
   return (
@@ -1329,7 +1332,9 @@ function LoreTextArea({ value, onChange, onBlur, placeholder }: {
 // into the locked World entry), and First Message saves on the NarratorConfig.
 
 function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'view' | 'edit' }) {
-  const isFirstMessage = fieldKey === FIRST_MESSAGE_ID
+  const openIndex = openingIndexOf(fieldKey)  // 0 = First Message, k>0 = alternate, null = scenario field
+  const isOpening = openIndex !== null
+  const altIndex = openIndex !== null && openIndex > 0 ? openIndex - 1 : -1
   const def = SCENARIO_FIELD_DEFS.find((d) => d.key === fieldKey)
   const scenarioValue = useScenarioStore((s) => (def ? s[def.key] : ''))
   const saveScenario = useScenarioStore((s) => s.save)
@@ -1338,34 +1343,56 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
   const firstMessageAlternates = useNarratorStore((s) => s.firstMessageAlternates)
   const saveNarrator = useNarratorStore((s) => s.save)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
+  const select = useUiStore((s) => s.select)
 
-  // Scripted opening options, edited alongside the First Message itself.
-  const [options, setOptions] = useState<string[]>(firstMessageOptions)
-  useEffect(() => { setOptions(firstMessageOptions) }, [firstMessageOptions])
+  // The message + scripted options for the specific opening being edited.
+  const openingMessage = openIndex === 0
+    ? firstMessage
+    : (altIndex >= 0 ? (firstMessageAlternates[altIndex]?.message ?? '') : '')
+  const openingOptions = useMemo(
+    () => (openIndex === 0
+      ? firstMessageOptions
+      : (altIndex >= 0 ? (firstMessageAlternates[altIndex]?.options ?? []) : [])),
+    [openIndex, altIndex, firstMessageOptions, firstMessageAlternates],
+  )
+
+  const [options, setOptions] = useState<string[]>(openingOptions)
+  useEffect(() => { setOptions(openingOptions) }, [openingOptions])
+  // An alternate's message and options share one field (firstMessageAlternates),
+  // so each partial write must merge onto the FRESHEST array from the store —
+  // reading the closure could clobber a concurrent debounced save of the other.
   const commitOptions = (next: string[]) => {
     setOptions(next)
-    void saveNarrator({ firstMessageOptions: next })
+    if (openIndex === 0) void saveNarrator({ firstMessageOptions: next })
+    else if (altIndex >= 0) {
+      const cur = useNarratorStore.getState().firstMessageAlternates
+      void saveNarrator({
+        firstMessageAlternates: cur.map((a, j) => (j === altIndex ? { ...a, options: next } : a)),
+      })
+    }
   }
 
-  // Alternate openings (R13): additional First Messages the player swipes
-  // between at turn 0. The chosen one anchors the adventure.
-  const [alternates, setAlternates] = useState<string[]>(firstMessageAlternates)
-  useEffect(() => { setAlternates(firstMessageAlternates) }, [firstMessageAlternates])
-  const commitAlternates = (next: string[]) => {
-    setAlternates(next)
-    void saveNarrator({ firstMessageAlternates: next })
+  const removeOpening = () => {
+    if (altIndex < 0) return
+    void saveNarrator({ firstMessageAlternates: firstMessageAlternates.filter((_, j) => j !== altIndex) })
+    select({ kind: 'scenario', id: FIRST_MESSAGE_ID })
   }
 
-  const stored = isFirstMessage ? firstMessage : scenarioValue
-  const label = isFirstMessage ? 'First Message' : def?.label ?? 'Scenario'
+  const stored = isOpening ? openingMessage : scenarioValue
+  const label = openIndex === 0 ? 'First Message' : altIndex >= 0 ? `Alternate ${openIndex}` : def?.label ?? 'Scenario'
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const commit = useCallback((v: string) => {
     clearTimeout(timer.current)
     setEditDirty(false)
-    if (isFirstMessage) void saveNarrator({ firstMessage: v })
-    else if (def) void saveScenario({ [def.key]: v })
-  }, [isFirstMessage, def, saveNarrator, saveScenario, setEditDirty])
+    if (openIndex === 0) void saveNarrator({ firstMessage: v })
+    else if (altIndex >= 0) {
+      const cur = useNarratorStore.getState().firstMessageAlternates
+      void saveNarrator({
+        firstMessageAlternates: cur.map((a, j) => (j === altIndex ? { ...a, message: v } : a)),
+      })
+    } else if (def) void saveScenario({ [def.key]: v })
+  }, [openIndex, altIndex, def, saveNarrator, saveScenario, setEditDirty])
 
   const scheduleCommit = (v: string) => {
     setEditDirty(true)
@@ -1373,8 +1400,8 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
     timer.current = setTimeout(() => commit(v), 600)
   }
 
-  const note = isFirstMessage
-    ? 'The drop-capped opening message, included in context. Not part of the Scenario.'
+  const note = isOpening
+    ? 'The drop-capped opening, included in context. Its options show at turn 0. Not part of the Scenario.'
     : 'Part of the Scenario — composed into the permanent, locked World entry and always injected into the narration.'
 
   if (mode === 'view') {
@@ -1382,9 +1409,9 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
       <div className="space-y-6 p-6">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold">
-            {isFirstMessage ? 'NARRATOR CONFIG' : 'SCENARIO'}
+            {isOpening ? 'NARRATOR CONFIG' : 'SCENARIO'}
           </span>
-          {!isFirstMessage && (
+          {!isOpening && (
             <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold2">
               LOCKED
             </span>
@@ -1397,23 +1424,12 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
             <p className="text-[12px] text-textdim font-body">(empty)</p>
           )}
         </LoreSection>
-        {isFirstMessage && firstMessageOptions.length > 0 && (
+        {isOpening && openingOptions.length > 0 && (
           <LoreSection title="Opening Options">
             <div className="space-y-1">
-              {firstMessageOptions.map((opt, i) => (
+              {openingOptions.map((opt, i) => (
                 <p key={i} className="font-body text-sm text-text2 leading-relaxed">
                   <span className="font-ui text-[11px] text-golddeep mr-2">{i + 1}.</span>{opt}
-                </p>
-              ))}
-            </div>
-          </LoreSection>
-        )}
-        {isFirstMessage && firstMessageAlternates.length > 0 && (
-          <LoreSection title="Alternate Openings">
-            <div className="space-y-2">
-              {firstMessageAlternates.map((alt, i) => (
-                <p key={i} className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">
-                  <span className="font-ui text-[11px] text-golddeep mr-2">{i + 2}.</span>{alt}
                 </p>
               ))}
             </div>
@@ -1434,12 +1450,12 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
           className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[160px]"
           rows={10}
           value={stored}
-          placeholder={isFirstMessage ? "The opening narration shown before the player's first turn." : undefined}
+          placeholder={isOpening ? "The opening narration shown before the player's first turn." : undefined}
           onChange={scheduleCommit}
           onBlur={commit}
         />
       </LoreSection>
-      {isFirstMessage && (
+      {isOpening && (
         <LoreSection title="Opening Options">
           <div className="space-y-1.5">
             {options.map((opt, i) => (
@@ -1472,49 +1488,18 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
             </button>
           </div>
           <span className="mt-1 block text-[10px] text-textdim font-body">
-            Scripted choices shown with the First Message, before the player's first turn — the AI generates options only after real turns begin.
+            Scripted choices shown with this opening at turn 0 — the AI generates options only after real turns begin.
           </span>
         </LoreSection>
       )}
-      {isFirstMessage && (
-        <LoreSection title="Alternate Openings">
-          <div className="space-y-2">
-            {alternates.map((alt, i) => (
-              <div key={i} className="flex items-start gap-1.5">
-                <span className="font-ui text-[10px] text-golddeep w-4 text-right shrink-0 pt-2">{i + 2}.</span>
-                <div className="flex-1">
-                  <ExpandableTextarea
-                    label={`Alternate opening ${i + 2}`}
-                    className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[80px]"
-                    rows={4}
-                    value={alt}
-                    placeholder="Another way the story could open…"
-                    onChange={(v) => setAlternates(alternates.map((a, j) => (j === i ? v : a)))}
-                    onBlur={() => commitAlternates(alternates)}
-                  />
-                </div>
-                <button
-                  type="button"
-                  title="Remove this opening"
-                  className="font-ui text-[11px] text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors"
-                  onClick={() => commitAlternates(alternates.filter((_, j) => j !== i))}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
-              onClick={() => setAlternates([...alternates, ''])}
-            >
-              + ADD OPENING
-            </button>
-          </div>
-          <span className="mt-1 block text-[10px] text-textdim font-body">
-            Alternate opening narrations. At turn 0 the player swipes between these and the First Message; the one showing when they act anchors the adventure.
-          </span>
-        </LoreSection>
+      {altIndex >= 0 && (
+        <button
+          type="button"
+          className="font-ui text-[10px] tracking-wider text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors"
+          onClick={removeOpening}
+        >
+          ✕ REMOVE THIS OPENING
+        </button>
       )}
       <span className="block text-[10px] text-textdim font-body">{note}</span>
     </div>

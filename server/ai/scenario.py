@@ -32,6 +32,27 @@ def compose_scenario_content(fields: dict) -> str:
     return "\n\n".join(parts)
 
 
+def normalize_openings(raw) -> list[dict]:
+    """Normalize alternate openings into ``[{message, options}]`` (R13/R19).
+
+    Accepts the current object shape ``{"message": str, "options": [str]}`` and
+    the legacy R13 shape (a bare ``str`` per alternate, no options). Trims text,
+    drops blank options, and drops any alternate whose message is empty.
+    """
+    out: list[dict] = []
+    for item in (raw or []):
+        if isinstance(item, str):
+            message, options = item.strip(), []
+        elif isinstance(item, dict):
+            message = str(item.get("message", "") or "").strip()
+            options = [str(o).strip() for o in (item.get("options") or []) if str(o).strip()]
+        else:
+            continue
+        if message:
+            out.append({"message": message, "options": options})
+    return out
+
+
 def migrate_legacy_fields(scenario_fields: dict | None, content: str) -> dict:
     """One-time, non-destructive legacy migration: if `scenario_fields` is
     empty/missing (all falsy) but `content` is non-empty (a campaign created

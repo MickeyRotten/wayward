@@ -1,18 +1,42 @@
-"""R13: alternate openings — the narrator config carries a pool of alternate
-first messages, and each adventure anchors the one the player selected."""
+"""R13/R19: alternate openings — the narrator config carries a pool of
+alternate first messages (each with its own scripted options), and each
+adventure anchors the one the player selected."""
 
+from server.ai.scenario import normalize_openings
 from server.tests.conftest import run
+
+
+def test_normalize_openings_shapes():
+    # Object shape: message trimmed, blank options dropped.
+    assert normalize_openings([{"message": " Hi ", "options": ["a", "", " b "]}]) == [
+        {"message": "Hi", "options": ["a", "b"]},
+    ]
+    # Legacy R13 bare-string shape coerces to {message, options: []}.
+    assert normalize_openings(["A way in.", ""]) == [{"message": "A way in.", "options": []}]
+    # Messageless entries are dropped entirely.
+    assert normalize_openings([{"message": "", "options": ["x"]}]) == []
+    assert normalize_openings(None) == []
 
 
 def test_narrator_alternates_round_trip(client):
     res = client.put("/api/narrator", json={
         "firstMessage": "The primary opening.",
-        "firstMessageAlternates": ["  A second way in.  ", "", "A third."],
+        "firstMessageAlternates": [
+            {"message": "  A second way in.  ", "options": ["Look up", "", " Run "]},
+            {"message": "", "options": ["dropped"]},
+            {"message": "A third."},
+        ],
     })
     assert res.status_code == 200, res.text
-    # Blanks are dropped; whitespace trimmed (mirrors firstMessageOptions).
-    assert res.json()["firstMessageAlternates"] == ["A second way in.", "A third."]
-    assert client.get("/api/narrator").json()["firstMessageAlternates"] == ["A second way in.", "A third."]
+    # Messageless alt dropped; whitespace trimmed; blank options dropped.
+    assert res.json()["firstMessageAlternates"] == [
+        {"message": "A second way in.", "options": ["Look up", "Run"]},
+        {"message": "A third.", "options": []},
+    ]
+    assert client.get("/api/narrator").json()["firstMessageAlternates"] == [
+        {"message": "A second way in.", "options": ["Look up", "Run"]},
+        {"message": "A third.", "options": []},
+    ]
 
 
 def test_opening_endpoint_null_until_anchored_then_resets(client):

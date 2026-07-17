@@ -1,22 +1,36 @@
 import { useUiStore } from '../../state/uiStore'
 import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
+import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
 import { CategoryIcon } from '../CategoryIcon'
-import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID } from '../../lib/scenarioFields'
+import { SCENARIO_FIELD_DEFS, buildOpenings, openingSelId } from '../../lib/scenarioFields'
 
-/* The Scenario tab — the 6 structured fields rendered as lorebook-style cards.
-   Clicking a card opens that field in the right-hand Inspector (view in Play,
-   edit in Edit Mode), exactly like every other lore entry. The underlying
-   storage/save logic is unchanged: fields still save via PUT /scenario and
-   compose into the locked World entry. */
+/* The Scenario tab — the 6 structured fields rendered as lorebook-style cards,
+   followed by the Opening Messages section. Clicking a card opens it in the
+   right-hand Inspector (view in Play, edit in Edit Mode). Scenario fields still
+   save via PUT /scenario; openings live on the NarratorConfig. */
 export function ScenarioEditor() {
   const scenario = useScenarioStore((s) => s)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
+  const firstMessageOptions = useNarratorStore((s) => s.firstMessageOptions)
+  const firstMessageAlternates = useNarratorStore((s) => s.firstMessageAlternates)
+  const saveNarrator = useNarratorStore((s) => s.save)
+  const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
   const isSelected = (id: string) => selection?.kind === 'scenario' && selection.id === id
+
+  // Every opening (primary first, then alternates) — empties included so a
+  // freshly created card is still listed and editable.
+  const openings = buildOpenings(firstMessage, firstMessageOptions, firstMessageAlternates)
+
+  const addOpening = async () => {
+    const newIndex = firstMessageAlternates.length + 1  // its index in `openings`
+    await saveNarrator({ firstMessageAlternates: [...firstMessageAlternates, { message: '', options: [] }] })
+    select({ kind: 'scenario', id: openingSelId(newIndex) })
+  }
 
   return (
     <div className="flex-1 overflow-y-auto px-3 pb-3">
@@ -32,17 +46,33 @@ export function ScenarioEditor() {
         ))}
       </div>
 
-      {/* The opening narration. It lives on the NarratorConfig (not the
-          Scenario) but is surfaced here on the Scenario tab — clearly separated. */}
+      {/* Opening Messages. They live on the NarratorConfig (not the Scenario)
+          but are surfaced here — each card is one opening, with its own options.
+          At turn 0 the player swipes between them; the chosen one is anchored. */}
       <div className="pt-3 mt-3 border-t border-line space-y-1.5">
-        <ScenarioCard
-          label="First Message"
-          empty={!(firstMessage || '').trim()}
-          selected={isSelected(FIRST_MESSAGE_ID)}
-          onClick={() => select({ kind: 'scenario', id: FIRST_MESSAGE_ID })}
-        />
+        <div className="flex items-center justify-between px-1 pb-0.5">
+          <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Opening Messages</span>
+          {editMode && (
+            <button
+              type="button"
+              className="font-ui text-[9px] tracking-wider text-textsec border border-line rounded-sm px-1.5 py-0.5 hover:text-gold hover:border-gold/50 transition-colors"
+              onClick={() => void addOpening()}
+            >
+              + NEW
+            </button>
+          )}
+        </div>
+        {openings.map((o, i) => (
+          <ScenarioCard
+            key={openingSelId(i)}
+            label={i === 0 ? 'First Message' : `Alternate ${i}`}
+            empty={!o.message.trim()}
+            selected={isSelected(openingSelId(i))}
+            onClick={() => select({ kind: 'scenario', id: openingSelId(i) })}
+          />
+        ))}
         <span className="block text-[10px] text-textdim font-body px-1">
-          The drop-capped opening message, included in context. Not part of the Scenario.
+          The drop-capped opening, included in context. Each has its own scripted options. Not part of the Scenario.
         </span>
       </div>
     </div>

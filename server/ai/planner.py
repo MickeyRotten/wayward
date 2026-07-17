@@ -29,7 +29,7 @@ from server.ai.narrator_actions import (
 )
 from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
-from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields
+from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields, normalize_openings
 from server.ai.worldbuilder import LORE_CAT_ORDER, LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
 from server.db.models import (
@@ -183,8 +183,15 @@ TOOL_SCHEMAS: list[dict] = [
     _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
     _fn("set_first_message", "Set the opening narration shown before the player's first turn (the campaign's First Message).",
         {"content": {"type": "string"}}, ["content"]),
-    _fn("set_first_message_alternates", "Set the ALTERNATE opening narrations (like alternate greetings): the full list of additional openings the player can swipe between at turn 0, besides the primary First Message. Pass the complete list (replaces the existing one); pass [] to clear.",
-        {"alternates": {"type": "array", "items": {"type": "string"}}}, ["alternates"]),
+    _fn("set_first_message_alternates", "Set the ALTERNATE opening narrations (like alternate greetings): the full list of additional openings the player can swipe between at turn 0, besides the primary First Message. Each has its own narration and its own scripted options. Pass the complete list (replaces the existing one); pass [] to clear.",
+        {"alternates": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "The opening narration for this alternate."},
+                "options": {"type": "array", "items": {"type": "string"}, "description": "Scripted choice options shown with this opening (optional)."},
+            },
+            "required": ["message"],
+        }}}, ["alternates"]),
     _fn("list_world", "List the current world: lore by category, tasks, party members, and the PC.", {}, []),
     _fn("get_entry", "Read the full content of a lore entry, task, or member by name.",
         {"name": {"type": "string"}}, ["name"]),
@@ -484,7 +491,7 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         if not cfg:
             cfg = NarratorConfig()
             session.add(cfg)
-        alts = [str(a).strip() for a in (args.get("alternates") or []) if str(a).strip()]
+        alts = normalize_openings(args.get("alternates"))
         cfg.first_message_alternates = alts or None
         return f"Set {len(alts)} alternate opening(s).", None
 

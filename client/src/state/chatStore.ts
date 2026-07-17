@@ -182,7 +182,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let opening: string | undefined
     if (!planning && !get().messages.some((m) => m.role === 'user' && (m.mode ?? 'narrator') === 'narrator')) {
       const n = useNarratorStore.getState()
-      const greetings = [n.firstMessage, ...n.firstMessageAlternates].filter((g) => g.trim())
+      const greetings = [n.firstMessage, ...n.firstMessageAlternates.map((a) => a.message)].filter((g) => g.trim())
       opening = greetings[get().openingIndex] ?? greetings[0]
     }
 

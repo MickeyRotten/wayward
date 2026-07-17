@@ -93,6 +93,12 @@ class PartyMembershipUpdate(BaseModel):
 
 # --- Narrator ---
 
+class OpeningAlt(BaseModel):
+    """An alternate opening: its own narration plus its own scripted options."""
+    message: str = ""
+    options: list[str] = []
+
+
 class NarratorUpdate(BaseModel):
     instructions: str | None = None
     actionInstruction: str | None = None
@@ -105,7 +111,7 @@ class NarratorUpdate(BaseModel):
     actionSuggestionsMode: str | None = None  # 'separate' | 'inline'
     actionOptionRules: list[str] | None = None
     firstMessageOptions: list[str] | None = None
-    firstMessageAlternates: list[str] | None = None
+    firstMessageAlternates: list[OpeningAlt] | None = None
     diceEnabled: bool | None = None
 
 
@@ -123,7 +129,7 @@ class NarratorResponse(BaseModel):
     actionSuggestionsMode: str
     actionOptionRules: list[str]
     firstMessageOptions: list[str]
-    firstMessageAlternates: list[str]
+    firstMessageAlternates: list[OpeningAlt]
 
 
 # --- Scenario ---

@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import { api } from '../lib/api'
 
+/** An alternate opening: its own narration plus its own scripted options. */
+export interface OpeningAlt {
+  message: string
+  options: string[]
+}
+
 interface NarratorConfigResponse {
   instructions: string
   actionInstruction: string
@@ -13,7 +19,7 @@ interface NarratorConfigResponse {
   actionSuggestionsMode: string
   actionOptionRules: string[]
   firstMessageOptions: string[]
-  firstMessageAlternates: string[]
+  firstMessageAlternates: OpeningAlt[]
   diceEnabled: boolean
   hasVoice: boolean
 }
@@ -30,7 +36,7 @@ interface NarratorState {
   actionSuggestionsMode: string
   actionOptionRules: string[]
   firstMessageOptions: string[]
-  firstMessageAlternates: string[]
+  firstMessageAlternates: OpeningAlt[]
   diceEnabled: boolean
   hasVoice: boolean
   fetchConfig: () => Promise<void>

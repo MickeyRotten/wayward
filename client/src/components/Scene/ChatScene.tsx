@@ -22,6 +22,7 @@ import { weatherKind } from '../../lib/weather'
 import { WeatherEffects } from './WeatherEffects'
 import { useAppearanceStore } from '../../state/appearanceStore'
 import { buildMemberResolver } from '../../lib/narration'
+import { buildOpenings } from '../../lib/scenarioFields'
 import {
   NarrationHtml,
   applyEntityChips,
@@ -212,17 +213,17 @@ export function ChatScene() {
       (lastVisibleMsg && lastVisibleMsg.role === 'user')
     )
 
-  // R13 alternate openings: the pool the player can swipe at turn 0 (primary
-  // first, then alternates), and the greeting actually shown. Once the
+  // R13/R19 alternate openings: the pool the player can swipe at turn 0 (primary
+  // first, then alternates), each with its OWN scripted options. Once the
   // adventure has anchored a greeting, that one wins and the arrows retire.
-  const greetings = useMemo(
-    () => [firstMessage, ...firstMessageAlternates].filter((g) => g.trim()),
-    [firstMessage, firstMessageAlternates],
+  const openings = useMemo(
+    () => buildOpenings(firstMessage, firstMessageOptions, firstMessageAlternates).filter((o) => o.message.trim()),
+    [firstMessage, firstMessageOptions, firstMessageAlternates],
   )
   // Clamp the transient selection so a stale index (e.g. after an adventure
   // switch to a campaign with fewer greetings) can't fall out of range.
-  const openIdx = greetings.length ? ((openingIndex % greetings.length) + greetings.length) % greetings.length : 0
-  const displayedOpening = anchoredOpening ?? (greetings[openIdx] ?? firstMessage)
+  const openIdx = openings.length ? ((openingIndex % openings.length) + openings.length) % openings.length : 0
+  const displayedOpening = anchoredOpening ?? (openings[openIdx]?.message ?? firstMessage)
 
   // Find first narrator message index for drop-cap. When a configured First
   // Message is shown, IT carries the drop-cap, so real messages never do.
@@ -234,9 +235,9 @@ export function ChatScene() {
   // adventure showing only the First Message.
   const isOpening = !visibleMessages.some((m) => m.role === 'user')
   // Swipe arrows to cycle greetings — only pre-anchor, with more than one.
-  const showOpeningSwipe = isOpening && !anchoredOpening && greetings.length > 1
+  const showOpeningSwipe = isOpening && !anchoredOpening && openings.length > 1
   const panelOptions = isOpening
-    ? (hasFirstMessage ? firstMessageOptions : [])
+    ? (hasFirstMessage ? (openings[openIdx]?.options ?? []) : [])
     : (actionSuggestionsEnabled ? actionSuggestions : [])
   const showActionPanel =
     !planningMode && !inputLocked && (showWhatDoYouDo || visibleMessages.length === 0)
@@ -469,18 +470,18 @@ export function ChatScene() {
                   type="button"
                   aria-label="Previous opening"
                   className="font-ui text-[13px] leading-none px-1.5 py-0.5 border border-line hover:border-gold/50 hover:text-gold2 transition-colors"
-                  onClick={() => setOpeningIndex((openIdx - 1 + greetings.length) % greetings.length)}
+                  onClick={() => setOpeningIndex((openIdx - 1 + openings.length) % openings.length)}
                 >
                   ‹
                 </button>
                 <span className="font-ui text-[10px] tracking-wider text-textsec tabular-nums">
-                  OPENING {openIdx + 1} / {greetings.length}
+                  OPENING {openIdx + 1} / {openings.length}
                 </span>
                 <button
                   type="button"
                   aria-label="Next opening"
                   className="font-ui text-[13px] leading-none px-1.5 py-0.5 border border-line hover:border-gold/50 hover:text-gold2 transition-colors"
-                  onClick={() => setOpeningIndex((openIdx + 1) % greetings.length)}
+                  onClick={() => setOpeningIndex((openIdx + 1) % openings.length)}
                 >
                   ›
                 </button>

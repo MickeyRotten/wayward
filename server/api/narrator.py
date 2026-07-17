@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, normalize_option_rules
 from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.planner import PLANNER_GUIDANCE
+from server.ai.scenario import normalize_openings
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
 from server.api.common import _active_ids
 from server.api.schemas import NarratorResponse, NarratorUpdate
@@ -38,7 +39,7 @@ def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorRe
         actionSuggestionsMode=getattr(n, "action_suggestions_mode", "separate") or "separate",
         actionOptionRules=normalize_option_rules(getattr(n, "action_option_rules", None)),
         firstMessageOptions=[str(o) for o in (getattr(n, "first_message_options", None) or [])],
-        firstMessageAlternates=[str(o) for o in (getattr(n, "first_message_alternates", None) or [])],
+        firstMessageAlternates=normalize_openings(getattr(n, "first_message_alternates", None)),
         diceEnabled=bool(getattr(n, "dice_enabled", True)),
         hasVoice=has_voice,
     )
@@ -93,7 +94,9 @@ async def update_narrator(
     if data.firstMessageOptions is not None:
         n.first_message_options = [o.strip() for o in data.firstMessageOptions if o.strip()]
     if data.firstMessageAlternates is not None:
-        n.first_message_alternates = [o.strip() for o in data.firstMessageAlternates if o.strip()]
+        n.first_message_alternates = normalize_openings(
+            [{"message": o.message, "options": o.options} for o in data.firstMessageAlternates]
+        ) or None
     if data.diceEnabled is not None:
         n.dice_enabled = data.diceEnabled
     await session.commit()

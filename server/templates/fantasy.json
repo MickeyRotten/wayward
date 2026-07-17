@@ -18,6 +18,31 @@
     "techAndMagic": "Medieval technology — steel, timber, and horse. Magic is real but uncommon: hedge-witches, guild mages, and the occasional enchanted relic from the old empire.",
     "other": "Coin is gold. A sword, a full pack, and a reliable companion are worth more than any prophecy."
   },
+  "rules": {
+    "partySize": 3,
+    "currencyName": "Gold",
+    "currencyAbbrev": "gp",
+    "currencySymbol": "",
+    "tone": "Classic heroic high fantasy — adventurous and vivid, with real danger but not grimdark.",
+    "attributes": [
+      {
+        "name": "Might",
+        "description": "Physical power and melee force."
+      },
+      {
+        "name": "Agility",
+        "description": "Speed, reflexes, and finesse."
+      },
+      {
+        "name": "Wits",
+        "description": "Perception, cunning, and quick thinking."
+      },
+      {
+        "name": "Spirit",
+        "description": "Willpower, presence, and magical attunement."
+      }
+    ]
+  },
   "items": [
     {
       "key": "sword",

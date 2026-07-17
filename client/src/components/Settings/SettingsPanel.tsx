@@ -10,6 +10,7 @@ import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { useCampaignsStore } from '../../state/campaignsStore'
 import { useAppearanceStore, CHAT_FONT_SIZES, DEFAULT_CHAT_BG_OPACITY } from '../../state/appearanceStore'
 import { useTtsStore } from '../../state/ttsStore'
+import { useCampaignRulesStore, type CampaignRules, type WorldAttribute } from '../../state/campaignRulesStore'
 import { api } from '../../lib/api'
 import { fetchBackdrops, invalidateBackdrops, type Backdrop } from '../../lib/backdrops'
 import { deleteNarratorVoice, uploadNarratorVoice } from '../../lib/voice'
@@ -46,6 +47,7 @@ function useDebounced(fn: () => void, delay: number) {
 // scope (omitted where a section mixes scopes; its sub-sections carry chips).
 const SECTIONS: { id: string; title: string; nav: string; scope?: Scope }[] = [
   { id: 'campaign', title: 'Campaign', nav: 'Campaign', scope: 'Campaign' },
+  { id: 'rules', title: 'World Rules', nav: 'Rules', scope: 'Campaign' },
   { id: 'ai', title: 'AI & Model', nav: 'AI', scope: 'Global' },
   { id: 'agents', title: 'Agents & Tools', nav: 'Agents' },
   { id: 'world', title: 'World', nav: 'World', scope: 'Campaign' },
@@ -121,7 +123,7 @@ export function SettingsPanel() {
   // Read straight from the stores (aliases preserve the old local-var names).
   const { provider, modelId, nimModelId, customBaseUrl, customModelId,
     temperature, topP, minP, topK, frequencyPenalty: freqPen, presencePenalty: presPen,
-    repetitionPenalty: repPen, maxTokensResponse: maxTokens, maxPartySize, maxToolRounds,
+    repetitionPenalty: repPen, maxTokensResponse: maxTokens, maxToolRounds,
     autoRetryCount, reasoningEffort, useTools, worldbuildingMode: wbMode,
     worldbuildingModelId: wbModelId, actionSuggestionsModelId, summaryThreshold,
     summaryModelId, visionModelId, visionUseSameKey, visionInstructions,
@@ -138,7 +140,6 @@ export function SettingsPanel() {
   const setPresPen = (v: number) => setS({ presencePenalty: v })
   const setRepPen = (v: number) => setS({ repetitionPenalty: v })
   const setMaxTokens = (v: number) => setS({ maxTokensResponse: v })
-  const setMaxPartySize = (v: number) => setS({ maxPartySize: v })
   const setMaxToolRounds = (v: number) => setS({ maxToolRounds: v })
   const setAutoRetryCount = (v: number) => setS({ autoRetryCount: v })
   const setReasoningEffort = (v: string) => setS({ reasoningEffort: v })
@@ -247,21 +248,11 @@ export function SettingsPanel() {
         {/* Campaign */}
         <Section title="Campaign" scope="Campaign" {...sectionProps('campaign')}>
           <CampaignSection />
-          <SubSection title="Party" scope="Global">
-            <label className="block">
-              <span className="text-[11px] text-textdim font-body">Max Party Size</span>
-              <input
-                type="number"
-                min={1}
-                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
-                value={maxPartySize}
-                onChange={(e) => setMaxPartySize(Math.max(1, Number(e.target.value) || 3))}
-              />
-              <span className="text-[10px] text-textdim font-body">
-                Active party members (excluding the player character).
-              </span>
-            </label>
-          </SubSection>
+        </Section>
+
+        {/* World Rules — the campaign's ruleset knobs (R21) */}
+        <Section title="World Rules" scope="Campaign" {...sectionProps('rules')}>
+          <WorldRulesSection />
         </Section>
 
         {/* AI & Model */}
@@ -1123,6 +1114,110 @@ function BackdropManager() {
       >
         + ADD BACKDROP
       </button>
+    </div>
+  )
+}
+
+// World Rules (R21) — the campaign's ruleset knobs. Auto-saves like the rest of
+// Config: optimistic patchLocal + a debounced PUT to /campaign-rules.
+function WorldRulesSection() {
+  const rules = useCampaignRulesStore()
+  const flush = useDebounced(() => {
+    const r = useCampaignRulesStore.getState()
+    void r.save({
+      partySize: r.partySize, currencyName: r.currencyName, currencyAbbrev: r.currencyAbbrev,
+      currencySymbol: r.currencySymbol, attributes: r.attributes, tone: r.tone,
+    })
+  }, 400)
+  const set = (p: Partial<CampaignRules>) => { rules.patchLocal(p); flush() }
+  const attrs = rules.attributes
+  const setAttr = (i: number, patch: Partial<WorldAttribute>) =>
+    set({ attributes: attrs.map((a, j) => (j === i ? { ...a, ...patch } : a)) })
+
+  const inputCls = 'w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2'
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <span className="text-[11px] text-textdim font-body">Max Party Size</span>
+        <input
+          type="number"
+          min={0}
+          className={inputCls}
+          value={rules.partySize}
+          onChange={(e) => set({ partySize: Math.max(0, Math.min(20, Number(e.target.value) || 0)) })}
+        />
+        <span className="text-[10px] text-textdim font-body">Active companions (excluding the player character).</span>
+      </label>
+
+      <SubSection title="Currency">
+        <div className="grid grid-cols-3 gap-2">
+          <label className="block">
+            <span className="text-[10px] text-textdim font-body">Name</span>
+            <input className={inputCls} value={rules.currencyName} placeholder="Gold" onChange={(e) => set({ currencyName: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-textdim font-body">Abbrev</span>
+            <input className={inputCls} value={rules.currencyAbbrev} placeholder="gp" onChange={(e) => set({ currencyAbbrev: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-textdim font-body">Symbol</span>
+            <input className={inputCls} value={rules.currencySymbol} placeholder="⛃" onChange={(e) => set({ currencySymbol: e.target.value })} />
+          </label>
+        </div>
+        <span className="text-[10px] text-textdim font-body">The world's money — surfaced to the narrator's item context.</span>
+      </SubSection>
+
+      <SubSection title="Attributes / Stats">
+        <div className="space-y-1.5">
+          {attrs.map((a, i) => (
+            <div key={i} className="flex items-start gap-1.5">
+              <input
+                className="w-24 shrink-0 border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                value={a.name}
+                placeholder="Might"
+                onChange={(e) => setAttr(i, { name: e.target.value })}
+              />
+              <input
+                className="flex-1 border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:border-line2 focus:bg-bg2"
+                value={a.description}
+                placeholder="What it governs (optional)"
+                onChange={(e) => setAttr(i, { description: e.target.value })}
+              />
+              <button
+                type="button"
+                title="Remove this attribute"
+                className="font-ui text-[11px] text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors"
+                onClick={() => set({ attributes: attrs.filter((_, j) => j !== i) })}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="mt-1.5 font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
+          onClick={() => set({ attributes: [...attrs, { name: '', description: '' }] })}
+        >
+          + ADD ATTRIBUTE
+        </button>
+        <span className="mt-1 block text-[10px] text-textdim font-body">
+          Declare this world's stat vocabulary (STR/DEX-style). Narrative flavour the narrator sees — no hard mechanics.
+        </span>
+      </SubSection>
+
+      <label className="block">
+        <span className="text-[11px] text-textdim font-body">Tone / Rating</span>
+        <ExpandableTextarea
+          label="Tone / Rating"
+          className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[60px]"
+          rows={3}
+          value={rules.tone}
+          placeholder="e.g. Grim and dangerous; consequences stick. Or: light-hearted heroic romp."
+          onChange={(v) => set({ tone: v })}
+        />
+        <span className="text-[10px] text-textdim font-body">Seeds the narrator + suggester with the world's tone and content limits.</span>
+      </label>
     </div>
   )
 }

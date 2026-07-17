@@ -132,6 +132,31 @@ class NarratorResponse(BaseModel):
     firstMessageAlternates: list[OpeningAlt]
 
 
+# --- Campaign Rules (World Rules) ---
+
+class WorldAttribute(BaseModel):
+    name: str = ""
+    description: str = ""
+
+
+class CampaignRulesResponse(BaseModel):
+    partySize: int
+    currencyName: str
+    currencyAbbrev: str
+    currencySymbol: str
+    attributes: list[WorldAttribute]
+    tone: str
+
+
+class CampaignRulesUpdate(BaseModel):
+    partySize: int | None = None
+    currencyName: str | None = None
+    currencyAbbrev: str | None = None
+    currencySymbol: str | None = None
+    attributes: list[WorldAttribute] | None = None
+    tone: str | None = None
+
+
 # --- Scenario ---
 
 class ScenarioUpdate(BaseModel):

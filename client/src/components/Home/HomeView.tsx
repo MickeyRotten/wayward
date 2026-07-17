@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { usePartyStore } from '../../state/partyStore'
-import { useSettingsStore } from '../../state/settingsStore'
+import { useCampaignRulesStore } from '../../state/campaignRulesStore'
 import { useUiStore } from '../../state/uiStore'
 import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
@@ -13,7 +13,7 @@ export function HomeView() {
   const editMode = useChatStore((s) => s.planningMode)
   const addMember = usePartyStore((s) => s.addPartyMember)
   const setMembership = usePartyStore((s) => s.setMembership)
-  const maxPartySize = useSettingsStore((s) => s.maxPartySize)
+  const maxPartySize = useCampaignRulesStore((s) => s.partySize)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 

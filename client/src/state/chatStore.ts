@@ -52,6 +52,8 @@ const TOOL_STATUS: Record<string, string> = {
   get_narrator_instructions: 'Reading Narrator instructions',
   set_first_message: 'Setting the opening',
   set_first_message_alternates: 'Setting alternate openings',
+  set_world_rules: 'Setting world rules',
+  get_world_rules: 'Reading world rules',
   list_world: 'Reviewing the world',
   get_entry: 'Reading an entry',
 }

@@ -26,7 +26,9 @@ from server.ai.planner import PLANNER_GUIDANCE
 from server.ai.scenario import compose_scenario_content
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
 from server.db.database import migrate_characters_to_files, migrate_to_item_instances, new_session
+from server.ai.rules import normalize_attributes
 from server.db.models import (
+    CampaignRules,
     InventoryStack,
     LorebookConfig,
     LorebookEntry,
@@ -166,6 +168,17 @@ async def apply_template(name: str) -> bool:
         s.add(LorebookConfig(
             injection_order=dict(_DEFAULT_INJECTION_ORDER),
             injection_position=dict(_DEFAULT_INJECTION_POSITION),
+        ))
+
+        # --- World Rules (campaign scope, R21) ---
+        rules_t = tpl.get("rules") or {}
+        s.add(CampaignRules(
+            party_size=int(rules_t.get("partySize", 3)),
+            currency_name=rules_t.get("currencyName", "Gold"),
+            currency_abbrev=rules_t.get("currencyAbbrev", "gp"),
+            currency_symbol=rules_t.get("currencySymbol", ""),
+            attributes=normalize_attributes(rules_t.get("attributes")) or None,
+            tone=rules_t.get("tone", ""),
         ))
 
         # --- Story summary (adventure scope) ---

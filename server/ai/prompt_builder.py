@@ -1,5 +1,6 @@
 from server.ai.lore_injector import format_lore_block, group_by_position, match_entries
 from server.ai.narrator_actions import ACTION_INSTRUCTION
+from server.ai.rules import compose_rules_block
 from server.db.models import (
     ChatMessage,
     LorebookConfig,
@@ -72,6 +73,7 @@ def build_prompt(
     max_response_tokens: int = 1000,
     include_action_protocol: bool = True,
     first_message_override: str | None = None,
+    campaign_rules: dict | None = None,
 ) -> list[dict]:
     messages: list[dict] = []
 
@@ -92,6 +94,13 @@ def build_prompt(
             "role": "system",
             "content": getattr(narrator_config, "action_instruction", "") or ACTION_INSTRUCTION,
         })
+
+    # 1c. System: World Rules (R21) — the campaign's ruleset (party size,
+    #     currency, declared attributes, tone). Compact; only non-empty facts.
+    if campaign_rules:
+        rules_block = compose_rules_block(campaign_rules)
+        if rules_block:
+            messages.append({"role": "system", "content": rules_block})
 
     # 2. Scenario context now lives as a permanent World lorebook entry and is
     #    injected through the lorebook (see steps 7–8).

@@ -29,10 +29,12 @@ from server.ai.narrator_actions import (
 )
 from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
+from server.ai.rules import normalize_attributes
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields, normalize_openings
 from server.ai.worldbuilder import LORE_CAT_ORDER, LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
 from server.db.models import (
+    CampaignRules,
     ChatMessage,
     LorebookEntry,
     NarratorConfig,
@@ -192,6 +194,20 @@ TOOL_SCHEMAS: list[dict] = [
             },
             "required": ["message"],
         }}}, ["alternates"]),
+    _fn("get_world_rules", "Read the campaign's World Rules: party size, currency (name/abbrev/symbol), declared attributes, and tone.", {}, []),
+    _fn("set_world_rules", "Update the campaign's World Rules — the world's ruleset knobs. Pass only the field(s) you're changing; others are left untouched. Use this when the player defines their world's currency, stats/attributes, party size, or tone.",
+        {
+            "partySize": {"type": "integer", "description": "Max active companions (excluding the PC)."},
+            "currencyName": {"type": "string", "description": "e.g. 'Gold', 'Credits'."},
+            "currencyAbbrev": {"type": "string", "description": "e.g. 'gp'."},
+            "currencySymbol": {"type": "string", "description": "e.g. '$'."},
+            "tone": {"type": "string", "description": "Tone/rating guidance (grim vs heroic, content limits)."},
+            "attributes": {"type": "array", "description": "Declared attribute/stat vocabulary.", "items": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
+                "required": ["name"],
+            }},
+        }, []),
     _fn("list_world", "List the current world: lore by category, tasks, party members, and the PC.", {}, []),
     _fn("get_entry", "Read the full content of a lore entry, task, or member by name.",
         {"name": {"type": "string"}}, ["name"]),
@@ -494,6 +510,35 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         alts = normalize_openings(args.get("alternates"))
         cfg.first_message_alternates = alts or None
         return f"Set {len(alts)} alternate opening(s).", None
+
+    if name == "get_world_rules":
+        r = (await session.execute(select(CampaignRules))).scalars().first()
+        if not r:
+            return "Party size 3; currency Gold (gp); no attributes; no tone set.", None
+        attrs = normalize_attributes(getattr(r, "attributes", None))
+        attr_str = ", ".join(a["name"] for a in attrs) if attrs else "none"
+        return (f"Party size {r.party_size}; currency {r.currency_name} "
+                f"({r.currency_abbrev}{(' ' + r.currency_symbol) if r.currency_symbol else ''}); "
+                f"attributes: {attr_str}; tone: {r.tone or '(none)'}."), None
+
+    if name == "set_world_rules":
+        r = (await session.execute(select(CampaignRules))).scalars().first()
+        if not r:
+            r = CampaignRules(id=1)
+            session.add(r)
+        if args.get("partySize") is not None:
+            r.party_size = max(0, min(int(args["partySize"]), 20))
+        if args.get("currencyName") is not None:
+            r.currency_name = str(args["currencyName"]).strip()
+        if args.get("currencyAbbrev") is not None:
+            r.currency_abbrev = str(args["currencyAbbrev"]).strip()
+        if args.get("currencySymbol") is not None:
+            r.currency_symbol = str(args["currencySymbol"]).strip()
+        if args.get("tone") is not None:
+            r.tone = str(args["tone"]).strip()
+        if args.get("attributes") is not None:
+            r.attributes = normalize_attributes(args["attributes"]) or None
+        return "Updated the World Rules.", None
 
     # ---- Read ----
     if name == "list_world":

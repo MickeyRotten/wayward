@@ -60,6 +60,7 @@ from server.db import events as event_ops
 from server.db import party as party_ops
 from server.db.database import get_session, new_session
 from server.db.models import (
+    CampaignRules,
     ChatMessage,
     LorebookConfig,
     LorebookEntry,
@@ -466,6 +467,18 @@ async def _maybe_summarize_and_build(
         )
         spotlight_block = f"{spotlight_block}\n\n{note}" if spotlight_block else note
 
+    # World Rules (R21) — injected into the narrator prompt (party/currency/
+    # attributes/tone). One small query per turn; None-safe if the row is absent.
+    _rules = (await session.execute(select(CampaignRules))).scalars().first()
+    rules_dict = {
+        "party_size": _rules.party_size,
+        "currency_name": _rules.currency_name,
+        "currency_abbrev": _rules.currency_abbrev,
+        "currency_symbol": _rules.currency_symbol,
+        "attributes": getattr(_rules, "attributes", None),
+        "tone": _rules.tone,
+    } if _rules else None
+
     # Build the turn's prompt (build_prompt trims oldest history to the budget,
     # so this always fits) and measure it against the summary threshold.
     test_prompt = build_prompt(
@@ -484,6 +497,7 @@ async def _maybe_summarize_and_build(
         max_response_tokens=settings.max_tokens_response,
         include_action_protocol=not agentic,
         first_message_override=getattr(summary, "opening_message", None),
+        campaign_rules=rules_dict,
     )
 
     preamble_tokens = estimate_prompt_tokens(test_prompt)

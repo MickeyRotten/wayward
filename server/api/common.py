@@ -18,6 +18,7 @@ from server.db import party as party_ops
 from server.db import storage
 from server.db.models import (
     AppState,
+    CampaignRules,
     ChatMessage,
     ItemInstance,
     LorebookEntry,
@@ -76,6 +77,11 @@ async def _active_party_count(session: AsyncSession) -> int:
 
 
 async def _max_party_size(session: AsyncSession) -> int:
+    # World Rules (per-campaign) is the source of truth (R21); the old app-global
+    # OpenRouterSettings.max_party_size is only a back-fill seed.
+    rules = (await session.execute(select(CampaignRules))).scalars().first()
+    if rules:
+        return rules.party_size
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     return settings.max_party_size if settings else 3
 

@@ -20,8 +20,11 @@ from server.db import characters as char_files
 from server.db import party as party_ops
 from server.db import storage
 from server.db.database import get_session, new_session, switch_active
+from server.ai.rules import normalize_attributes
+from server.api.schemas import CampaignRulesResponse, CampaignRulesUpdate
 from server.db.models import (
     AppState,
+    CampaignRules,
     ChatMessage,
     InventoryStack,
     LorebookConfig,
@@ -35,6 +38,52 @@ from server.db.models import (
 )
 
 router = APIRouter()
+
+
+# ── Campaign Rules ("World Rules") ────────────────────────────────
+
+async def get_or_create_rules(session: AsyncSession) -> CampaignRules:
+    rules = (await session.execute(select(CampaignRules))).scalars().first()
+    if not rules:
+        rules = CampaignRules(id=1)
+        session.add(rules)
+        await session.commit()
+    return rules
+
+
+def _rules_response(r: CampaignRules) -> CampaignRulesResponse:
+    return CampaignRulesResponse(
+        partySize=r.party_size,
+        currencyName=r.currency_name or "",
+        currencyAbbrev=r.currency_abbrev or "",
+        currencySymbol=r.currency_symbol or "",
+        attributes=normalize_attributes(getattr(r, "attributes", None)),
+        tone=r.tone or "",
+    )
+
+
+@router.get("/campaign-rules", response_model=CampaignRulesResponse)
+async def get_campaign_rules(session: AsyncSession = Depends(get_session)):
+    return _rules_response(await get_or_create_rules(session))
+
+
+@router.put("/campaign-rules", response_model=CampaignRulesResponse)
+async def update_campaign_rules(data: CampaignRulesUpdate, session: AsyncSession = Depends(get_session)):
+    r = await get_or_create_rules(session)
+    if data.partySize is not None:
+        r.party_size = max(0, min(int(data.partySize), 20))
+    if data.currencyName is not None:
+        r.currency_name = data.currencyName.strip()
+    if data.currencyAbbrev is not None:
+        r.currency_abbrev = data.currencyAbbrev.strip()
+    if data.currencySymbol is not None:
+        r.currency_symbol = data.currencySymbol.strip()
+    if data.attributes is not None:
+        r.attributes = normalize_attributes([{"name": a.name, "description": a.description} for a in data.attributes]) or None
+    if data.tone is not None:
+        r.tone = data.tone.strip()
+    await session.commit()
+    return _rules_response(r)
 
 
 # ── Adventures (save files in the active campaign) ────────────────

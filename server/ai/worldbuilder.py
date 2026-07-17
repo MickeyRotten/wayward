@@ -26,6 +26,7 @@ from server.db import events as event_ops
 from server.db import party as party_ops
 from server.db.database import new_session
 from server.db.models import (
+    CampaignRules,
     ChatMessage,
     LorebookEntry,
     OpenRouterSettings,
@@ -547,8 +548,12 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         return True, None
 
     if kind == "member" and op == "create":
-        settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
-        max_size = settings.max_party_size if settings else 3
+        rules = (await session.execute(select(CampaignRules))).scalars().first()
+        if rules:
+            max_size = rules.party_size
+        else:
+            settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
+            max_size = settings.max_party_size if settings else 3
         if await party_ops.active_count(session) >= max_size:
             return False, "Party is full."
         # Promote a lorebook character into the party: if a matching lore

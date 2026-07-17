@@ -270,6 +270,25 @@ async def _run_scope_migrations() -> None:
                 "kind VARCHAR DEFAULT 'item', text TEXT DEFAULT '', tethered INTEGER DEFAULT 0, "
                 "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
             ))
+        # New campaign-scoped table (R21 World Rules). Only for campaigns that
+        # PREDATE it (no table): create it and seed one row, back-filling
+        # party_size from the app-global setting so an existing campaign keeps
+        # its previous max party size. Fresh campaigns get the table from
+        # create_all and their row from the template applier — untouched here.
+        if not (await conn.execute(text("PRAGMA campaign.table_info(campaign_rules)"))).fetchall():
+            await conn.execute(text(
+                "CREATE TABLE campaign.campaign_rules "
+                "(id INTEGER NOT NULL PRIMARY KEY, party_size INTEGER DEFAULT 3, "
+                "currency_name VARCHAR DEFAULT 'Gold', currency_abbrev VARCHAR DEFAULT 'gp', "
+                "currency_symbol VARCHAR DEFAULT '', attributes JSON, tone TEXT DEFAULT '')"
+            ))
+            row = (await conn.execute(text("SELECT max_party_size FROM openrouter_settings LIMIT 1"))).fetchone()
+            await conn.execute(
+                text("INSERT INTO campaign.campaign_rules "
+                     "(id, party_size, currency_name, currency_abbrev, currency_symbol, tone) "
+                     "VALUES (1, :ps, 'Gold', 'gp', '', '')"),
+                {"ps": (row[0] if row else 3)},
+            )
         # Indexes on hot filter columns (new files get these from create_all via
         # index=True on the models; this back-fills existing files). Guarded on
         # table existence — very old files may predate a table.

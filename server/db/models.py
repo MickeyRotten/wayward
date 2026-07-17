@@ -207,6 +207,30 @@ class LorebookConfig(Base):
     scan_depth: Mapped[int] = mapped_column(Integer, default=3)
 
 
+class CampaignRules(Base):
+    """Per-campaign "World Rules" — the knobs that define this world's ruleset
+    (as opposed to the LLM engine, which is app-global, or Appearance, which is
+    per-device). Campaign-scoped so it rides along in campaign zips/exports."""
+    __tablename__ = "campaign_rules"
+    __table_args__ = CAMPAIGN
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    # Max active companions (excluding the PC). Moved here from the app-global
+    # OpenRouterSettings.max_party_size — a per-world knob, not an engine one.
+    party_size: Mapped[int] = mapped_column(Integer, default=3)
+    # Currency vocabulary for this world (wires into the Currency item type +
+    # the narrator's item context). e.g. "Gold" / "gp" / "".
+    currency_name: Mapped[str] = mapped_column(String, default="Gold")
+    currency_abbrev: Mapped[str] = mapped_column(String, default="gp")
+    currency_symbol: Mapped[str] = mapped_column(String, default="")
+    # Declared attribute/stat vocabulary: [{name, description}]. Narrative unless
+    # a future dice hook opts in — it lets a world *name* its stats. Null => none.
+    attributes = mapped_column(JSON, nullable=True)
+    # Freeform tone/rating guidance (grim ↔ heroic, content limits) seeded into
+    # narrator + suggester context. Blank => nothing injected.
+    tone: Mapped[str] = mapped_column(Text, default="")
+
+
 # ── Adventure (a save file) ───────────────────────────────────────
 
 class PartyBinding(Base):

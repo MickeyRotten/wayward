@@ -12,9 +12,12 @@ def test_normalize_openings_shapes():
         {"message": "Hi", "options": ["a", "b"]},
     ]
     # Legacy R13 bare-string shape coerces to {message, options: []}.
-    assert normalize_openings(["A way in.", ""]) == [{"message": "A way in.", "options": []}]
-    # Messageless entries are dropped entirely.
-    assert normalize_openings([{"message": "", "options": ["x"]}]) == []
+    assert normalize_openings(["A way in.", ""]) == [
+        {"message": "A way in.", "options": []},
+        {"message": "", "options": []},
+    ]
+    # Blank-message entries are KEPT (an in-progress "+ NEW" card).
+    assert normalize_openings([{"message": "", "options": ["x"]}]) == [{"message": "", "options": ["x"]}]
     assert normalize_openings(None) == []
 
 
@@ -23,20 +26,19 @@ def test_narrator_alternates_round_trip(client):
         "firstMessage": "The primary opening.",
         "firstMessageAlternates": [
             {"message": "  A second way in.  ", "options": ["Look up", "", " Run "]},
-            {"message": "", "options": ["dropped"]},
+            {"message": "", "options": []},  # a freshly-created blank card persists
             {"message": "A third."},
         ],
     })
     assert res.status_code == 200, res.text
-    # Messageless alt dropped; whitespace trimmed; blank options dropped.
-    assert res.json()["firstMessageAlternates"] == [
+    # Whitespace trimmed, blank options dropped, blank card kept.
+    expected = [
         {"message": "A second way in.", "options": ["Look up", "Run"]},
+        {"message": "", "options": []},
         {"message": "A third.", "options": []},
     ]
-    assert client.get("/api/narrator").json()["firstMessageAlternates"] == [
-        {"message": "A second way in.", "options": ["Look up", "Run"]},
-        {"message": "A third.", "options": []},
-    ]
+    assert res.json()["firstMessageAlternates"] == expected
+    assert client.get("/api/narrator").json()["firstMessageAlternates"] == expected
 
 
 def test_opening_endpoint_null_until_anchored_then_resets(client):

@@ -36,8 +36,10 @@ def normalize_openings(raw) -> list[dict]:
     """Normalize alternate openings into ``[{message, options}]`` (R13/R19).
 
     Accepts the current object shape ``{"message": str, "options": [str]}`` and
-    the legacy R13 shape (a bare ``str`` per alternate, no options). Trims text,
-    drops blank options, and drops any alternate whose message is empty.
+    the legacy R13 shape (a bare ``str`` per alternate, no options). Trims text
+    and drops blank options. Blank-message entries are KEPT — an opening card is
+    a real entity the player is still authoring (the "+ NEW" card starts empty);
+    the chat swipe filters empties out of the turn-0 display instead.
     """
     out: list[dict] = []
     for item in (raw or []):
@@ -48,8 +50,7 @@ def normalize_openings(raw) -> list[dict]:
             options = [str(o).strip() for o in (item.get("options") or []) if str(o).strip()]
         else:
             continue
-        if message:
-            out.append({"message": message, "options": options})
+        out.append({"message": message, "options": options})
     return out
 
 

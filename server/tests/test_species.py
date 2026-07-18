@@ -108,3 +108,40 @@ def test_migrate_species_lore_recategorizes_and_renames_config_key(client):
     assert entry2.species_fields == {"overview": "A large wolf."}
     assert entry2.content == "Overview: A large wolf."
     assert "monsters" not in cfg2.injection_order
+
+
+# ── Integration: /lore API composes + merges species fields ────────
+
+def test_lore_species_create_composes_content(client):
+    res = client.post("/api/lore", json={
+        "title": "Dire Wolf",
+        "content": "",
+        "cat": "species",
+        "keywords": ["wolf"],
+        "speciesFields": {
+            "overview": "A larger, more cunning cousin of the common wolf.",
+            "dangerCombat": "Hunts in coordinated packs; flees if its alpha falls.",
+        },
+    })
+    assert res.status_code == 201, res.text
+    body = res.json()
+    entry_id = body["id"]
+    assert body["speciesFields"]["overview"].startswith("A larger")
+    assert body["content"] == (
+        "Overview: A larger, more cunning cousin of the common wolf.\n\n"
+        "Danger & Combat Notes: Hunts in coordinated packs; flees if its alpha falls."
+    )
+
+    # Partial PUT merges into existing fields rather than replacing them.
+    put = client.put(f"/api/lore/{entry_id}", json={
+        "speciesFields": {"typicalGear": "None — relies on claw and fang."},
+    }).json()
+    assert put["speciesFields"]["overview"].startswith("A larger")  # untouched
+    assert put["speciesFields"]["typicalGear"] == "None — relies on claw and fang."
+    assert "Typical Gear: None" in put["content"]
+
+    # Non-species entries never carry speciesFields.
+    other = client.post("/api/lore", json={"title": "A Cave", "content": "Dark.", "cat": "world"}).json()
+    assert other["speciesFields"] is None
+    client.delete(f"/api/lore/{other['id']}")
+    client.delete(f"/api/lore/{entry_id}")

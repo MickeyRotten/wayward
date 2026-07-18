@@ -1024,3 +1024,6 @@ Ensure Editor has access to this, too.
 [ ] (from the architecture audit) Close the biggest test gaps. Client tests currently cover only the pure libs. Add: tests for the `chatStore` turn state machine (send → stream → done → swipe → regenerate → delete — the app's most complex state machine, currently untested); at least one end-to-end turn-cycle test (Playwright); and a contract test that fails when `shared/types/models.ts` drifts from the server schemas (they're hand-mirrored today with no sync enforcement). Server-side, add a multi-effect `_reverse_message_effects` case (grant + equip + set_scene in one turn, threading instance ids) to cover reversal's edge territory.
 
 ---
+[ ] In Config, the auto-saving makes it really difficult to type anything in (at least on mobile) due to latency in the saving, causing typed letters to disappear. We can return to the manual Save button.
+
+---

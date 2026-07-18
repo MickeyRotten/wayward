@@ -167,7 +167,7 @@ or two sentences, true to their established character and Field
 Skill.
 ```
 
-Update `lastSpokeTurn` after the call resolves, based on whether the response actually included that member's voice (simple presence check on their name/dialogue tag in the output is fine for alpha — no need for anything fancier).
+Update `lastSpokeTurn` after the call resolves, based on whether the response actually **attributed a line of dialogue** to that member. `_member_spoke` (`spotlight.py`) does this deterministically: it matches the member's name — full name *or* first token, on word boundaries and case-insensitively — adjacent to a quote or a speech verb (`Name: "…"`, `Name … said`, `said … Name`, `…" Name`), so a bare name mention ("Tifa was asleep") does **not** count as speaking.
 
 ---
 

@@ -176,14 +176,14 @@ Update `lastSpokeTurn` after the call resolves, based on whether the response ac
 The narrator runs as a **multi-step agent** (in [`server/ai/narrator_agent.py`](server/ai/narrator_agent.py)), not a single text-completion. Within one player turn it may take several model round-trips: it can call tools, see the results, and continue before writing the final prose. This replaces the older "append a `<<<ACTIONS>>>` JSON block, parse it with a regex" approach, which couldn't validate against real game state.
 
 **The loop** (`run_narrator_agent`):
-1. Build the prompt (`build_prompt(..., include_action_protocol=False)`) — the spotlight block is still injected, deterministically, exactly as above. `TOOL_GUIDANCE` and a `FORMATTING_GUIDE` (the chat-formatting conventions — see "Chat Rendering & Narration Formatting") are prepended as system messages so they hold even if the user cleared their editable narrator instructions.
+1. Build the prompt (`build_prompt(..., include_action_protocol=False)`) — the spotlight block is still injected, deterministically, exactly as above. The tool-use guidance and the chat-formatting conventions (`style.tool_guidance()` / `style.formatting_guide()`, read from the editable `style_catalog.json` — see "Story Style" and "Chat Rendering & Narration Formatting") are prepended as system messages so they always hold.
 2. Call the model with `tools` (streaming). If it returns tool calls, execute each against the DB, append the results as `role:"tool"` messages, and loop. If it returns prose with no tool calls, that's the narration → stream it and stop.
 3. `max_tool_rounds` (default 6, configurable) caps the loop; the final round drops `tools` to force narration.
 
 **Tools** (handlers in [`server/ai/narrator_actions.py`](server/ai/narrator_actions.py)):
 - *Write:* `set_scene` (location/timeOfDay/weather), `grant_item`, `remove_item`, `consume_item` (replaces the old deterministic item-use keyword scan), `equip`, `unequip`. (History summarisation is deterministic and server-side: when the prompt crosses the threshold, compression runs as a **post-turn background pass** — `_summarize_in_background` in server/api/chat.py — never blocking the player's turn.)
 - *Read:* `lookup_item`, `search_items`, `list_inventory`, `get_character` — let the model validate before acting (e.g. confirm an item exists and its slot before `equip`).
-- *Dice:* `skill_check(characterName, skill, difficulty)` — offered only when `NarratorConfig.dice_enabled` (schema + `DICE_GUIDANCE` appended conditionally in `run_narrator_agent`). **The server rolls the d20** (DC map easy 8 / normal 12 / hard 16 / heroic 19, nat 1/20 = crits) and returns roll/DC/outcome, so the model narrates a result it was *given* and can't fudge. Each roll writes a **tethered `ChatEvent` (`kind='dice'`)** rendered as a gold/red dice chip in chat; being tethered, it vanishes with the turn on swipe/regenerate/delete and the retelling re-rolls fresh. Agentic path only (no legacy `<<<ACTIONS>>>` equivalent).
+- *Dice:* `skill_check(characterName, skill, difficulty)` — offered only when `NarratorConfig.dice_enabled` (schema + the dice guidance `style.dice_guidance()` from `style_catalog.json`, appended conditionally in `run_narrator_agent`). **The server rolls the d20** (DC map easy 8 / normal 12 / hard 16 / heroic 19, nat 1/20 = crits) and returns roll/DC/outcome, so the model narrates a result it was *given* and can't fudge. Each roll writes a **tethered `ChatEvent` (`kind='dice'`)** rendered as a gold/red dice chip in chat; being tethered, it vanishes with the turn on swipe/regenerate/delete and the retelling re-rolls fresh. Agentic path only (no legacy `<<<ACTIONS>>>` equivalent).
 
 The item tools operate on **instances**: `grant`/`equip` reuse a stowed instance or mint one; `unequip` just clears the slot (the instance becomes stowed — no inventory delta); `remove`/`consume` delete a stowed instance or decrement a stackable. Equipment inventory deltas and equipment changes carry **instance ids** so reversal restores the exact copy.
 
@@ -204,7 +204,7 @@ The chat is styled like a **classical JRPG dialogue scene**. The narration stays
   - The **PC** message uses the same block, blue-accented with a `YOU` badge, padded/sized to align with the narrator + party portraits ([`ChatScene.tsx`](client/src/components/Scene/ChatScene.tsx), shared `CHAT_PORTRAIT_SIZE`).
 - **Inline markup** (`formatNarration`): `**bold**` and `*italics*`. Entity names (items/members) get a non-interactive gold highlight (`applyEntityChips`). The configured First Message keeps the gold **drop-cap**.
 - **Block markup**: `> …` → an inset **inscription/letter** box; a line of only `* * *` / `---` → an ornamental **scene divider**. A cinematic **`LOCATION · TIME`** header is shown above a narrator message when its declared scene state changes (derived from `message.location`/`timeOfDay` — no new narrator output).
-- **Convention enforcement**: the always-injected `FORMATTING_GUIDE` (in [`narrator_agent.py`](server/ai/narrator_agent.py)) documents these conventions to the model; the client parser is the deterministic backstop when the model drifts. The `Name: "…"` dialogue convention is the same one `_member_spoke` (`spotlight.py`) already detects, so `last_spoke_turn`/spotlight tracking needs no extra wiring.
+- **Convention enforcement**: the always-injected formatting guide (`style.formatting_guide()`, from the editable [`style_catalog.json`](server/ai/style_catalog.json)) documents these conventions to the model; the client parser is the deterministic backstop when the model drifts. The `Name: "…"` dialogue convention is the same one `_member_spoke` (`spotlight.py`) already detects, so `last_spoke_turn`/spotlight tracking needs no extra wiring.
 
 **Backdrop art & weather effects** (Play mode only; Edit Mode stays solid indigo):
 - The chat's message area layers **backdrop art** behind the messages with a semi-transparent dark wash over it. `GET /api/backdrops` lists images in `server/backdrops/` (png/jpg/webp); [`lib/backdrops.ts`](client/src/lib/backdrops.ts) deterministically picks the best match by scoring filename tokens ("city_day" → city + day) against the narrator-declared location + time of day, falling back to `forest_day.png` — scenes match automatically from the filename. Backdrops are **managed in Config → Appearance** (thumbnail grid + upload/delete via `POST /backdrops/upload` / `DELETE /backdrops/{file}` — the only way to add art on the APK). **Note: `server/backdrops/` is not committed** (the art lives only on the user's machine), so fresh clones/the APK render the plain dark chat until backdrops are added.
@@ -324,24 +324,34 @@ Constraints to keep in mind:
 One isolated function — [`build_prompt`](server/ai/prompt_builder.py) — assembles every narration call, roughly in order:
 
 ```
-1. Narrator Instructions (campaign NarratorConfig.instructions)
-2. (legacy action protocol — skipped in the agentic loop; tool guidance is
-   prepended by run_narrator_agent instead)
-3. Player Character summary (name, species, description, equipped items w/ descriptions)
-4. Party roster (each in-party member: description, personality/likes/dislikes,
-   Field Skill, equipped items)
-5. Active tasks
-6. Story summary (auto-compressed older history)
-7. PARTY SPOTLIGHT block (computed signals — see below)
-8. Lorebook entries matched by keyword — matching scans the new player message
-   plus the last `LorebookConfig.scan_depth` turns of history (default 3), and
-   entry titles count as implicit keywords (injected at top / before-input /
-   bottom positions per LorebookConfig)
-9. Recent chat history (trimmed to the context budget; the editable First Message
-   is prepended as the opening assistant turn). Planner-thread messages are
-   excluded.
-10. Post-History Instructions (always last, right before the user message)
-11. The player's new message
+1.  Core Narrator instructions — `style.core_instructions()`, read from the
+    editable `style_catalog.json` (the JSON core; injected FIRST so the prompt
+    always begins with a clear role definition — see "Story Style")
+1a. Optional per-campaign instruction override (`NarratorConfig.instructions`),
+    injected only when it's a genuine custom value; a stored built-in default is
+    skipped so it doesn't duplicate the JSON core
+1b. STORY STYLE block (`compose_style_block` from `NarratorConfig.style_fields`;
+    omitted when the campaign has no selections)
+1c. (legacy action protocol — used only on the non-tool text path; in the agentic
+    loop `run_narrator_agent` instead prepends the tool / dice / formatting
+    guidance, also from `style_catalog.json`)
+1d. WORLD RULES block (`compose_rules_block` — party size, currency, attributes;
+    tone only for un-migrated campaigns — see "Story Style")
+2.  Player Character summary (name, species, description, equipped items w/ descriptions)
+3.  Party roster (each in-party member: description, personality/likes/dislikes,
+    Field Skill, equipped items)
+4.  Active tasks
+5.  Story summary (auto-compressed older history)
+6.  PARTY SPOTLIGHT block (computed signals — see below)
+7.  Lorebook entries matched by keyword — matching scans the new player message
+    plus the last `LorebookConfig.scan_depth` turns of history (default 3), and
+    entry titles count as implicit keywords (injected at top / before-input /
+    bottom positions per LorebookConfig)
+8.  Recent chat history (trimmed to the context budget; the editable First Message
+    is prepended as the opening assistant turn). Planner-thread messages are
+    excluded.
+9.  Post-History Instructions (always last, right before the user message)
+10. The player's new message
 ```
 
 Keep prompt assembly in `build_prompt` so it stays inspectable independently of the chat UI. The full assembled prompt + model settings + response are logged to the terminal (the `wayward` logger) and the last one is saved for the Tools → View Prompt Log modal.

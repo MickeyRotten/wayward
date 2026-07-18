@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What this PR does and why, in a sentence or two. If it resolves a feedback.md task, name it (and remember to mark the task done with a note + commit id). -->
+<!-- What this PR does and why, in a sentence or two. If it resolves a TODO.md task, name it (and remember to mark the task done with a note + commit id). -->
 
 ## Changes
 
@@ -18,4 +18,4 @@
 - [ ] No new heavy/native Python deps without Android wheels (Chaquopy build)
 - [ ] Turn effects remain reversible (swipe/regenerate/delete unwind cleanly)
 - [ ] Existing DBs migrate (additive columns / `CREATE TABLE IF NOT EXISTS` back-fills)
-- [ ] CLAUDE.md / feedback.md updated where behavior or architecture changed
+- [ ] CLAUDE.md / TODO.md updated where behavior or architecture changed

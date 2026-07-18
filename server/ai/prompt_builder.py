@@ -1,7 +1,7 @@
 from server.ai.lore_injector import format_lore_block, group_by_position, match_entries
 from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.rules import compose_rules_block
-from server.ai.style import compose_style_block
+from server.ai.style import compose_style_block, core_instructions
 from server.db.models import (
     ChatMessage,
     LorebookConfig,
@@ -10,6 +10,35 @@ from server.db.models import (
     Task,
 )
 from server.db.party import RuntimeCharacter
+
+# Frozen copies of the built-in narrator instructions that older campaigns baked
+# into NarratorConfig.instructions (before the core moved to style_catalog.json).
+# A per-campaign `instructions` equal to one of these is treated as "no override"
+# so the editable JSON core supersedes it instead of double-injecting. Custom
+# (non-default) instructions are still layered in. Keep these strings verbatim.
+_LEGACY_DEFAULT_INSTRUCTIONS = {
+    # Current (post-Story-Style) trimmed default.
+    "You are the Narrator of an ongoing adventure. Describe the world vividly, "
+    "immersing the player in the scene. Advance the scene with each response: "
+    "describe what happens, what the player sees or feels, and leave a natural "
+    "opening for their next action. Never speak for the player character or decide "
+    "their actions. When voicing a party member, use a dialogue tag with their name "
+    "and keep it to one or two sentences in character. "
+    "Characters are wearing only what they have equipped — if an equipment slot is "
+    "empty, they have nothing in that slot. Do not invent clothing or gear that is "
+    "not listed in their equipment.",
+    # Original (pre-Story-Style) default, with the perspective/length clauses.
+    "You are the Narrator of an ongoing adventure. Describe the world vividly "
+    "in second person, addressing the player character directly. Keep prose concise "
+    "— two to four paragraphs per beat. Advance the scene with each response: "
+    "describe what happens, what the player sees or feels, and leave a natural "
+    "opening for their next action. Never speak for the player character or decide "
+    "their actions. When voicing a party member, use a dialogue tag with their name "
+    "and keep it to one or two sentences in character. "
+    "Characters are wearing only what they have equipped — if an equipment slot is "
+    "empty, they have nothing in that slot. Do not invent clothing or gear that is "
+    "not listed in their equipment.",
+}
 
 
 def augment_user_content(content: str, image_description: str | None, has_image: bool = True) -> str:
@@ -84,8 +113,18 @@ def build_prompt(
         for cat_item in item_catalog:
             catalog_lookup[cat_item.id] = (cat_item.title, cat_item.content or "")
 
-    # 1. System: Narrator instructions
-    messages.append({"role": "system", "content": narrator_config.instructions})
+    # 1. System: core Narrator instructions (role + core behavior) from the
+    #    editable style_catalog.json — always first, so the prompt begins with a
+    #    clear role definition. (Falls back to a code constant if the JSON is gone.)
+    messages.append({"role": "system", "content": core_instructions()})
+
+    # 1a'. System: optional per-campaign instruction override (the Editor's
+    #      set_narrator_instructions). Injected only when it's a genuine custom
+    #      value — a stored built-in default is skipped so the JSON core (which now
+    #      owns that text) isn't duplicated.
+    base_instructions = (getattr(narrator_config, "instructions", "") or "").strip()
+    if base_instructions and base_instructions not in _LEGACY_DEFAULT_INSTRUCTIONS:
+        messages.append({"role": "system", "content": base_instructions})
 
     # 1a. System: Story Style — the Campaign Builder's guided narration options
     #     (genre/tone/writing style/verbosity/content limit/perspective/structure

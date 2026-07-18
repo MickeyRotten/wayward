@@ -160,9 +160,9 @@ export function NewCampaignModal({
         </label>
 
         <div className="space-y-1">
-          <span className="text-[11px] text-textdim font-body">Story Style</span>
+          <span className="text-[11px] text-textdim font-body">Narrator Instructions</span>
           <p className="text-[10px] text-textdim font-body leading-relaxed">
-            Shape how the Narrator tells your story. Everything here is optional and fully editable later in Config → Story Style.
+            Shape how the Narrator tells your story. Everything here is optional and fully editable later in Config → Narrator Instructions.
           </p>
           <div className="pt-1">
             <StyleFieldsEditor

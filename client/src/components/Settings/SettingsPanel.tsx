@@ -130,7 +130,7 @@ export function SettingsPanel() {
     worldbuildingModelId: wbModelId, actionSuggestionsModelId, summaryThreshold,
     summaryModelId, visionModelId, visionUseSameKey, visionInstructions,
     ttsEnabled, ttsAutoplay } = settings
-  const { instructions, spotlightRule, postHistoryInstructions: postHistory,
+  const { spotlightRule, postHistoryInstructions: postHistory,
     plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions,
     actionOptionRules, actionSuggestionsMode, diceEnabled } = narrator
 
@@ -159,7 +159,6 @@ export function SettingsPanel() {
   const setCustomBaseUrl = (v: string) => setS({ customBaseUrl: v })
   const setCustomModelId = (v: string) => setS({ customModelId: v })
 
-  const setInstructions = (v: string) => setN({ instructions: v })
   const setSpotlightRule = (v: string) => setN({ spotlightRule: v })
   const setPostHistory = (v: string) => setN({ postHistoryInstructions: v })
   const setPlannerInstructions = (v: string) => setN({ plannerInstructions: v })
@@ -189,7 +188,7 @@ export function SettingsPanel() {
     setS({ useTools: true, maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
     setN({ actionSuggestionsEnabled: false })
   }
-  const resetWorld = () => setN({ instructions: '', spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
+  const resetWorld = () => setN({ spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
   const resetVoice = () => setS({ ttsEnabled: false, ttsAutoplay: true })
   const resetAppearance = () => {
     useAppearanceStore.getState().setChatFontSize('medium')
@@ -252,8 +251,8 @@ export function SettingsPanel() {
           <CampaignSection />
         </Section>
 
-        {/* Story Style — the Campaign Builder's guided narration options */}
-        <Section title="Story Style" scope="Campaign" {...sectionProps('style')}>
+        {/* Narrator Instructions — the Campaign Builder's guided narration options */}
+        <Section title="Narrator Instructions" scope="Campaign" {...sectionProps('style')}>
           <StoryStyleSection />
         </Section>
 
@@ -740,16 +739,6 @@ export function SettingsPanel() {
 
         {/* World */}
         <Section title="World" scope="Campaign" onReset={resetWorld} {...sectionProps('world')}>
-          <SubSection title="Narrator Instructions">
-            <ExpandableTextarea
-              label="Narrator Instructions"
-              className="w-full border border-line2 bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:bg-bg2 resize-y min-h-[100px]"
-              rows={5}
-              value={instructions}
-              onChange={setInstructions}
-            />
-          </SubSection>
-
           <SubSection title="Spotlight Rule">
             <ExpandableTextarea
               label="Spotlight Rule"
@@ -1214,7 +1203,7 @@ function WorldRulesSection() {
       </SubSection>
 
       <p className="text-[10px] text-textdim font-body pt-1">
-        Tone &amp; content rating moved to <span className="text-textsec">Story Style</span> above.
+        Tone &amp; content rating moved to <span className="text-textsec">Narrator Instructions</span> above.
       </p>
     </div>
   )
@@ -1236,7 +1225,7 @@ function StoryStyleSection() {
   return (
     <div className="space-y-3">
       <p className="text-[10px] text-textdim font-body leading-relaxed">
-        These guided options shape how the Narrator tells the story — composed into its instructions. Leave any at “No preference” to omit it.
+        These guided options are the Narrator's instructions — they shape how it tells the story. Leave any at “No preference” to omit it, and add anything else under Additional Instructions.
       </p>
       <StyleFieldsEditor
         defs={defs}

@@ -33,35 +33,15 @@ from server.ai.narrator_actions import (
     tool_unequip,
 )
 from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
+from server.ai import style
 from server.db.database import new_session
 
 log = logging.getLogger("wayward.narrator_agent")
 
 
-TOOL_GUIDANCE = """You have tools for changing and reading game state. Use them like this:
-- Call tools FIRST, in their own messages. Do NOT write narration in the same message as a tool call.
-- When you grant or equip an item, it must already exist in the world. If unsure, call lookup_item or search_items before grant_item/equip — guessing a name that doesn't exist does nothing.
-- Use set_scene whenever the location, time of day, or weather is first established or changes. Also set the in-game `day` (starting at 1) when a new day begins — e.g. after the party sleeps or time skips to the next morning — incrementing by 1 each new day.
-- Use consume_item when the player uses up an item they carry (e.g. drinks a potion).
-- The inventory is the PLAYER PARTY's inventory only — NPCs and monsters do not have inventories you track.
-  - The player giving/handing/selling an item to an NPC (anyone NOT in the player's party) is a single remove_item — it leaves the party's inventory. Do NOT grant_item then remove_item (that nets to zero and is wrong). If the party never actually had that item, change no inventory at all — just narrate.
-  - Only grant_item when the party GAINS an item (found, bought, looted, received as a gift). Handing between party members changes nothing — the party still owns it.
-- Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
-- Most turns need no tools at all — just narrate."""
-
-# Appended to the tool guidance only when the campaign has dice enabled.
-DICE_GUIDANCE = """- skill_check: when the player or a party member attempts something meaningfully UNCERTAIN and CONSEQUENTIAL (leaping a chasm, picking a lock, persuading a hostile guard, spotting an ambush), call skill_check BEFORE narrating the outcome, then narrate the result you were given — a failure must actually fail. Pick the skill label from the action or the character's Field Skill. Choose difficulty honestly: easy / normal / hard / heroic. NEVER roll for trivial or guaranteed actions, for ordinary conversation, or more than once per player action."""
-
-# Always injected, so the narration renders nicely in the JRPG-styled chat even
-# if the user cleared their editable narrator instructions. The conventions here
-# are recognised by the client renderer (party dialogue → portrait dialogue box;
-# *italics*/**bold**; "> " → inscription inset; "* * *" → scene-break divider).
-FORMATTING_GUIDE = """Format the narration for a stylised RPG chat:
-- When a PARTY MEMBER speaks, give them their own paragraph that begins with their name, a colon, then ONLY their spoken words in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. Put nothing else on that line: any description of how they said it, their expression, or what happens next goes in a SEPARATE narration paragraph (a blank line after the quote), NOT on the dialogue line. One speaker per paragraph; only do this for actual party members.
-- Use *italics* for emphasis, whispers, or inner thoughts, and **bold** for the names of notable items the first time they appear.
-- Put letters, signs, inscriptions, or prophecies in a blockquote: start each such line with "> ".
-- Separate a hard scene or time jump with a line containing only "* * *".
-- Keep ordinary narration as normal prose paragraphs."""
+# The always-on narrator guides (tool use, dice, chat formatting) now live in the
+# editable style_catalog.json and are read live via ``style`` (with code
+# fallbacks there) — see "Story Style (the Campaign Builder)" in CLAUDE.md.
 
 # Injected on the final (forced) round, when tools are no longer offered, so the
 # model doesn't narrate an action it never actually carried out with a tool.
@@ -287,10 +267,10 @@ async def run_narrator_agent(
     # unused — history summarisation is handled deterministically server-side.)
     messages = list(base_messages)
     insert_at = 1 if messages and messages[0].get("role") == "system" else 0
-    guidance = TOOL_GUIDANCE + ("\n" + DICE_GUIDANCE if dice_enabled else "")
+    guidance = style.tool_guidance() + ("\n" + style.dice_guidance() if dice_enabled else "")
     messages[insert_at:insert_at] = [
         {"role": "system", "content": guidance},
-        {"role": "system", "content": FORMATTING_GUIDE},
+        {"role": "system", "content": style.formatting_guide()},
     ]
     tool_schemas = TOOL_SCHEMAS + ([SKILL_CHECK_SCHEMA] if dice_enabled else [])
 

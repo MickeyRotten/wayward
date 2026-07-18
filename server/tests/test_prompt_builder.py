@@ -67,14 +67,37 @@ def test_first_message_override_anchors_alternate_opening():
     assert [m for m in msgs2 if m["role"] == "assistant"][0]["content"] == "Primary opening."
 
 
-def test_story_style_block_follows_instructions():
-    cfg = _cfg(style_fields={"genre": "high_fantasy", "tone": "epic"})
+def test_prompt_begins_with_core_role_definition():
+    # msg 0 is the editable JSON core (role + behavior), regardless of the
+    # per-campaign instructions — so the prompt always opens with a role def.
+    msgs = build_prompt(narrator_config=_cfg(instructions=""), player_character=_pc(),
+                        party_members=[], chat_history=[], player_message="Hi",
+                        include_action_protocol=False)
+    assert msgs[0]["role"] == "system"
+    assert msgs[0]["content"].startswith("You are the Narrator")
+
+
+def test_style_block_follows_core_and_base_override():
+    # A genuinely custom base override is layered right after the core; the
+    # STORY STYLE block follows.
+    cfg = _cfg(instructions="Always rhyme.", style_fields={"genre": "high_fantasy", "tone": "epic"})
     msgs = build_prompt(narrator_config=cfg, player_character=_pc(), party_members=[],
                         chat_history=[], player_message="Hi", include_action_protocol=False)
-    assert msgs[0] == {"role": "system", "content": "You are the Narrator."}
-    assert msgs[1]["role"] == "system"
-    assert msgs[1]["content"].startswith("STORY STYLE")
-    assert "High Fantasy" in msgs[1]["content"]
+    assert msgs[0]["content"].startswith("You are the Narrator")
+    assert msgs[1] == {"role": "system", "content": "Always rhyme."}
+    style_msg = next(m for m in msgs if m["content"].startswith("STORY STYLE"))
+    assert "High Fantasy" in style_msg["content"]
+    assert msgs.index(style_msg) > 1  # after core + base override
+
+
+def test_legacy_default_instructions_not_double_injected():
+    from server.ai.prompt_builder import _LEGACY_DEFAULT_INSTRUCTIONS
+    legacy = next(iter(_LEGACY_DEFAULT_INSTRUCTIONS))
+    msgs = build_prompt(narrator_config=_cfg(instructions=legacy), player_character=_pc(),
+                        party_members=[], chat_history=[], player_message="Hi",
+                        include_action_protocol=False)
+    assert sum(1 for m in msgs if m["content"] == legacy) == 0
+    assert msgs[0]["content"].startswith("You are the Narrator")
 
 
 def test_no_story_style_block_without_selections():

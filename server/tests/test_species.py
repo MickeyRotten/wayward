@@ -97,6 +97,7 @@ def test_migrate_species_lore_recategorizes_and_renames_config_key(client):
     entry, cfg = run(check())
     assert entry.cat == "species"
     assert entry.species_fields == {"overview": "A large wolf."}
+    assert entry.content == "Overview: A large wolf."
     assert "species" in cfg.injection_order and "monsters" not in cfg.injection_order
     assert "species" in cfg.injection_position and "monsters" not in cfg.injection_position
 
@@ -105,4 +106,5 @@ def test_migrate_species_lore_recategorizes_and_renames_config_key(client):
     entry2, cfg2 = run(check())
     assert entry2.cat == "species"
     assert entry2.species_fields == {"overview": "A large wolf."}
+    assert entry2.content == "Overview: A large wolf."
     assert "monsters" not in cfg2.injection_order

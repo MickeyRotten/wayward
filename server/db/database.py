@@ -523,7 +523,7 @@ async def migrate_species_lore() -> None:
     if async_session is None or _active_campaign_path is None:
         return
 
-    from server.ai.species import migrate_legacy_species_fields
+    from server.ai.species import compose_species_content, migrate_legacy_species_fields
     from server.db.models import LorebookConfig, LorebookEntry
 
     async with async_session() as s:
@@ -532,6 +532,7 @@ async def migrate_species_lore() -> None:
         )).scalars().all()
         for entry in legacy:
             entry.species_fields = migrate_legacy_species_fields(entry.species_fields, entry.content)
+            entry.content = compose_species_content(entry.species_fields)
             entry.cat = "species"
 
         cfg = (await s.execute(select(LorebookConfig))).scalars().first()

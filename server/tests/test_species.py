@@ -59,3 +59,50 @@ def test_migrate_legacy_seeds_overview_once_then_idempotent():
     assert migrate_legacy_species_fields({"overview": "Set already"}, "Old text") == {
         "overview": "Set already"
     }
+
+
+from sqlalchemy import select
+
+from server.tests.conftest import run
+
+
+# ── Integration: DB migration (monsters → species) ──────────────────
+
+def test_migrate_species_lore_recategorizes_and_renames_config_key(client):
+    from server.db.database import migrate_species_lore, new_session
+    from server.db.models import LorebookConfig, LorebookEntry
+
+    async def seed_legacy():
+        async with new_session() as s:
+            s.add(LorebookEntry(title="Dire Wolf", content="A large wolf.", cat="monsters"))
+            cfg = (await s.execute(select(LorebookConfig))).scalars().first()
+            order = dict(cfg.injection_order or {})
+            order["monsters"] = order.pop("species", 40)
+            cfg.injection_order = order
+            position = dict(cfg.injection_position or {})
+            position["monsters"] = position.pop("species", "top")
+            cfg.injection_position = position
+            await s.commit()
+    run(seed_legacy())
+
+    run(migrate_species_lore())
+
+    async def check():
+        async with new_session() as s:
+            entry = (await s.execute(
+                select(LorebookEntry).where(LorebookEntry.title == "Dire Wolf")
+            )).scalars().first()
+            cfg = (await s.execute(select(LorebookConfig))).scalars().first()
+            return entry, cfg
+    entry, cfg = run(check())
+    assert entry.cat == "species"
+    assert entry.species_fields == {"overview": "A large wolf."}
+    assert "species" in cfg.injection_order and "monsters" not in cfg.injection_order
+    assert "species" in cfg.injection_position and "monsters" not in cfg.injection_position
+
+    # Idempotent: running again changes nothing further and doesn't error.
+    run(migrate_species_lore())
+    entry2, cfg2 = run(check())
+    assert entry2.cat == "species"
+    assert entry2.species_fields == {"overview": "A large wolf."}
+    assert "monsters" not in cfg2.injection_order

@@ -254,6 +254,7 @@ async def _run_scope_migrations() -> None:
         ("adventure.chat_messages", "completion_tokens", "ALTER TABLE adventure.chat_messages ADD COLUMN completion_tokens INTEGER"),
         ("adventure.chat_messages", "gen_cost", "ALTER TABLE adventure.chat_messages ADD COLUMN gen_cost FLOAT"),
         ("campaign.narrator_configs", "style_fields", "ALTER TABLE campaign.narrator_configs ADD COLUMN style_fields JSON"),
+        ("campaign.lorebook_entries", "species_fields", "ALTER TABLE campaign.lorebook_entries ADD COLUMN species_fields JSON"),
     ]
     async with engine.begin() as conn:
         for qualified, column, ddl in migrations:
@@ -308,6 +309,7 @@ async def _run_scope_migrations() -> None:
     await migrate_to_item_instances()
     await migrate_quests_to_tasks()
     await migrate_characters_to_files()
+    await migrate_species_lore()
 
 
 async def migrate_to_item_instances() -> None:
@@ -506,5 +508,41 @@ async def migrate_characters_to_files() -> None:
                                in_party=bool(m.in_party), last_spoke_turn=m.last_spoke_turn or 0,
                                sort_order=i))
             await s.delete(m)
+
+        await s.commit()
+
+
+async def migrate_species_lore() -> None:
+    """One-time, idempotent recategorization of the legacy 'monsters' lorebook
+    category into 'species' (Species & Creature Templates). Carries each
+    recategorized entry's freeform content into its new species_fields.overview
+    as a starting point (non-destructive — see migrate_legacy_species_fields),
+    and renames the 'monsters' key to 'species' in the campaign's
+    LorebookConfig injection settings. Re-running is a no-op once no
+    'monsters' rows or config keys remain."""
+    if async_session is None or _active_campaign_path is None:
+        return
+
+    from server.ai.species import migrate_legacy_species_fields
+    from server.db.models import LorebookConfig, LorebookEntry
+
+    async with async_session() as s:
+        legacy = (await s.execute(
+            select(LorebookEntry).where(LorebookEntry.cat == "monsters")
+        )).scalars().all()
+        for entry in legacy:
+            entry.species_fields = migrate_legacy_species_fields(entry.species_fields, entry.content)
+            entry.cat = "species"
+
+        cfg = (await s.execute(select(LorebookConfig))).scalars().first()
+        if cfg is not None:
+            order = dict(cfg.injection_order or {})
+            if "monsters" in order and "species" not in order:
+                order["species"] = order.pop("monsters")
+                cfg.injection_order = order
+            position = dict(cfg.injection_position or {})
+            if "monsters" in position and "species" not in position:
+                position["species"] = position.pop("monsters")
+                cfg.injection_position = position
 
         await s.commit()

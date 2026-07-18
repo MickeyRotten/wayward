@@ -179,6 +179,16 @@ class LorebookEntry(Base):
     # rows that predate this column — always read via `entry.scenario_fields or {}`.
     scenario_fields: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Structured Species fields — only meaningful when cat == "species" (the
+    # merged Species/Monsters lorebook category). Holds a dict with keys
+    # overview/physicalAppearance/biologyReproduction/cultureBehavior/
+    # dangerCombat/typicalGear/archetypesVariants/nameExamples (all strings).
+    # `content` is derived from it via compose_species_content()
+    # (server/ai/species.py), same pattern as scenario_fields above. May be
+    # `{}` or `None` for rows that predate this column — always read via
+    # `entry.species_fields or {}`.
+    species_fields: Mapped[dict] = mapped_column(JSON, default=dict)
+
     # Item fields — only meaningful when cat == "items" (the unified item
     # catalog lives in the lorebook). title == item name, content == item desc.
     item_type: Mapped[str | None] = mapped_column(String, nullable=True)

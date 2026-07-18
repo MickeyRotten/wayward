@@ -87,6 +87,28 @@ def test_catalog_reload_picks_up_edits(tmp_path, monkeypatch):
     style._cache = None  # don't leak the temp catalog into other tests
 
 
+# ── Core instructions + always-on guides (editable JSON) ──────────
+
+def test_core_and_guides_default_to_fallbacks():
+    assert style.core_instructions() == style._CORE_FALLBACK
+    assert style.core_instructions().startswith("You are the Narrator")
+    assert style.tool_guidance() == style._TOOL_GUIDANCE_FALLBACK
+    assert style.dice_guidance() == style._DICE_GUIDANCE_FALLBACK
+    assert style.formatting_guide() == style._FORMATTING_GUIDE_FALLBACK
+
+
+def test_core_instructions_editable_via_json(tmp_path, monkeypatch):
+    catalog = {"narrator": {"core_instructions": "You are the Storyteller. Custom core."}, "fields": []}
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(catalog), encoding="utf-8")
+    monkeypatch.setenv("WAYWARD_STYLE_CATALOG", str(path))
+    style._cache = None
+    assert style.core_instructions() == "You are the Storyteller. Custom core."
+    # A missing guide key falls back rather than returning blank.
+    assert style.formatting_guide() == style._FORMATTING_GUIDE_FALLBACK
+    style._cache = None  # don't leak the temp catalog into other tests
+
+
 # ── Integration: the /campaign-style routes ───────────────────────
 
 def test_campaign_style_options_route(client):

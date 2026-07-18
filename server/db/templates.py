@@ -43,22 +43,11 @@ log = logging.getLogger("wayward.templates")
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
-# Built-in default the Narrator Instructions fall back to (never left empty).
-# Perspective and prose length are deliberately NOT stated here — those come from
-# the campaign's Story Style selections (Perspective / Verbosity), composed into a
-# STORY STYLE block by ai/style.py. The New Campaign builder preselects sensible
-# defaults so a fresh campaign reads the same as it always did.
-DEFAULT_NARRATOR_INSTRUCTIONS = (
-    "You are the Narrator of an ongoing adventure. Describe the world vividly, "
-    "immersing the player in the scene. Advance the scene with each response: "
-    "describe what happens, what the player sees or feels, and leave a natural "
-    "opening for their next action. Never speak for the player character or decide "
-    "their actions. When voicing a party member, use a dialogue tag with their name "
-    "and keep it to one or two sentences in character. "
-    "Characters are wearing only what they have equipped — if an equipment slot is "
-    "empty, they have nothing in that slot. Do not invent clothing or gear that is "
-    "not listed in their equipment."
-)
+# The Narrator's core role + behavior instructions no longer live here: they are
+# the editable `core_instructions` in server/ai/style_catalog.json, injected first
+# by build_prompt (see ai/style.py). New campaigns leave the per-campaign
+# `NarratorConfig.instructions` empty — it's now only an optional Editor-tool
+# override layered on top of that core.
 
 EMPTY_EQUIPMENT = {
     "head": None, "neck": None, "torsoOver": None, "torsoUnder": None,
@@ -142,7 +131,7 @@ async def apply_template(name: str, style_fields: dict | None = None) -> bool:
         # --- Narrator config (universal non-empty defaults) ---
         nar = tpl.get("narrator") or {}
         s.add(NarratorConfig(
-            instructions=nar.get("instructions") or DEFAULT_NARRATOR_INSTRUCTIONS,
+            instructions=nar.get("instructions") or "",
             action_instruction=ACTION_INSTRUCTION,
             spotlight_rule=nar.get("spotlightRule") or DEFAULT_SPOTLIGHT_RULE,
             planner_instructions=nar.get("plannerInstructions") or PLANNER_GUIDANCE,

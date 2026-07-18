@@ -4,7 +4,7 @@
 > system**. The original alpha (a polished LLM narrative scene with a PC + party)
 > is built and has grown well past it — see the feature sections below. Combat,
 > grid/world navigation, and the Bond/Stunt system remain future vision, not yet
-> built. `feedback.md` (gitignored locally, but tracked) is the running log of
+> built. `TODO.md` (gitignored locally, but tracked) is the running log of
 > requests and what was done.
 
 ## What This Is

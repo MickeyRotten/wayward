@@ -313,6 +313,35 @@ export interface ScenarioFields {
   other: string
 }
 
+/** Campaign Builder "Story Style" — the player's guided narration selections
+ *  (each value is an option id or a free-text custom value). */
+export interface StoryStyleFields {
+  genre: string
+  tone: string
+  writingStyle: string
+  verbosity: string
+  contentLimit: string
+  perspective: string
+  structure: string
+  customInstructions: string
+}
+
+/** One selectable option within a Story Style field (labels/hints only; the
+ *  prompt snippet stays server-side). */
+export interface StyleOption {
+  id: string
+  label: string
+  hint: string
+}
+
+/** A Story Style field's picker definition, served by /campaign-style/options. */
+export interface StyleFieldDef {
+  key: string
+  label: string
+  allowCustom: boolean
+  options: StyleOption[]
+}
+
 export interface OpenRouterModel {
   id: string
   name: string

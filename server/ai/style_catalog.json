@@ -1,0 +1,210 @@
+{
+  "_comment": "Story Style catalog for the Campaign Builder. Edit freely — this file is read at runtime (cached by mtime), so tweaking a snippet or adding an option takes effect on the next request with no rebuild. Each field: {key, label, allow_custom, options}. Each option: {id, label, hint, prompt}. `prompt` is the directive injected into the narrator prompt when that option is selected; `hint` is a short player-facing description and never reaches the model. Fields with allow_custom=true let the player type a free-text value (rendered as 'Label: <text>'). custom_instructions is a fixed freeform field handled separately (not listed here).",
+  "fields": [
+    {
+      "key": "genre",
+      "label": "Genre",
+      "allow_custom": true,
+      "options": [
+        {
+          "id": "high_fantasy",
+          "label": "High Fantasy",
+          "hint": "Magic, kingdoms, and myth — a world where wonder is real.",
+          "prompt": "Genre: High Fantasy. A world of magic, ancient powers, and mythic geography. Treat magic, monsters, and prophecy as real facts of the world with real consequences, not metaphors."
+        },
+        {
+          "id": "classic_scifi",
+          "label": "Classic Sci-Fi",
+          "hint": "Technology, discovery, and its consequences.",
+          "prompt": "Genre: Classic Science Fiction. Ground events in technology, science, and their consequences. Speculation is rigorous; the wonder comes from ideas and their implications rather than magic."
+        },
+        {
+          "id": "space_opera",
+          "label": "Space Opera",
+          "hint": "Starships, empires, and larger-than-life adventure across the stars.",
+          "prompt": "Genre: Space Opera. Sweeping adventure across star systems — starships, factions and empires, exotic worlds, and larger-than-life stakes. Favor spectacle and momentum over hard-science rigor."
+        },
+        {
+          "id": "science_fantasy",
+          "label": "Hybrid (Science Fantasy)",
+          "hint": "Magic and technology side by side.",
+          "prompt": "Genre: Science Fantasy. Magic and advanced technology coexist and intertwine — spellcasters and machines, arcane relics and starships. Blend the wondrous and the technological without treating either as out of place."
+        },
+        {
+          "id": "modern",
+          "label": "Modern",
+          "hint": "The contemporary real world (or a shade of it).",
+          "prompt": "Genre: Modern. A contemporary, recognizable real-world setting. Keep technology, culture, and logic grounded in the present day unless the scenario establishes otherwise."
+        },
+        {
+          "id": "horror",
+          "label": "Horror",
+          "hint": "Dread, danger, and things that should not be.",
+          "prompt": "Genre: Horror. Build dread and vulnerability. Keep threats uncertain and dangerous, let tension breathe, and make safety feel provisional — the world should never feel fully under the player's control."
+        }
+      ]
+    },
+    {
+      "key": "tone",
+      "label": "Tone",
+      "allow_custom": true,
+      "options": [
+        {
+          "id": "light_hearted",
+          "label": "Light-Hearted",
+          "hint": "Warm and fun; stakes stay personal.",
+          "prompt": "Tone: Light-hearted. Keep the mood warm and the stakes personal. Find humor in situations, favor hope over despair, and never dwell on gore or cruelty."
+        },
+        {
+          "id": "epic",
+          "label": "Epic",
+          "hint": "Sweeping stakes and moments of awe.",
+          "prompt": "Tone: Epic. Sweeping stakes, gravity, and moments of awe. Give weight to choices and let the world feel vast and consequential."
+        },
+        {
+          "id": "grim",
+          "label": "Grim / Dark",
+          "hint": "Harsh, morally grey, consequences that hurt.",
+          "prompt": "Tone: Grim and dark. The world is harsh and morally grey. Let consequences land hard, keep victories costly, and don't shy from difficult outcomes."
+        },
+        {
+          "id": "cozy",
+          "label": "Cozy",
+          "hint": "Gentle, low-stakes, comforting.",
+          "prompt": "Tone: Cozy. Gentle, low-stakes, and comforting. Emphasize small pleasures, safety, and connection; conflict is mild and resolves kindly."
+        }
+      ]
+    },
+    {
+      "key": "writing_style",
+      "label": "Style of Writing",
+      "allow_custom": true,
+      "options": [
+        {
+          "id": "martin",
+          "label": "Grounded & Political (G.R.R. Martin-like)",
+          "hint": "Concrete, sensory, morally ambiguous.",
+          "prompt": "Writing style: grounded, sensory, and politically aware, in the vein of George R. R. Martin. Use concrete physical detail, morally ambiguous characters, and consequences that stick."
+        },
+        {
+          "id": "gaiman",
+          "label": "Mythic & Dreamlike (Neil Gaiman-like)",
+          "hint": "Lyrical, fairy-tale, a little uncanny.",
+          "prompt": "Writing style: mythic and dreamlike, in the vein of Neil Gaiman. Lean into fairy-tale cadence, quiet strangeness, and imagery that lingers just past the edge of the ordinary."
+        },
+        {
+          "id": "pratchett",
+          "label": "Witty & Satirical (Terry Pratchett-like)",
+          "hint": "Clever, humane, gently satirical.",
+          "prompt": "Writing style: witty and satirical, in the vein of Terry Pratchett. Wry humor, clever asides, and warmth beneath the comedy — never mean-spirited."
+        },
+        {
+          "id": "young_adult",
+          "label": "Young Adult",
+          "hint": "Immediate, emotive, fast-moving.",
+          "prompt": "Writing style: Young Adult. Immediate and emotionally direct, with a brisk pace, vivid feeling, and accessible prose centered on the protagonist's inner experience."
+        },
+        {
+          "id": "shounen",
+          "label": "Shounen",
+          "hint": "High energy, bold action, heart and hype.",
+          "prompt": "Writing style: shounen anime energy. Bold, high-energy action, big emotional beats, declarations of resolve, and escalating momentum — earnest and hype over subtle."
+        }
+      ]
+    },
+    {
+      "key": "verbosity",
+      "label": "Verbosity",
+      "allow_custom": false,
+      "options": [
+        {
+          "id": "terse",
+          "label": "Terse",
+          "hint": "Tight and economical.",
+          "prompt": "Length: keep each beat to one or two tight paragraphs. Favor economy — advance the scene without lingering."
+        },
+        {
+          "id": "standard",
+          "label": "Standard",
+          "hint": "A balanced few paragraphs per beat.",
+          "prompt": "Length: two to four paragraphs per beat — enough to set the scene and advance it without overstaying."
+        },
+        {
+          "id": "lush",
+          "label": "Lush",
+          "hint": "Rich, immersive, descriptive.",
+          "prompt": "Length: write richly and immersively, several full paragraphs per beat, with generous sensory description — while still leaving a clear opening for the player's next action."
+        }
+      ]
+    },
+    {
+      "key": "content_limit",
+      "label": "Content Limit",
+      "allow_custom": false,
+      "options": [
+        {
+          "id": "teen",
+          "label": "Teen",
+          "hint": "Suitable for teens; nothing explicit.",
+          "prompt": "Content limit: keep content suitable for teens. Violence is non-graphic, romance fades to black, and there is no explicit sexual content or extreme gore."
+        },
+        {
+          "id": "adult",
+          "label": "Adult",
+          "hint": "Mature themes handled with care.",
+          "prompt": "Content limit: mature. Adult themes, meaningful peril, and frank subject matter are allowed, handled with narrative purpose rather than gratuitousness."
+        },
+        {
+          "id": "r_rated",
+          "label": "R-Rated",
+          "hint": "Explicit content permitted.",
+          "prompt": "Content limit: R-rated. Graphic violence and explicit content are permitted when the scene calls for it. Follow the player's lead on intensity and keep it in service of the story."
+        }
+      ]
+    },
+    {
+      "key": "perspective",
+      "label": "Perspective",
+      "allow_custom": false,
+      "options": [
+        {
+          "id": "second_person",
+          "label": "Second person (\"You…\")",
+          "hint": "Address the player character directly.",
+          "prompt": "Perspective: narrate in the second person, addressing the player character directly as \"you\"."
+        },
+        {
+          "id": "third_person",
+          "label": "Third person",
+          "hint": "Narrate the player character by name.",
+          "prompt": "Perspective: narrate in the third person, referring to the player character by name and as \"they\"."
+        }
+      ]
+    },
+    {
+      "key": "structure",
+      "label": "Structure",
+      "allow_custom": true,
+      "options": [
+        {
+          "id": "linear",
+          "label": "Linear",
+          "hint": "A focused main storyline.",
+          "prompt": "Structure: a focused, linear main storyline. Keep events pulling toward the central plot and its next objective."
+        },
+        {
+          "id": "episodic",
+          "label": "Episodic",
+          "hint": "Self-contained adventures, one after another.",
+          "prompt": "Structure: episodic. Tell largely self-contained adventures that resolve in turn, connected by recurring characters and an evolving world rather than one long throughline."
+        },
+        {
+          "id": "sandbox",
+          "label": "Sandbox",
+          "hint": "Open and player-driven.",
+          "prompt": "Structure: open sandbox. Let the player drive direction; keep the world reactive and full of options rather than steering toward a fixed plot."
+        }
+      ]
+    }
+  ]
+}

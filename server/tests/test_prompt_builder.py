@@ -67,6 +67,22 @@ def test_first_message_override_anchors_alternate_opening():
     assert [m for m in msgs2 if m["role"] == "assistant"][0]["content"] == "Primary opening."
 
 
+def test_story_style_block_follows_instructions():
+    cfg = _cfg(style_fields={"genre": "high_fantasy", "tone": "epic"})
+    msgs = build_prompt(narrator_config=cfg, player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", include_action_protocol=False)
+    assert msgs[0] == {"role": "system", "content": "You are the Narrator."}
+    assert msgs[1]["role"] == "system"
+    assert msgs[1]["content"].startswith("STORY STYLE")
+    assert "High Fantasy" in msgs[1]["content"]
+
+
+def test_no_story_style_block_without_selections():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", include_action_protocol=False)
+    assert not any(m["content"].startswith("STORY STYLE") for m in msgs if m["role"] == "system")
+
+
 def test_trimming_drops_oldest_history_first():
     history = [_msg("user", f"turn {t} " + "x" * 2000, t) for t in range(1, 30)]
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],

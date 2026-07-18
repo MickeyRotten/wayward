@@ -1,6 +1,7 @@
 from server.ai.lore_injector import format_lore_block, group_by_position, match_entries
 from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.rules import compose_rules_block
+from server.ai.style import compose_style_block
 from server.db.models import (
     ChatMessage,
     LorebookConfig,
@@ -85,6 +86,14 @@ def build_prompt(
 
     # 1. System: Narrator instructions
     messages.append({"role": "system", "content": narrator_config.instructions})
+
+    # 1a. System: Story Style — the Campaign Builder's guided narration options
+    #     (genre/tone/writing style/verbosity/content limit/perspective/structure
+    #     + custom instructions), composed into a STORY STYLE block. Empty when the
+    #     campaign has no selections (pre-builder campaigns) → prompts unchanged.
+    style_block = compose_style_block(getattr(narrator_config, "style_fields", None) or {})
+    if style_block:
+        messages.append({"role": "system", "content": style_block})
 
     # 1b. System: Narrator action protocol — the legacy text-block path. Skipped
     #     in the agentic tool loop (the narrator drives state through tool calls

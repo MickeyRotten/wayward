@@ -10,6 +10,7 @@ import { useTasksStore } from './tasksStore'
 import { useLoreStore } from './loreStore'
 import { useCampaignRulesStore } from './campaignRulesStore'
 import { useScenarioStore } from './scenarioStore'
+import { useStoryStyleStore } from './storyStyleStore'
 import { useWorldbuildStore } from './worldbuildStore'
 import { useJournalStore } from './journalStore'
 import { useUiStore } from './uiStore'
@@ -42,6 +43,7 @@ export async function reloadAll() {
     useLoreStore.getState().fetchConfig(),
     useCampaignRulesStore.getState().fetchRules(),
     useScenarioStore.getState().fetchScenario(),
+    useStoryStyleStore.getState().fetchFields(),
     useWorldbuildStore.getState().fetchProposals(),
     useJournalStore.getState().fetch(true),  // true → re-arm the "Previously on…" banner
   ])

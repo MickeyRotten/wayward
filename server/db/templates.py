@@ -25,6 +25,7 @@ from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.planner import PLANNER_GUIDANCE
 from server.ai.scenario import compose_scenario_content
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
+from server.ai.style import normalize_style_fields
 from server.db.database import migrate_characters_to_files, migrate_to_item_instances, new_session
 from server.ai.rules import normalize_attributes
 from server.db.models import (
@@ -43,10 +44,13 @@ log = logging.getLogger("wayward.templates")
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 # Built-in default the Narrator Instructions fall back to (never left empty).
+# Perspective and prose length are deliberately NOT stated here — those come from
+# the campaign's Story Style selections (Perspective / Verbosity), composed into a
+# STORY STYLE block by ai/style.py. The New Campaign builder preselects sensible
+# defaults so a fresh campaign reads the same as it always did.
 DEFAULT_NARRATOR_INSTRUCTIONS = (
-    "You are the Narrator of an ongoing adventure. Describe the world vividly "
-    "in second person, addressing the player character directly. Keep prose concise "
-    "— two to four paragraphs per beat. Advance the scene with each response: "
+    "You are the Narrator of an ongoing adventure. Describe the world vividly, "
+    "immersing the player in the scene. Advance the scene with each response: "
     "describe what happens, what the player sees or feels, and leave a natural "
     "opening for their next action. Never speak for the player character or decide "
     "their actions. When voicing a party member, use a dialogue tag with their name "
@@ -72,25 +76,6 @@ _DEFAULT_INJECTION_POSITION = {
 }
 
 
-def list_templates() -> list[dict]:
-    """Every template on disk, as ``{id, name, description}`` for the UI picker.
-    Empty first, then alphabetical."""
-    out: list[dict] = []
-    for path in TEMPLATES_DIR.glob("*.json"):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            log.warning("Skipping unreadable template %s", path.name)
-            continue
-        out.append({
-            "id": path.stem,
-            "name": data.get("name") or path.stem.title(),
-            "description": data.get("description", ""),
-        })
-    out.sort(key=lambda t: (t["id"] != "empty", t["name"].lower()))
-    return out
-
-
 def _load(name: str) -> dict:
     path = TEMPLATES_DIR / f"{name}.json"
     if not path.exists():
@@ -112,10 +97,14 @@ def _equipment_from(spec: dict | None, key_to_id: dict[str, str]) -> dict:
     return equip
 
 
-async def apply_template(name: str) -> bool:
+async def apply_template(name: str, style_fields: dict | None = None) -> bool:
     """Populate the active campaign/adventure DBs from a template. Returns True
     if the template supplied a player character (so the caller can skip adding a
-    blank one)."""
+    blank one).
+
+    ``style_fields`` carries the New Campaign builder's Story Style selections;
+    they're stored on the NarratorConfig and composed into the STORY STYLE prompt
+    block at build time (ai/style.py)."""
     tpl = _load(name)
 
     async with new_session() as s:
@@ -162,6 +151,7 @@ async def apply_template(name: str) -> bool:
             action_option_rules=nar.get("actionOptionRules") or None,
             first_message_options=nar.get("firstMessageOptions") or None,
             first_message_alternates=nar.get("firstMessageAlternates") or None,
+            style_fields=normalize_style_fields(style_fields) or None,
         ))
 
         # --- Lorebook injection config (campaign scope) ---

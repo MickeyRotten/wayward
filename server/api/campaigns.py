@@ -21,6 +21,7 @@ from server.db import party as party_ops
 from server.db import storage
 from server.db.database import get_session, new_session, switch_active
 from server.ai.rules import normalize_attributes
+from server.ai import style
 from server.api.schemas import CampaignRulesResponse, CampaignRulesUpdate
 from server.db.models import (
     AppState,
@@ -201,19 +202,18 @@ async def list_campaigns_route(session: AsyncSession = Depends(get_session)):
     return {"activeId": cid, "campaigns": storage.list_campaigns()}
 
 
-@router.get("/campaigns/templates")
-async def list_campaign_templates_route():
-    from server.db import templates as tpl
-    return {"templates": tpl.list_templates()}
-
-
 @router.post("/campaigns")
 async def create_campaign_route(
     data: dict = Body(default={}),
     session: AsyncSession = Depends(get_session),
 ):
     name = (data.get("name") or "New Campaign").strip() or "New Campaign"
-    template = (data.get("template") or "empty").strip() or "empty"
+    # The New Campaign builder sends Story Style selections (camelCase wire keys);
+    # convert to storage keys. An optional demo flag seeds the bundled Fantasy demo
+    # world (the builder can't author a PC/party).
+    raw_style = data.get("style")
+    style_fields = style.from_wire(raw_style) if isinstance(raw_style, dict) else None
+    template = "fantasy" if data.get("demo") else "empty"
     await storage.refresh_active_adventure_meta()
     cid = await storage.create_campaign(name)
     aid = await storage.create_adventure(cid, "Adventure 1")
@@ -221,7 +221,7 @@ async def create_campaign_route(
     await _set_active(cid, aid)
 
     from server.db import templates as tpl
-    created_pc = await tpl.apply_template(template)
+    created_pc = await tpl.apply_template(template, style_fields=style_fields)
 
     async with new_session() as s:
         if not created_pc and await party_ops.pc_binding(s) is None:

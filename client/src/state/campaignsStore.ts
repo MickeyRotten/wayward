@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Campaign } from '@shared/types/models'
+import type { Campaign, StoryStyleFields } from '@shared/types/models'
 import { api } from '../lib/api'
 import { reloadAll, useAdventuresStore } from './adventuresStore'
 import { useChatStore } from './chatStore'
@@ -10,7 +10,7 @@ interface CampaignsState {
   activeId: string | null
   busy: boolean
   fetch: () => Promise<void>
-  create: (name?: string, template?: string) => Promise<void>
+  create: (name?: string, style?: Partial<StoryStyleFields>, demo?: boolean) => Promise<void>
   load: (id: string) => Promise<void>
   rename: (id: string, name: string) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -32,11 +32,11 @@ export const useCampaignsStore = create<CampaignsState>((set, get) => ({
     set({ campaigns: res.campaigns, activeId: res.activeId })
   },
 
-  create: async (name, template) => {
+  create: async (name, style, demo) => {
     set({ busy: true })
     useUiStore.getState().setScopeLoading('Creating campaign…')
     try {
-      await api.post('/campaigns', { name: name ?? 'New Campaign', template: template ?? 'empty' })
+      await api.post('/campaigns', { name: name ?? 'New Campaign', style: style ?? {}, demo: !!demo })
       await afterSwitch()
       // A new campaign opens in Edit Mode with a structured starter message.
       useChatStore.getState().setPlanningMode(true)

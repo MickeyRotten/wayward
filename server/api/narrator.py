@@ -13,11 +13,12 @@ from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.planner import PLANNER_GUIDANCE
 from server.ai.scenario import normalize_openings
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
+from server.ai import style
 from server.api.common import _active_ids
-from server.api.schemas import NarratorResponse, NarratorUpdate
+from server.api.schemas import NarratorResponse, NarratorUpdate, StoryStyleResponse, StoryStyleUpdate
 from server.db import storage
 from server.db.database import get_session
-from server.db.models import NarratorConfig, StorySummary
+from server.db.models import CampaignRules, NarratorConfig, StorySummary
 
 router = APIRouter()
 
@@ -101,6 +102,53 @@ async def update_narrator(
         n.dice_enabled = data.diceEnabled
     await session.commit()
     return _narrator_response(n, await _narrator_has_voice(session))
+
+
+# ── Story Style (Campaign Builder) ────────────────────────────────
+
+@router.get("/campaign-style/options")
+async def get_campaign_style_options():
+    """The Story Style catalog for the picker — labels + hints, no prompt text."""
+    return style.options_payload()
+
+
+async def _migrate_legacy_tone(session: AsyncSession, n: NarratorConfig) -> None:
+    """One-time: fold a legacy CampaignRules.tone into style_fields.tone so tone
+    is owned by Story Style going forward. No-op once style_fields is set."""
+    rules = (await session.execute(select(CampaignRules))).scalars().first()
+    seeded = style.migrate_legacy_tone(n.style_fields, getattr(rules, "tone", "") if rules else "")
+    if seeded is not None:
+        n.style_fields = seeded
+        if rules is not None:
+            rules.tone = ""
+        await session.commit()
+
+
+@router.get("/campaign-style", response_model=StoryStyleResponse)
+async def get_campaign_style(session: AsyncSession = Depends(get_session)):
+    n = (await session.execute(select(NarratorConfig))).scalars().first()
+    if not n:
+        n = NarratorConfig(instructions="")
+        session.add(n)
+        await session.commit()
+    await _migrate_legacy_tone(session, n)
+    return StoryStyleResponse(**style.to_wire(n.style_fields))
+
+
+@router.put("/campaign-style", response_model=StoryStyleResponse)
+async def update_campaign_style(
+    data: StoryStyleUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    n = (await session.execute(select(NarratorConfig))).scalars().first()
+    if not n:
+        n = NarratorConfig()
+        session.add(n)
+    merged = style.normalize_style_fields(n.style_fields)
+    merged.update(style.from_wire(data.model_dump()))
+    n.style_fields = style.normalize_style_fields(merged) or None
+    await session.commit()
+    return StoryStyleResponse(**style.to_wire(n.style_fields))
 
 
 # ── Journal ("The Story So Far") ──────────────────────────────────

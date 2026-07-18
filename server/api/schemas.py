@@ -177,6 +177,30 @@ class ScenarioResponse(BaseModel):
     other: str = ""
 
 
+# --- Story Style (Campaign Builder) ---
+
+class StoryStyleUpdate(BaseModel):
+    genre: str | None = None
+    tone: str | None = None
+    writingStyle: str | None = None
+    verbosity: str | None = None
+    contentLimit: str | None = None
+    perspective: str | None = None
+    structure: str | None = None
+    customInstructions: str | None = None
+
+
+class StoryStyleResponse(BaseModel):
+    genre: str = ""
+    tone: str = ""
+    writingStyle: str = ""
+    verbosity: str = ""
+    contentLimit: str = ""
+    perspective: str = ""
+    structure: str = ""
+    customInstructions: str = ""
+
+
 # --- OpenRouter Settings ---
 
 class OpenRouterSettingsUpdate(BaseModel):

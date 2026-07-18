@@ -207,14 +207,14 @@ class LorebookConfig(Base):
         JSON,
         default=lambda: {
             "pillars": 0, "world": 10, "characters": 20, "items": 30,
-            "monsters": 40, "spells": 50,
+            "species": 40, "spells": 50,
         },
     )
     injection_position: Mapped[dict] = mapped_column(
         JSON,
         default=lambda: {
             "pillars": "top", "world": "top", "characters": "top", "items": "top",
-            "monsters": "top", "spells": "top",
+            "species": "top", "spells": "top",
         },
     )
     # How many recent TURNS (player + narrator messages) keyword matching scans,

@@ -8,6 +8,8 @@ import { useItemsStore } from '../../state/itemsStore'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { useCampaignsStore } from '../../state/campaignsStore'
+import { useStoryStyleStore } from '../../state/storyStyleStore'
+import { NewCampaignModal, StyleFieldsEditor } from './CampaignBuilder'
 import { useAppearanceStore, CHAT_FONT_SIZES, DEFAULT_CHAT_BG_OPACITY } from '../../state/appearanceStore'
 import { useTtsStore } from '../../state/ttsStore'
 import { useCampaignRulesStore, type CampaignRules, type WorldAttribute } from '../../state/campaignRulesStore'
@@ -248,6 +250,11 @@ export function SettingsPanel() {
         {/* Campaign */}
         <Section title="Campaign" scope="Campaign" {...sectionProps('campaign')}>
           <CampaignSection />
+        </Section>
+
+        {/* Story Style — the Campaign Builder's guided narration options */}
+        <Section title="Story Style" scope="Campaign" {...sectionProps('style')}>
+          <StoryStyleSection />
         </Section>
 
         {/* World Rules — the campaign's ruleset knobs (R21) */}
@@ -1206,18 +1213,36 @@ function WorldRulesSection() {
         </span>
       </SubSection>
 
-      <label className="block">
-        <span className="text-[11px] text-textdim font-body">Tone / Rating</span>
-        <ExpandableTextarea
-          label="Tone / Rating"
-          className="w-full border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[60px]"
-          rows={3}
-          value={rules.tone}
-          placeholder="e.g. Grim and dangerous; consequences stick. Or: light-hearted heroic romp."
-          onChange={(v) => set({ tone: v })}
-        />
-        <span className="text-[10px] text-textdim font-body">Seeds the narrator + suggester with the world's tone and content limits.</span>
-      </label>
+      <p className="text-[10px] text-textdim font-body pt-1">
+        Tone &amp; content rating moved to <span className="text-textsec">Story Style</span> above.
+      </p>
+    </div>
+  )
+}
+
+// Config: the campaign's Story Style selections — optimistic patchLocal + a
+// debounced PUT to /campaign-style (same pattern as Narration / World Rules).
+function StoryStyleSection() {
+  const defs = useStoryStyleStore((s) => s.defs)
+  const fields = useStoryStyleStore((s) => s.fields)
+  const patchLocal = useStoryStyleStore((s) => s.patchLocal)
+  const fetchOptions = useStoryStyleStore((s) => s.fetchOptions)
+  const flush = useDebounced(() => {
+    void useStoryStyleStore.getState().save(useStoryStyleStore.getState().fields)
+  }, 400)
+
+  useEffect(() => { if (defs.length === 0) void fetchOptions() }, [defs.length, fetchOptions])
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] text-textdim font-body leading-relaxed">
+        These guided options shape how the Narrator tells the story — composed into its instructions. Leave any at “No preference” to omit it.
+      </p>
+      <StyleFieldsEditor
+        defs={defs}
+        fields={fields}
+        onChange={(patch) => { patchLocal(patch); flush() }}
+      />
     </div>
   )
 }
@@ -1275,6 +1300,10 @@ function CampaignSection() {
   const importRef = useRef<HTMLInputElement>(null)
   const fetchCampaigns = useCampaignsStore((s) => s.fetch)
   const active = campaigns.find((c) => c.id === activeId)
+
+  const styleDefs = useStoryStyleStore((s) => s.defs)
+  const fetchStyleOptions = useStoryStyleStore((s) => s.fetchOptions)
+  useEffect(() => { if (newModalOpen && styleDefs.length === 0) void fetchStyleOptions() }, [newModalOpen, styleDefs.length, fetchStyleOptions])
 
   const handleExport = () => {
     if (activeId) window.open(`/api/campaigns/${activeId}/export`, '_blank')
@@ -1392,98 +1421,11 @@ function CampaignSection() {
       {newModalOpen && (
         <NewCampaignModal
           busy={busy}
-          onCreate={(name, template) => { setNewModalOpen(false); create(name || undefined, template) }}
+          defs={styleDefs}
+          onCreate={(name, style, demo) => { setNewModalOpen(false); create(name || undefined, style, demo) }}
           onCancel={() => setNewModalOpen(false)}
         />
       )}
-    </div>
-  )
-}
-
-interface CampaignTemplate { id: string; name: string; description: string }
-
-function NewCampaignModal({ busy, onCreate, onCancel }: {
-  busy: boolean
-  onCreate: (name: string, template: string) => void
-  onCancel: () => void
-}) {
-  const [name, setName] = useState('')
-  const [templates, setTemplates] = useState<CampaignTemplate[]>([])
-  const [templateId, setTemplateId] = useState('empty')
-
-  useEffect(() => {
-    api.get<{ templates: CampaignTemplate[] }>('/campaigns/templates')
-      .then((r) => {
-        setTemplates(r.templates)
-        if (r.templates.length && !r.templates.some((t) => t.id === 'empty')) {
-          setTemplateId(r.templates[0].id)
-        }
-      })
-      .catch(() => setTemplates([]))
-  }, [])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
-
-  const chosen = templates.find((t) => t.id === templateId)
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCancel}>
-      <div
-        className="w-full max-w-sm border border-line2 bg-bg1 rounded-md p-5 space-y-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="font-disp text-[18px] pt-[2px] leading-none text-text">NEW CAMPAIGN</h3>
-
-        <label className="block space-y-1">
-          <span className="text-[11px] text-textdim font-body">Name</span>
-          <input
-            autoFocus
-            className="w-full border border-line2 bg-bg0 px-2 py-1.5 text-sm font-body text-text outline-none focus:bg-bg2"
-            placeholder="My Campaign"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !busy) onCreate(name.trim(), templateId) }}
-          />
-        </label>
-
-        <label className="block space-y-1">
-          <span className="text-[11px] text-textdim font-body">Template</span>
-          <select
-            className="w-full border border-line2 bg-bg0 px-2 py-1.5 text-sm font-body text-text outline-none"
-            value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
-          >
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          {chosen?.description && (
-            <span className="block text-[10px] text-textdim font-body leading-relaxed pt-0.5">{chosen.description}</span>
-          )}
-        </label>
-
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <button
-            type="button"
-            className="font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
-            onClick={onCancel}
-          >
-            CANCEL
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            className="font-ui text-[10px] tracking-wider bg-golddeep text-bg0 px-4 py-1.5 hover:bg-gold transition-colors disabled:opacity-40"
-            onClick={() => onCreate(name.trim(), templateId)}
-          >
-            CREATE
-          </button>
-        </div>
-      </div>
     </div>
   )
 }

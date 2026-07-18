@@ -253,6 +253,7 @@ async def _run_scope_migrations() -> None:
         ("adventure.chat_messages", "prompt_tokens", "ALTER TABLE adventure.chat_messages ADD COLUMN prompt_tokens INTEGER"),
         ("adventure.chat_messages", "completion_tokens", "ALTER TABLE adventure.chat_messages ADD COLUMN completion_tokens INTEGER"),
         ("adventure.chat_messages", "gen_cost", "ALTER TABLE adventure.chat_messages ADD COLUMN gen_cost FLOAT"),
+        ("campaign.narrator_configs", "style_fields", "ALTER TABLE campaign.narrator_configs ADD COLUMN style_fields JSON"),
     ]
     async with engine.begin() as conn:
         for qualified, column, ddl in migrations:

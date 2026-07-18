@@ -150,6 +150,11 @@ class NarratorConfig(Base):
     # Skill checks: offer the narrator a server-rolled d20 skill_check tool for
     # uncertain, consequential actions (rendered as dice chips in chat).
     dice_enabled: Mapped[bool] = mapped_column(Integer, default=True)
+    # Campaign Builder "Story Style" selections — a flat {key: value} dict
+    # (genre/tone/writing_style/verbosity/content_limit/perspective/structure/
+    # custom_instructions). Composed into a STORY STYLE prompt block at build
+    # time (ai/style.py); null/empty => no block, prompts unchanged.
+    style_fields = mapped_column(JSON, nullable=True)
 
 
 class LorebookEntry(Base):

@@ -48,6 +48,8 @@ const TOOL_STATUS: Record<string, string> = {
   update_pc: 'Editing the player character',
   set_scenario: 'Editing the Scenario',
   get_scenario: 'Reading the Scenario',
+  set_story_style: 'Editing the Story Style',
+  get_story_style: 'Reading the Story Style',
   set_narrator_instructions: 'Updating Narrator instructions',
   get_narrator_instructions: 'Reading Narrator instructions',
   set_first_message: 'Setting the opening',

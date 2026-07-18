@@ -31,6 +31,7 @@ from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_tu
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
 from server.ai.rules import normalize_attributes
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields, normalize_openings
+from server.ai import style
 from server.ai.worldbuilder import LORE_CAT_ORDER, LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
 from server.db.models import (
@@ -70,7 +71,7 @@ How you work:
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
 - CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
 - READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, task, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
-- SENSITIVE OVERWRITES: set_narrator_instructions and set_first_message REPLACE the whole existing text and take effect immediately — only do them when the player clearly asks. set_scenario is a PARTIAL update instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario first if you need to see the current fields before editing one. Always tell the player explicitly in your reply what you changed.
+- SENSITIVE OVERWRITES: set_narrator_instructions and set_first_message REPLACE the whole existing text and take effect immediately — only do them when the player clearly asks. set_scenario and set_story_style are PARTIAL updates instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario / get_story_style first if you need to see the current values before editing one. set_story_style is the right tool when the player asks to change the narration's genre, tone, writing style, verbosity, content rating, perspective, or structure ("make it darker", "write more like Pratchett", "third person"). Always tell the player explicitly in your reply what you changed.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
 - If the player is just chatting or asking questions, answer normally without calling tools.
@@ -88,6 +89,27 @@ PLANNER_FINAL_NUDGE = (
 # ── Tool schemas ──────────────────────────────────────────────────
 
 _LORE_CAT_ENUM = sorted(LORE_CATS)
+
+
+def _story_style_props() -> dict:
+    """Build set_story_style's parameters from the live catalog: each field lists
+    its valid option ids (as an enum when custom text isn't allowed, else in the
+    description); customInstructions is freeform."""
+    props: dict = {}
+    for f in style.options_payload()["fields"]:
+        ids = [o["id"] for o in f["options"]]
+        desc = f"{f['label']}. Options: {', '.join(ids)}."
+        prop = {"type": "string", "description": desc}
+        if f["allowCustom"]:
+            prop["description"] += " Or a short custom value of your own."
+        else:
+            prop["enum"] = ids
+        props[f["key"]] = prop
+    props["customInstructions"] = {
+        "type": "string",
+        "description": "Freeform extra narration guidance, appended to the Story Style block.",
+    }
+    return props
 
 
 def _fn(name: str, desc: str, props: dict, required: list[str]) -> dict:
@@ -180,6 +202,14 @@ TOOL_SCHEMAS: list[dict] = [
         [],
     ),
     _fn("get_scenario", "Read the Scenario's current structured fields (setting, historyBrief, species, geography, techAndMagic, other).", {}, []),
+    _fn(
+        "set_story_style",
+        "Edit the campaign's Story Style — the guided narration options composed into the narrator's STORY STYLE block (genre, tone, writing style, verbosity, content limit, perspective, structure, plus custom instructions). "
+        "PARTIAL update: only the fields you provide are changed; omit the rest. Pass an empty string to clear a field. Prefer a listed option id; a short custom value is allowed where noted.",
+        _story_style_props(),
+        [],
+    ),
+    _fn("get_story_style", "Read the campaign's current Story Style selections (genre, tone, writing style, verbosity, content limit, perspective, structure, custom instructions).", {}, []),
     _fn("set_narrator_instructions", "Replace the Narrator's core system instructions (tone/rules of narration).",
         {"content": {"type": "string"}}, ["content"]),
     _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
@@ -481,6 +511,24 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             scn.scenario_fields = fields  # one-time migration; persisted by the outer per-round commit
         lines = [f"{label}: {fields.get(key) or '(empty)'}" for key, label in SCENARIO_FIELDS]
         return "\n".join(lines), None
+
+    if name == "set_story_style":
+        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
+        if not cfg:
+            cfg = NarratorConfig()
+            session.add(cfg)
+        updates = style.from_wire(args)
+        if not updates:
+            return "No Story Style fields were provided to update.", None
+        merged = style.normalize_style_fields(cfg.style_fields)
+        merged.update(updates)
+        cfg.style_fields = style.normalize_style_fields(merged) or None
+        return f"Updated the Story Style ({', '.join(updates.keys())}).", None
+
+    if name == "get_story_style":
+        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
+        wire = style.to_wire(getattr(cfg, "style_fields", None) if cfg else None)
+        return "\n".join(f"{k}: {v or '(empty)'}" for k, v in wire.items()), None
 
     if name == "set_narrator_instructions":
         cfg = (await session.execute(select(NarratorConfig))).scalars().first()

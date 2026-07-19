@@ -180,3 +180,93 @@ def test_seed_lorebook_species_entries_are_composed():
         assert entry["content"] == compose_species_content(entry["species_fields"])
         assert entry["species_fields"]["overview"]
         assert entry["species_fields"]["dangerCombat"]
+
+
+def run_cleanup(entry_id: str) -> None:
+    from server.db.database import new_session
+    from server.db.models import LorebookEntry
+
+    async def cleanup():
+        async with new_session() as s:
+            entry = await s.get(LorebookEntry, entry_id)
+            if entry:
+                await s.delete(entry)
+                await s.commit()
+    run(cleanup())
+
+
+# ── Integration: Chronicler create_lore/update_lore for species ────
+
+def test_chronicler_species_proposal_composes_and_reverses(client):
+    from server.ai.worldbuilder import _proposal_from_call, apply_proposal, _reverse_accepted_proposal
+    from server.db.database import new_session
+    from server.db.models import LorebookEntry
+
+    async def create_and_apply():
+        async with new_session() as s:
+            proposal = await _proposal_from_call(
+                s, turn_number=1, name="create_lore",
+                args={
+                    "cat": "species", "title": "Cave Newt", "content": "unused-placeholder",
+                    "keywords": ["newt"],
+                    "speciesFields": {"overview": "A blind, pale newt found in deep caverns."},
+                },
+                member_names=set(), pc_name="", narration="A **Cave Newt** slithers past.",
+            )
+            assert proposal is not None
+            ok, note = await apply_proposal(proposal, s)
+            assert ok, note
+            await s.commit()
+            return proposal.target_id
+    entry_id = run(create_and_apply())
+
+    async def check_created():
+        async with new_session() as s:
+            entry = await s.get(LorebookEntry, entry_id)
+            return entry.cat, entry.species_fields, entry.content
+    cat, fields, content = run(check_created())
+    assert cat == "species"
+    assert fields["overview"] == "A blind, pale newt found in deep caverns."
+    assert content == "Overview: A blind, pale newt found in deep caverns."
+
+    async def update_and_apply():
+        async with new_session() as s:
+            proposal = await _proposal_from_call(
+                s, turn_number=2, name="update_lore",
+                args={"title": "Cave Newt", "speciesFields": {"typicalGear": "None."}},
+                member_names=set(), pc_name="", narration="",
+            )
+            assert proposal is not None
+            ok, note = await apply_proposal(proposal, s)
+            assert ok, note
+            await s.commit()
+            return proposal
+    updated_proposal = run(update_and_apply())
+
+    async def check_updated():
+        async with new_session() as s:
+            entry = await s.get(LorebookEntry, entry_id)
+            return entry.species_fields, entry.content
+    fields2, content2 = run(check_updated())
+    assert fields2["overview"] == "A blind, pale newt found in deep caverns."  # untouched
+    assert fields2["typicalGear"] == "None."
+    assert "Typical Gear: None." in content2
+
+    # Reversing the update restores the pre-update species_fields + content.
+    async def reverse():
+        async with new_session() as s:
+            proposal = await s.merge(updated_proposal)
+            changed = await _reverse_accepted_proposal(proposal, s)
+            await s.commit()
+            return changed
+    assert run(reverse()) is True
+
+    async def check_reversed():
+        async with new_session() as s:
+            entry = await s.get(LorebookEntry, entry_id)
+            return entry.species_fields, entry.content
+    fields3, content3 = run(check_reversed())
+    assert "typicalGear" not in fields3
+    assert content3 == "Overview: A blind, pale newt found in deep caverns."
+
+    run_cleanup(entry_id)

@@ -145,3 +145,38 @@ def test_lore_species_create_composes_content(client):
     assert other["speciesFields"] is None
     client.delete(f"/api/lore/{other['id']}")
     client.delete(f"/api/lore/{entry_id}")
+
+
+# ── Integration: the boot campaign (Fantasy template) uses species ─
+
+def test_boot_seed_has_species_not_monsters(client):
+    # server/tests/conftest.py boots via the Fantasy template
+    # (server/templates/fantasy.json), not server/db/seed.py's demo content —
+    # see SEED_LOREBOOK's own composed-content coverage below.
+    entries = client.get("/api/lore").json()
+    cats = {e["cat"] for e in entries}
+    assert "monsters" not in cats
+    assert "species" in cats
+
+    goblin = next(e for e in entries if e["title"] == "Goblin")
+    assert goblin["cat"] == "species"
+    assert goblin["content"]  # the template loader keeps plain freeform content
+
+    cfg = client.get("/api/lore/config").json()
+    assert "species" in cfg["injectionOrder"] and "monsters" not in cfg["injectionOrder"]
+    assert "species" in cfg["injectionPosition"] and "monsters" not in cfg["injectionPosition"]
+
+
+# ── Pure: server/db/seed.py's demo Species entries compose correctly ──
+
+def test_seed_lorebook_species_entries_are_composed():
+    from server.db.seed import SEED_LOREBOOK
+
+    species_entries = [e for e in SEED_LOREBOOK if e["cat"] == "species"]
+    assert {e["title"] for e in species_entries} == {"Shadow Wraith", "Moss Golem"}
+    assert not any(e["cat"] == "monsters" for e in SEED_LOREBOOK)
+
+    for entry in species_entries:
+        assert entry["content"] == compose_species_content(entry["species_fields"])
+        assert entry["species_fields"]["overview"]
+        assert entry["species_fields"]["dangerCombat"]

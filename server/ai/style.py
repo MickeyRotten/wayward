@@ -236,9 +236,9 @@ _TOOL_GUIDANCE_FALLBACK = """You have tools for changing and reading game state.
 _DICE_GUIDANCE_FALLBACK = """- skill_check: when the player or a party member attempts something meaningfully UNCERTAIN and CONSEQUENTIAL (leaping a chasm, picking a lock, persuading a hostile guard, spotting an ambush), call skill_check BEFORE narrating the outcome, then narrate the result you were given — a failure must actually fail. Pick the skill label from the action or the character's Field Skill. Choose difficulty honestly: easy / normal / hard / heroic. NEVER roll for trivial or guaranteed actions, for ordinary conversation, or more than once per player action."""
 
 _FORMATTING_GUIDE_FALLBACK = """Format the narration for a stylised RPG chat:
-- When a PARTY MEMBER speaks, give them their own paragraph that begins with their name, a colon, then ONLY their spoken words in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. Put nothing else on that line: any description of how they said it, their expression, or what happens next goes in a SEPARATE narration paragraph (a blank line after the quote), NOT on the dialogue line. One speaker per paragraph; only do this for actual party members.
+- When ANY CHARACTER speaks, give them their own paragraph that begins with their name, a colon, then ONLY their spoken words in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. Put nothing else on that line: any description of how they said it, their expression, or what happens next goes in a SEPARATE narration paragraph (a blank line after the quote), NOT on the dialogue line. One speaker per paragraph; only do this for party members and characters in focus.
 - Use *italics* for emphasis, whispers, or inner thoughts, and **bold** for the names of notable items the first time they appear.
-- Put letters, signs, inscriptions, or prophecies in a blockquote: start each such line with "> ".
+- Put meta information, letters, signs, inscriptions, or prophecies in a blockquote: start each such line with "> ".
 - Separate a hard scene or time jump with a line containing only "* * *".
 - Keep ordinary narration as normal prose paragraphs."""
 

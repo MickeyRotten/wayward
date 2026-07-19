@@ -944,7 +944,7 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
         await _save_prompt_log(messages)
         yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
 
-        def _make_stream():
+        def _make_stream(reasoning=None):
             return chat_completion_stream(
                 api_key=api_key,
                 model_id=model_id,
@@ -958,7 +958,8 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
                 frequency_penalty=settings.frequency_penalty,
                 presence_penalty=settings.presence_penalty,
                 repetition_penalty=settings.repetition_penalty,
-                reasoning_effort=getattr(settings, "reasoning_effort", "") or None,
+                reasoning_effort=(reasoning if reasoning is not None
+                                  else (getattr(settings, "reasoning_effort", "") or None)),
                 yield_events=True,
             )
 
@@ -966,23 +967,22 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
         usage: dict | None = None
         reasoning_seen = False
         try:
-            async for ev in stream_with_retry(
-                _make_stream, getattr(settings, "auto_retry_count", 0) or 0,
-                log_ctx=" continue",
+            async for out in _drive_prose_stream(
+                _make_stream, getattr(settings, "auto_retry_count", 0) or 0, log_ctx=" continue",
             ):
-                if ev["type"] == "chunk":
-                    addition += ev["text"]
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
-                elif ev["type"] == "reasoning":
-                    reasoning_seen = True
-                    yield f"data: {json.dumps({'type': 'reasoning', 'content': ev['text']})}\n\n"
-                elif ev["type"] == "usage":
-                    usage = {k: v for k, v in ev.items() if k != "type"}
-                elif ev["type"] == "discard":
-                    addition = ""
+                k = out["kind"]
+                if k == "chunk":
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': out['text']})}\n\n"
+                elif k == "reasoning":
+                    yield f"data: {json.dumps({'type': 'reasoning', 'content': out['text']})}\n\n"
+                elif k == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
-                elif ev["type"] == "retry":
-                    yield f"data: {json.dumps({'type': 'retry', 'attempt': ev['attempt'], 'of': ev['of']})}\n\n"
+                elif k == "retry":
+                    yield f"data: {json.dumps({'type': 'retry', 'attempt': out['attempt'], 'of': out['of']})}\n\n"
+                elif k == "done":
+                    addition = out["text"]
+                    usage = out["usage"]
+                    reasoning_seen = out["reasoning_seen"]
         except Exception as e:
             log.exception("Continue stream failed")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -1047,12 +1047,58 @@ def _inline_option_rules(narrator) -> list[str] | None:
 
 
 # Reasoning models can burn the whole response budget on thinking; surface a
-# useful explanation instead of a silent empty beat.
+# useful explanation instead of a silent empty beat. Only shown after the
+# automatic reasoning-off recovery ALSO produced nothing.
 _REASONING_ATE_BUDGET = (
     "The model spent its entire response budget on reasoning and wrote no "
-    "narration. Raise Max Response Tokens (Config → AI & Model), or lower the "
-    "Reasoning Effort setting."
+    "narration — even after retrying with reasoning disabled. Raise Max Response "
+    "Tokens (Config → AI & Model), or switch to a different model."
 )
+
+
+async def _drive_prose_stream(make_stream, retries: int, log_ctx: str):
+    """Drive a prose (non-agentic) narration/continuation stream with one
+    reasoning-off recovery: if a reasoning model spends its whole response budget
+    thinking and writes nothing, retry ONCE with reasoning disabled so the budget
+    goes to prose. These paths have no mid-stream DB mutations, so a full
+    re-stream is always safe.
+
+    ``make_stream(reasoning_effort)`` returns a fresh
+    ``chat_completion_stream(yield_events=True)``. Yields passthrough dicts
+    (``{"kind": "chunk"|"reasoning"|"discard"|"retry", ...}``) and one terminal
+    ``{"kind": "done", "text": str, "usage": dict|None, "reasoning_seen": bool}``.
+    """
+    any_reasoning = False  # across both attempts — drives the final error guard
+    for attempt in range(2):
+        reasoning_off = attempt == 1
+        text = ""
+        usage: dict | None = None
+        round_reasoning = False  # this attempt only — drives the recovery trigger
+        async for ev in stream_with_retry(
+            (lambda ro=reasoning_off: make_stream("off" if ro else None)),
+            retries,
+            log_ctx=log_ctx + (" reasoning-off recovery" if reasoning_off else ""),
+        ):
+            t = ev["type"]
+            if t == "chunk":
+                text += ev["text"]
+                yield {"kind": "chunk", "text": ev["text"]}
+            elif t == "reasoning":
+                round_reasoning = True
+                any_reasoning = True
+                yield {"kind": "reasoning", "text": ev["text"]}
+            elif t == "usage":
+                usage = {k: v for k, v in ev.items() if k != "type"}
+            elif t == "discard":
+                text = ""
+                yield {"kind": "discard"}
+            elif t == "retry":
+                yield {"kind": "retry", "attempt": ev["attempt"], "of": ev["of"]}
+        if attempt == 0 and not text.strip() and round_reasoning:
+            yield {"kind": "retry", "attempt": 1, "of": 1}
+            continue  # recover: re-stream with reasoning disabled
+        yield {"kind": "done", "text": text, "usage": usage, "reasoning_seen": any_reasoning}
+        return
 
 
 def _stream_llm_response(
@@ -1104,7 +1150,7 @@ def _stream_llm_response(
         await _save_prompt_log(messages)
         yield f"data: {json.dumps({'type': 'meta', 'contextTokens': context_tokens, 'maxContextTokens': max_context})}\n\n"
 
-        def _make_stream():
+        def _make_stream(reasoning=None):
             return chat_completion_stream(
                 api_key=api_key,
                 model_id=model_id,
@@ -1118,37 +1164,38 @@ def _stream_llm_response(
                 frequency_penalty=frequency_penalty,
                 presence_penalty=presence_penalty,
                 repetition_penalty=repetition_penalty,
-                reasoning_effort=getattr(settings, "reasoning_effort", "") or None,
+                reasoning_effort=(reasoning if reasoning is not None
+                                  else (getattr(settings, "reasoning_effort", "") or None)),
                 yield_events=True,  # reasoning deltas + usage ride along
             )
 
-        # Auto-retry on error/safety block (configurable). The legacy path has no
-        # mid-stream DB mutations, so a full re-stream is always safe; a partial
-        # attempt emits `discard` (client clears it) before the retry.
+        # Auto-retry on error/safety block (configurable), plus one reasoning-off
+        # recovery when a reasoning model burns the whole budget thinking. The
+        # legacy path has no mid-stream DB mutations, so a full re-stream is always
+        # safe; a partial attempt emits `discard` (client clears it) before a retry.
         full_text = ""
         usage: dict | None = None
         reasoning_seen = False
         try:
-            async for ev in stream_with_retry(
+            async for out in _drive_prose_stream(
                 _make_stream, getattr(settings, "auto_retry_count", 0) or 0,
                 log_ctx=f" legacy turn={current_turn}",
             ):
-                et = ev["type"]
-                if et == "chunk":
-                    full_text += ev["text"]
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': ev['text']})}\n\n"
-                elif et == "reasoning":
+                k = out["kind"]
+                if k == "chunk":
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': out['text']})}\n\n"
+                elif k == "reasoning":
                     # Reasoning models (often tool-less, so they land on THIS
                     # path): surface the thinking phase live.
-                    reasoning_seen = True
-                    yield f"data: {json.dumps({'type': 'reasoning', 'content': ev['text']})}\n\n"
-                elif et == "usage":
-                    usage = {k: v for k, v in ev.items() if k != "type"}
-                elif et == "discard":
-                    full_text = ""
+                    yield f"data: {json.dumps({'type': 'reasoning', 'content': out['text']})}\n\n"
+                elif k == "discard":
                     yield f"data: {json.dumps({'type': 'discard'})}\n\n"
-                elif et == "retry":
-                    yield f"data: {json.dumps({'type': 'retry', 'attempt': ev['attempt'], 'of': ev['of']})}\n\n"
+                elif k == "retry":
+                    yield f"data: {json.dumps({'type': 'retry', 'attempt': out['attempt'], 'of': out['of']})}\n\n"
+                elif k == "done":
+                    full_text = out["text"]
+                    usage = out["usage"]
+                    reasoning_seen = out["reasoning_seen"]
         except Exception as e:
             log.exception("OpenRouter stream failed")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"

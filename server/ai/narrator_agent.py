@@ -300,12 +300,13 @@ async def run_narrator_agent(
             # would clip a final narration that lands on a tool-offering round,
             # forcing a wasteful discard-and-regenerate.
 
-            result = None
-
-            # Auto-retry this model call on an error/safety block (configurable;
-            # per-call so tools already applied in earlier rounds are never
-            # re-run — messages is unmutated until a call succeeds).
-            def _make_call(_offer=offer_tools):
+            # Build a model call for this round. `_reasoning` overrides the
+            # configured effort — the recovery below passes "off" to reclaim the
+            # whole response budget for narration when the model burned it all
+            # thinking. Auto-retry (errors/safety) still wraps each call; it's
+            # per-call so tools applied in earlier rounds are never re-run
+            # (messages is unmutated until a call succeeds).
+            def _make_call(_offer=offer_tools, _reasoning=None):
                 return chat_completion_agent_turn(
                     api_key=api_key,
                     model_id=main_model,
@@ -320,36 +321,66 @@ async def run_narrator_agent(
                     frequency_penalty=settings.frequency_penalty,
                     presence_penalty=settings.presence_penalty,
                     repetition_penalty=settings.repetition_penalty,
-                    reasoning_effort=getattr(settings, "reasoning_effort", "") or None,
+                    reasoning_effort=(_reasoning if _reasoning is not None
+                                      else (getattr(settings, "reasoning_effort", "") or None)),
                 )
 
-            streamed = False  # did this round stream any content (preamble) live?
-            async for ev in agent_turn_with_retry(
-                _make_call, getattr(settings, "auto_retry_count", 0) or 0,
-                log_ctx=f" narrator turn={current_turn} round={round_idx}",
-            ):
-                if ev["type"] == "content":
-                    streamed = True
-                    yield {"type": "content", "text": ev["text"]}
-                elif ev["type"] == "reasoning":
-                    # Reasoning models: surface the thinking phase live instead
-                    # of a silent stall.
-                    reasoning_seen = True
-                    yield ev
-                elif ev["type"] == "result":
-                    result = ev
-                elif ev["type"] in ("discard", "retry"):
-                    yield ev
+            # Run the round. If a reasoning model spends the ENTIRE response budget
+            # thinking and writes no content (finish_reason == "length", no tool
+            # calls), auto-recover ONCE with reasoning disabled so the budget goes
+            # to narration — an empty round leaves `messages` unmutated, so this
+            # never re-runs tools.
+            result = None
+            content = ""
+            tool_calls: list = []
+            finish_reason = None
+            for _attempt in range(2):
+                reasoning_off = _attempt == 1
+                result = None
+                streamed = False        # did this attempt stream any content live?
+                round_reasoning = False  # did this attempt emit reasoning?
+                async for ev in agent_turn_with_retry(
+                    (lambda ro=reasoning_off: _make_call(_reasoning="off" if ro else None)),
+                    getattr(settings, "auto_retry_count", 0) or 0,
+                    log_ctx=(f" narrator turn={current_turn} round={round_idx}"
+                             + (" reasoning-off recovery" if reasoning_off else "")),
+                ):
+                    if ev["type"] == "content":
+                        streamed = True
+                        yield {"type": "content", "text": ev["text"]}
+                    elif ev["type"] == "reasoning":
+                        # Reasoning models: surface the thinking phase live instead
+                        # of a silent stall.
+                        reasoning_seen = True
+                        round_reasoning = True
+                        yield ev
+                    elif ev["type"] == "result":
+                        result = ev
+                    elif ev["type"] in ("discard", "retry"):
+                        yield ev
 
-            tool_calls = (result or {}).get("tool_calls") or []
-            content = (result or {}).get("content") or ""
-            round_usage = (result or {}).get("usage") or None
-            if round_usage:
-                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
-                    if round_usage.get(k) is not None:
-                        usage_total[k] = usage_total.get(k, 0) + int(round_usage[k])
-                if round_usage.get("cost") is not None:
-                    usage_total["cost"] = usage_total.get("cost", 0.0) + float(round_usage["cost"])
+                result_d = result or {}
+                tool_calls = result_d.get("tool_calls") or []
+                content = result_d.get("content") or ""
+                finish_reason = result_d.get("finish_reason")
+                round_usage = result_d.get("usage") or None
+                if round_usage:
+                    for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                        if round_usage.get(k) is not None:
+                            usage_total[k] = usage_total.get(k, 0) + int(round_usage[k])
+                    if round_usage.get("cost") is not None:
+                        usage_total["cost"] = usage_total.get("cost", 0.0) + float(round_usage["cost"])
+
+                budget_ate_by_reasoning = (
+                    not tool_calls and not content.strip() and round_reasoning
+                    and finish_reason in (None, "length")
+                )
+                if _attempt == 0 and budget_ate_by_reasoning:
+                    if streamed:
+                        yield {"type": "discard"}
+                    yield {"type": "retry", "attempt": 1, "of": 1}
+                    continue  # re-run this round with reasoning disabled
+                break
 
             if not tool_calls:
                 # No tool calls → this is the final narration (streamed live above).
@@ -401,6 +432,7 @@ async def run_narrator_agent(
         "tool_failures": tool_failures,
         "usage": usage_total or None,
         "reasoning_seen": reasoning_seen,
+        "finish_reason": finish_reason,
     }
 
 

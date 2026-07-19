@@ -224,8 +224,13 @@ def _apply_sampling(
     if repetition_penalty is not None and repetition_penalty != 1.0:
         body["repetition_penalty"] = repetition_penalty
     # Reasoning effort for reasoning-capable models (OpenRouter extension).
+    # The "off" sentinel explicitly DISABLES reasoning (used by the narrator's
+    # recovery when a model spent its whole budget thinking and wrote nothing) —
+    # this frees the entire response budget for narration.
     if reasoning_effort in ("low", "medium", "high"):
         body["reasoning"] = {"effort": reasoning_effort}
+    elif reasoning_effort == "off":
+        body["reasoning"] = {"enabled": False}
     # Ask for real token/cost accounting in the final stream chunk.
     body["usage"] = {"include": True}
 

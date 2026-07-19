@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.ai.openrouter import chat_completion_agent_turn, provider_endpoint
+from server.ai.species import compose_species_content, merge_species_fields
 from server.db import events as event_ops
 from server.db import party as party_ops
 from server.db.database import new_session
@@ -36,9 +37,9 @@ from server.db.models import (
 
 log = logging.getLogger("wayward.worldbuilder")
 
-LORE_CATS = {"pillars", "world", "characters", "items", "monsters", "spells"}
+LORE_CATS = {"pillars", "world", "characters", "items", "species", "spells"}
 # Display order for world-state listings (Pillars first, then Locations, ...).
-LORE_CAT_ORDER = ("pillars", "world", "characters", "items", "monsters", "spells")
+LORE_CAT_ORDER = ("pillars", "world", "characters", "items", "species", "spells")
 TASK_STATUSES = {"active", "completed", "failed"}
 
 # Tool-emitting call — doesn't need the full narration budget.
@@ -121,7 +122,7 @@ def _is_bolded(title: str, narration: str) -> bool:
 CHRONICLER_GUIDANCE = """You are the Chronicler: a quiet archivist who keeps the world's records as an adventure unfolds. You do NOT narrate. After each turn you review what just happened and record only what genuinely changed.
 
 Use your tools to:
-- create_lore / update_lore — record new world rules (pillars), places (world/locations), characters (NPCs), items, monsters, or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
+- create_lore / update_lore — record new world rules (pillars), places (world/locations), characters (NPCs), items, species (sapient peoples AND monsters/creatures), or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
 - create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). update_task_status — mark an existing task completed or failed when the fiction resolves it.
 - create_member — ONLY when a character has clearly and deliberately joined the party as a travelling companion.
 
@@ -139,17 +140,32 @@ Per-category rules (write the entry as a timeless world fact, NOT a diary of thi
 - items — Describe the item ITSELF, generically: what it is, looks like, does. Do NOT mention who currently holds or wears it, or the scene it appeared in. ALWAYS set its "itemType" (Equipment, Tool, Consumable, Key Item, Artifact, or Other); for Equipment also set a body "slot" (Head, Neck, Torso, Hands, Waist, Legs, Feet, or Accessory); set "rarity" if the fiction implies one (c=common, u=uncommon, r=rare, e=epic, l=legendary; default common).
 - pillars — A foundational RULE of the world/universe (how magic works, a law of nature, a societal absolute), not a place or thing. Only file one when the fiction firmly establishes such a rule. These are always in context, so keep them few and load-bearing.
 - world (places / locations) — Describe the place generically and permanently. Nothing about the party, what they did there this turn, or transient events.
-- monsters — Describe the creature/type in general (appearance, behaviour, danger), not this one encounter's outcome.
+- species — Covers BOTH sapient peoples and monsters/creatures — one category. Record on first real appearance (encountering, fighting, or learning about them is itself worth recording; unlike characters, this doesn't require the player to interact with them). Use the "speciesFields" object instead of writing one blob into "content": overview, physicalAppearance, biologyReproduction, cultureBehavior, dangerCombat, typicalGear, archetypesVariants, nameExamples. Set ONLY the fields the fiction has actually established — leave the rest out rather than inventing detail. dangerCombat is narrative flavor only; there is no combat system yet.
 - spells — Describe the spell's effect and limits in general, not who cast it just now.
 - characters (NPCs) — Describe the person: who they are, appearance, role. Not the party's momentary interaction with them."""
 
+
+_SPECIES_FIELDS_SCHEMA = {
+    "type": "object",
+    "description": "For cat='species' only. Structured fields — set only what the fiction has established; leave the rest out. content is ignored/overwritten when this is provided.",
+    "properties": {
+        "overview": {"type": "string"},
+        "physicalAppearance": {"type": "string"},
+        "biologyReproduction": {"type": "string"},
+        "cultureBehavior": {"type": "string"},
+        "dangerCombat": {"type": "string"},
+        "typicalGear": {"type": "string"},
+        "archetypesVariants": {"type": "string"},
+        "nameExamples": {"type": "string"},
+    },
+}
 
 TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
             "name": "create_lore",
-            "description": "Record a new lorebook entry for something the fiction has established. For cat='items', ALSO set itemType (and slot for Equipment).",
+            "description": "Record a new lorebook entry for something the fiction has established. For cat='items', ALSO set itemType (and slot for Equipment). For cat='species', set speciesFields instead of writing one blob into content.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -160,6 +176,7 @@ TOOL_SCHEMAS: list[dict] = [
                     "itemType": {"type": "string", "enum": ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Currency", "Other"], "description": "Items only. The kind of item."},
                     "slot": {"type": "string", "enum": ["Head", "Neck", "Torso", "Hands", "Waist", "Legs", "Feet", "Accessory"], "description": "Equipment items only. The body slot it's worn in."},
                     "rarity": {"type": "string", "enum": ["c", "u", "r", "e", "l"], "description": "Items only. c=common u=uncommon r=rare e=epic l=legendary."},
+                    "speciesFields": _SPECIES_FIELDS_SCHEMA,
                 },
                 "required": ["cat", "title", "content"],
             },
@@ -176,6 +193,7 @@ TOOL_SCHEMAS: list[dict] = [
                     "title": {"type": "string"},
                     "content": {"type": "string", "description": "The full updated description."},
                     "keywords": {"type": "array", "items": {"type": "string"}},
+                    "speciesFields": _SPECIES_FIELDS_SCHEMA,
                 },
                 "required": ["title", "content"],
             },
@@ -424,6 +442,8 @@ async def _proposal_from_call(
             payload["rarity"] = (args.get("rarity") or "c")
             if args.get("slot"):
                 payload["slot"] = args.get("slot")
+        if cat == "species" and args.get("speciesFields"):
+            payload["speciesFields"] = args["speciesFields"]
         return WorldbuildingProposal(
             turn_number=turn_number, kind="lore", operation="create",
             payload=payload, summary=_summary("lore", "create", payload),
@@ -437,6 +457,8 @@ async def _proposal_from_call(
         if not existing or existing.locked:
             return None
         payload = {"content": args.get("content", ""), "keywords": args.get("keywords")}
+        if existing.cat == "species" and args.get("speciesFields"):
+            payload["speciesFields"] = args["speciesFields"]
         return WorldbuildingProposal(
             turn_number=turn_number, kind="lore", operation="update",
             target_id=existing.id, payload=payload,
@@ -509,6 +531,9 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
             entry.rarity = p.get("rarity") or "c"
             entry.slot = p.get("slot")
             entry.max_stack = 1
+        if cat == "species":
+            entry.species_fields = merge_species_fields(None, p.get("speciesFields"))
+            entry.content = compose_species_content(entry.species_fields)
         session.add(entry)
         await session.flush()
         proposal.target_id = entry.id  # tie the created entry to this proposal/turn
@@ -521,8 +546,15 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         if entry.locked:
             return False, "Entry is locked."
         # Snapshot prior state so a regenerate/delete of this turn can restore it.
-        _snapshot_prev(proposal, {"content": entry.content, "keywords": list(entry.keywords or [])})
-        if p.get("content") is not None:
+        prev_snapshot = {"content": entry.content, "keywords": list(entry.keywords or [])}
+        if entry.cat == "species":
+            prev_snapshot["speciesFields"] = dict(entry.species_fields or {})
+        _snapshot_prev(proposal, prev_snapshot)
+        if entry.cat == "species":
+            if p.get("speciesFields"):
+                entry.species_fields = merge_species_fields(entry.species_fields, p["speciesFields"])
+            entry.content = compose_species_content(entry.species_fields or {})
+        elif p.get("content") is not None:
             entry.content = p["content"]
         if p.get("keywords") is not None:
             entry.keywords = p["keywords"]
@@ -597,6 +629,8 @@ async def _reverse_accepted_proposal(p: WorldbuildingProposal, session: AsyncSes
                 entry.content = prev["content"]
             if "keywords" in prev:
                 entry.keywords = prev["keywords"]
+            if "speciesFields" in prev:
+                entry.species_fields = prev["speciesFields"]
             return True
         return False
 

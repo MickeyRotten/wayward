@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.ai.scenario import compose_scenario_content, migrate_legacy_fields
+from server.ai.species import compose_species_content, merge_species_fields
 from server.api.schemas import (
     LorebookConfigSchema,
     LorebookConfigUpdate,
@@ -104,6 +105,7 @@ def _lore_to_schema(entry: LorebookEntry) -> LorebookEntrySchema:
         permanent=bool(entry.permanent),
         locked=bool(entry.locked),
         cat=entry.cat,
+        speciesFields=(entry.species_fields or {}) if entry.cat == "species" else None,
     )
 
 
@@ -171,6 +173,9 @@ async def create_lore_entry(
         permanent=data.permanent,
         cat=data.cat,
     )
+    if data.cat == "species":
+        entry.species_fields = merge_species_fields(None, data.speciesFields)
+        entry.content = compose_species_content(entry.species_fields)
     session.add(entry)
     await session.commit()
     await session.refresh(entry)
@@ -209,6 +214,10 @@ async def update_lore_entry(
         entry.permanent = data.permanent
     if data.cat is not None:
         entry.cat = data.cat
+    if entry.cat == "species":
+        if data.speciesFields is not None:
+            entry.species_fields = merge_species_fields(entry.species_fields, data.speciesFields)
+        entry.content = compose_species_content(entry.species_fields or {})
     await session.commit()
     await session.refresh(entry)
     return _lore_to_schema(entry)

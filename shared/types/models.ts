@@ -284,7 +284,7 @@ export interface Task {
 
 // Note: 'world' is the internal id for the "Locations" tab (kept for data
 // stability — existing entries and the locked Scenario are cat='world').
-export type LoreCategory = 'pillars' | 'world' | 'characters' | 'items' | 'monsters' | 'spells'
+export type LoreCategory = 'pillars' | 'world' | 'characters' | 'items' | 'species' | 'spells'
 
 export interface LorebookEntry {
   id: string
@@ -295,6 +295,8 @@ export interface LorebookEntry {
   permanent: boolean
   locked?: boolean
   cat: LoreCategory
+  /** Only meaningful when cat === 'species'; null/undefined otherwise. */
+  speciesFields?: SpeciesFields | null
 }
 
 export interface LorebookConfig {
@@ -311,6 +313,19 @@ export interface ScenarioFields {
   geography: string
   techAndMagic: string
   other: string
+}
+
+/** The 8 structured Species/Creature-template fields (see "Species &
+ *  Creature Templates" — merges the old Monsters category). */
+export interface SpeciesFields {
+  overview: string
+  physicalAppearance: string
+  biologyReproduction: string
+  cultureBehavior: string
+  dangerCombat: string
+  typicalGear: string
+  archetypesVariants: string
+  nameExamples: string
 }
 
 /** Campaign Builder "Story Style" — the player's guided narration selections

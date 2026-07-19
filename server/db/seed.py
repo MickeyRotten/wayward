@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 from server.ai.narrator_actions import ACTION_INSTRUCTION
+from server.ai.species import compose_species_content
 from server.ai.spotlight import DEFAULT_SPOTLIGHT_RULE
 from server.db.database import new_session
 from server.db.models import (
@@ -107,24 +108,44 @@ SEED_LOREBOOK = [
         "permanent": False,
         "cat": "characters",
     },
-    # --- Monsters (2 entries) ---
+    # --- Species (2 entries) ---
     {
         "id": LORE_IDS["shadow_wraith"],
         "title": "Shadow Wraith",
-        "content": "A formless, dark entity that drifts through places where old magic has soured. Shadow wraiths are drawn to fear and confusion. They cannot be struck by ordinary weapons — only light, fire, or magic disperses them. They do not kill outright but drain warmth and will from the living, leaving victims hollow and lost.",
+        "content": compose_species_content({
+            "overview": "A formless, dark entity that drifts through places where old magic has soured.",
+            "cultureBehavior": "Shadow wraiths are drawn to fear and confusion.",
+            "dangerCombat": "Cannot be struck by ordinary weapons — only light, fire, or magic disperses them. They do not kill outright but drain warmth and will from the living, leaving victims hollow and lost.",
+        }),
+        "species_fields": {
+            "overview": "A formless, dark entity that drifts through places where old magic has soured.",
+            "cultureBehavior": "Shadow wraiths are drawn to fear and confusion.",
+            "dangerCombat": "Cannot be struck by ordinary weapons — only light, fire, or magic disperses them. They do not kill outright but drain warmth and will from the living, leaving victims hollow and lost.",
+        },
         "keywords": ["shadow", "wraith", "dark", "darkness", "shade"],
         "enabled": True,
         "permanent": False,
-        "cat": "monsters",
+        "cat": "species",
     },
     {
         "id": LORE_IDS["moss_golem"],
         "title": "Moss Golem",
-        "content": "A hulking figure of packed earth, stone, and living moss that guards ancient places in the Whispering Woods. Moss golems are slow but enormously strong. They do not attack unprovoked — they respond to intrusion, particularly near the stone pillars and old ward-lines. Destroying one is difficult; they reassemble unless the core stone at their center is removed.",
+        "content": compose_species_content({
+            "overview": "A hulking figure of packed earth, stone, and living moss that guards ancient places in the Whispering Woods.",
+            "physicalAppearance": "Moss golems are slow but enormously strong.",
+            "cultureBehavior": "They do not attack unprovoked — they respond to intrusion, particularly near the stone pillars and old ward-lines.",
+            "dangerCombat": "Destroying one is difficult; they reassemble unless the core stone at their center is removed.",
+        }),
+        "species_fields": {
+            "overview": "A hulking figure of packed earth, stone, and living moss that guards ancient places in the Whispering Woods.",
+            "physicalAppearance": "Moss golems are slow but enormously strong.",
+            "cultureBehavior": "They do not attack unprovoked — they respond to intrusion, particularly near the stone pillars and old ward-lines.",
+            "dangerCombat": "Destroying one is difficult; they reassemble unless the core stone at their center is removed.",
+        },
         "keywords": ["golem", "moss", "stone guardian", "earth"],
         "enabled": True,
         "permanent": False,
-        "cat": "monsters",
+        "cat": "species",
     },
     # --- Spells (2 entries) ---
     {
@@ -492,11 +513,11 @@ async def seed_defaults():
         lore_config = LorebookConfig(
             injection_order={
                 "pillars": 0, "world": 10, "characters": 20, "items": 30,
-                "monsters": 40, "spells": 50,
+                "species": 40, "spells": 50,
             },
             injection_position={
                 "pillars": "top", "world": "top", "characters": "top", "items": "top",
-                "monsters": "top", "spells": "top",
+                "species": "top", "spells": "top",
             },
         )
 

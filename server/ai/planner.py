@@ -31,6 +31,7 @@ from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_tu
 from server.ai.prompt_builder import _augment_message, _estimate_tokens, _trim_to_budget
 from server.ai.rules import normalize_attributes
 from server.ai.scenario import SCENARIO_FIELDS, compose_scenario_content, migrate_legacy_fields, normalize_openings
+from server.ai.species import compose_species_content, merge_species_fields
 from server.ai import style
 from server.ai.worldbuilder import LORE_CAT_ORDER, LORE_CATS, TASK_STATUSES, _resolve_lore, _resolve_task
 from server.db.database import new_session
@@ -55,19 +56,19 @@ EQUIP_SLOTS = [
 ]
 
 
-PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, monsters, spells, tasks, the party, the player character, the Scenario, and even the Narrator's instructions.
+PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, the party, the player character, the Scenario, and even the Narrator's instructions.
 
 How you work:
 - Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a task, or a character's full set of gear.
 - Prefer updating an existing entry over creating a duplicate; you are given the current world state.
-- Pick the right lore category for lore (pillars, world, characters, monsters, spells). For NPCs use 'characters'. Use 'world' for places/locations. Use 'pillars' for foundational RULES of the world/universe (how magic works, laws of nature, societal absolutes) — these are always kept in the narrator's context, so reserve them for load-bearing rules, not ordinary facts.
+- Pick the right lore category for lore (pillars, world, characters, species, spells). For NPCs use 'characters'. Use 'world' for places/locations. Use 'pillars' for foundational RULES of the world/universe (how magic works, laws of nature, societal absolutes) — these are always kept in the narrator's context, so reserve them for load-bearing rules, not ordinary facts. Use 'species' for creature/people templates — it covers BOTH sapient peoples and monsters/creatures — and set the structured speciesFields (overview, physical appearance, biology & reproduction, culture & behavior, danger & combat notes, typical gear, archetypes & variants, name examples) rather than writing one blob into content.
 - WHO is being referred to: the player will usually name someone without saying what they are. Use the current world state to resolve the name. There are three distinct kinds, and only the first two have equipment:
     1. The PLAYER CHARACTER and 2. PARTY MEMBERS — real sheets with equipment slots. Edit them with update_pc / update_member, and give them gear with create_item + equip.
     3. LOREBOOK CHARACTERS (NPCs in lore → characters) — descriptive entries only, with NO equipment system. If asked to give an NPC gear or change their appearance, write it into their lore entry with update_lore. NEVER call equip on a lorebook NPC, and don't invent equipment slots for them.
   If a name isn't a party member or the PC, treat it as a lorebook character (edit its lore) — do not recruit them into the party unless the player clearly asks to.
 - ITEMS: always use create_item (NOT create_lore) so the item gets a proper type, slot, and rarity. Choose the type deliberately — 'Equipment' for wearable/wieldable gear, 'Consumable' for potions/food, plus 'Tool', 'Key Item', 'Artifact', 'Other'. For Equipment, set the body slot (Head, Neck, Torso, Hands, Waist, Legs, Feet, Accessory) and a fitting rarity (c=Common is the default for ordinary gear; reserve u/r/e/l for genuinely special items). Give each item a vivid one-line description.
 - EQUIPPING — STRICT ORDER: an item must EXIST before it can be equipped. To outfit the PC or a party member, for each piece: (1) create_item first (type Equipment, with a slot), THEN (2) equip it into the precise slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Never call equip on an item you have not created — it will fail. Creating an item does NOT equip it; you must call equip as the second step.
-- TIMELESS ENTRIES: write every lore/item entry as a permanent world fact, not a note about the current scene or party. Items — describe the item itself, generically (what it is/does), never who currently holds or wears it, and always give it a proper type (and slot for Equipment). World/places — describe the place generically; nothing about the party or what they're doing there. Monsters — the creature in general. Spells — the effect and its limits. Characters (NPCs) — who they are, not the party's momentary interaction with them.
+- TIMELESS ENTRIES: write every lore/item entry as a permanent world fact, not a note about the current scene or party. Items — describe the item itself, generically (what it is/does), never who currently holds or wears it, and always give it a proper type (and slot for Equipment). World/places — describe the place generically; nothing about the party or what they're doing there. Species — the creature or people in general, using the structured speciesFields rather than one blob of content. Spells — the effect and its limits. Characters (NPCs) — who they are, not the party's momentary interaction with them.
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
 - CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
 - READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, task, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
@@ -89,6 +90,21 @@ PLANNER_FINAL_NUDGE = (
 # ── Tool schemas ──────────────────────────────────────────────────
 
 _LORE_CAT_ENUM = sorted(LORE_CATS)
+
+_SPECIES_FIELDS_SCHEMA = {
+    "type": "object",
+    "description": "For cat='species' only — structured fields, partial (set only what you're changing). content is ignored/overwritten when this is provided.",
+    "properties": {
+        "overview": {"type": "string"},
+        "physicalAppearance": {"type": "string"},
+        "biologyReproduction": {"type": "string"},
+        "cultureBehavior": {"type": "string"},
+        "dangerCombat": {"type": "string"},
+        "typicalGear": {"type": "string"},
+        "archetypesVariants": {"type": "string"},
+        "nameExamples": {"type": "string"},
+    },
+}
 
 
 def _story_style_props() -> dict:
@@ -123,14 +139,16 @@ def _fn(name: str, desc: str, props: dict, required: list[str]) -> dict:
 
 
 TOOL_SCHEMAS: list[dict] = [
-    _fn("create_lore", "Create a lorebook entry (place, character/NPC, item, monster, or spell).",
+    _fn("create_lore", "Create a lorebook entry (place, character/NPC, item, species, or spell).",
         {"cat": {"type": "string", "enum": _LORE_CAT_ENUM}, "title": {"type": "string"},
-         "content": {"type": "string"}, "keywords": {"type": "array", "items": {"type": "string"}}},
+         "content": {"type": "string"}, "keywords": {"type": "array", "items": {"type": "string"}},
+         "speciesFields": _SPECIES_FIELDS_SCHEMA},
         ["cat", "title", "content"]),
     _fn("update_lore", "Edit an existing lorebook entry, by its exact title.",
         {"title": {"type": "string"}, "content": {"type": "string"},
          "keywords": {"type": "array", "items": {"type": "string"}},
-         "cat": {"type": "string", "enum": _LORE_CAT_ENUM}},
+         "cat": {"type": "string", "enum": _LORE_CAT_ENUM},
+         "speciesFields": _SPECIES_FIELDS_SCHEMA},
         ["title"]),
     _fn("delete_lore", "Remove a lorebook entry (queued for player confirmation), by exact title.",
         {"title": {"type": "string"}}, ["title"]),
@@ -309,8 +327,12 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return "Use create_item for items so type/slot/rarity are set correctly.", None
         if await _resolve_lore(session, title):
             return f"'{title}' already exists — use update_lore instead.", None
-        session.add(LorebookEntry(title=title, content=args.get("content", ""),
-                                  keywords=args.get("keywords") or [], cat=cat))
+        entry = LorebookEntry(title=title, content=args.get("content", ""),
+                              keywords=args.get("keywords") or [], cat=cat)
+        if cat == "species":
+            entry.species_fields = merge_species_fields(None, args.get("speciesFields"))
+            entry.content = compose_species_content(entry.species_fields)
+        session.add(entry)
         return f"Created {cat} lore: {title}.", None
 
     if name == "update_lore":
@@ -319,12 +341,16 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"No lore entry named '{args.get('title', '')}'.", None
         if entry.locked and args.get("cat"):
             return f"'{entry.title}' is locked; its category can't change.", None
-        if args.get("content") is not None:
-            entry.content = args["content"]
         if args.get("keywords") is not None:
             entry.keywords = args["keywords"]
         if args.get("cat") in LORE_CATS and not entry.locked:
             entry.cat = args["cat"]
+        if entry.cat == "species":
+            if args.get("speciesFields"):
+                entry.species_fields = merge_species_fields(entry.species_fields, args["speciesFields"])
+            entry.content = compose_species_content(entry.species_fields or {})
+        elif args.get("content") is not None:
+            entry.content = args["content"]
         return f"Updated lore: {entry.title}.", None
 
     if name == "delete_lore":

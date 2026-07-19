@@ -485,6 +485,7 @@ class LorebookEntrySchema(BaseModel):
     permanent: bool = False
     locked: bool = False
     cat: str = "world"
+    speciesFields: dict | None = None
 
 
 class LorebookEntryCreate(BaseModel):
@@ -494,6 +495,7 @@ class LorebookEntryCreate(BaseModel):
     enabled: bool = True
     permanent: bool = False
     cat: str = "world"
+    speciesFields: dict | None = None
 
 
 class LorebookEntryUpdate(BaseModel):
@@ -503,16 +505,17 @@ class LorebookEntryUpdate(BaseModel):
     enabled: bool | None = None
     permanent: bool | None = None
     cat: str | None = None
+    speciesFields: dict | None = None
 
 
 class LorebookConfigSchema(BaseModel):
     injectionOrder: dict[str, int] = {
         "pillars": 0, "world": 10, "characters": 20, "items": 30,
-        "monsters": 40, "spells": 50,
+        "species": 40, "spells": 50,
     }
     injectionPosition: dict[str, str] = {
         "pillars": "top", "world": "top", "characters": "top", "items": "top",
-        "monsters": "top", "spells": "top",
+        "species": "top", "spells": "top",
     }
     scanDepth: int = 3
 

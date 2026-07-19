@@ -3,6 +3,7 @@ import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useTasksStore } from '../../state/tasksStore'
 import { useLoreStore } from '../../state/loreStore'
+import { SPECIES_FIELD_DEFS } from '../../lib/speciesFields'
 import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
@@ -1021,7 +1022,7 @@ const LORE_CATEGORIES: { value: LoreCategory; label: string }[] = [
   { value: 'world', label: 'Locations' },
   { value: 'characters', label: 'Characters' },
   { value: 'items', label: 'Items' },
-  { value: 'monsters', label: 'Monsters' },
+  { value: 'species', label: 'Species' },
   { value: 'spells', label: 'Spells' },
 ]
 
@@ -1030,7 +1031,7 @@ const CATEGORY_BADGE_COLORS: Record<LoreCategory, string> = {
   world: 'text-gold',
   characters: 'text-[#7aa6cf]',
   items: 'text-[#5a9e6f]',
-  monsters: 'text-[#cf7a7a]',
+  species: 'text-[#cf7a7a]',
   spells: 'text-[#a67ecf]',
 }
 
@@ -1222,15 +1223,33 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
         </div>
       </LoreSection>
 
-      {/* Content */}
-      <LoreSection title="Content">
-        <LoreTextArea
-          value={d.content ?? ''}
-          onChange={(v) => update('content', v)}
-          onBlur={(v) => update('content', v, true)}
-          placeholder="Entry content..."
-        />
-      </LoreSection>
+      {/* Content — structured fields for Species, plain text otherwise */}
+      {d.cat === 'species' ? (
+        <LoreSection title="Species Fields">
+          <div className="space-y-4">
+            {SPECIES_FIELD_DEFS.map(({ key, label, placeholder }) => (
+              <label key={key} className="block">
+                <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
+                <LoreTextArea
+                  value={d.speciesFields?.[key] ?? ''}
+                  onChange={(v) => update('speciesFields', { ...(d.speciesFields ?? {}), [key]: v })}
+                  onBlur={(v) => update('speciesFields', { ...(d.speciesFields ?? {}), [key]: v }, true)}
+                  placeholder={placeholder}
+                />
+              </label>
+            ))}
+          </div>
+        </LoreSection>
+      ) : (
+        <LoreSection title="Content">
+          <LoreTextArea
+            value={d.content ?? ''}
+            onChange={(v) => update('content', v)}
+            onBlur={(v) => update('content', v, true)}
+            placeholder="Entry content..."
+          />
+        </LoreSection>
+      )}
 
       {/* Keywords */}
       <LoreSection title="Keywords">

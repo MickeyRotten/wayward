@@ -23,7 +23,7 @@ const LORE_CATEGORIES: { id: LoreCategory; label: string }[] = [
   { id: 'world', label: 'Locations' },
   { id: 'characters', label: 'Characters' },
   { id: 'items', label: 'Items' },
-  { id: 'monsters', label: 'Monsters' },
+  { id: 'species', label: 'Species' },
   { id: 'spells', label: 'Spells' },
 ]
 

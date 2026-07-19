@@ -179,6 +179,16 @@ class LorebookEntry(Base):
     # rows that predate this column — always read via `entry.scenario_fields or {}`.
     scenario_fields: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Structured Species fields — only meaningful when cat == "species" (the
+    # merged Species/Monsters lorebook category). Holds a dict with keys
+    # overview/physicalAppearance/biologyReproduction/cultureBehavior/
+    # dangerCombat/typicalGear/archetypesVariants/nameExamples (all strings).
+    # `content` is derived from it via compose_species_content()
+    # (server/ai/species.py), same pattern as scenario_fields above. May be
+    # `{}` or `None` for rows that predate this column — always read via
+    # `entry.species_fields or {}`.
+    species_fields: Mapped[dict] = mapped_column(JSON, default=dict)
+
     # Item fields — only meaningful when cat == "items" (the unified item
     # catalog lives in the lorebook). title == item name, content == item desc.
     item_type: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -197,14 +207,14 @@ class LorebookConfig(Base):
         JSON,
         default=lambda: {
             "pillars": 0, "world": 10, "characters": 20, "items": 30,
-            "monsters": 40, "spells": 50,
+            "species": 40, "spells": 50,
         },
     )
     injection_position: Mapped[dict] = mapped_column(
         JSON,
         default=lambda: {
             "pillars": "top", "world": "top", "characters": "top", "items": "top",
-            "monsters": "top", "spells": "top",
+            "species": "top", "spells": "top",
         },
     )
     # How many recent TURNS (player + narrator messages) keyword matching scans,

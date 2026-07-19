@@ -33,16 +33,23 @@ const INJECTION_POSITIONS: LorebookConfig['injectionPosition'][LoreCategory][] =
   'before_input',
 ]
 
-/** Returns a stable callback that runs `fn` after `delay` ms of quiet, so rapid
- *  edits coalesce into a single trailing call (used to debounce auto-save). */
-function useDebounced(fn: () => void, delay: number) {
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const fnRef = useRef(fn)
-  fnRef.current = fn
-  return useCallback(() => {
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => fnRef.current(), delay)
-  }, [delay])
+/** A section-local SAVE button + status, for sections with their own store
+ *  (World Rules, Story Style) — same manual-save pattern as the sticky
+ *  header, scoped to one section so it can be dropped in independently. */
+function SectionSaveBar({ dirty, saving, onSave }: { dirty: boolean; saving: boolean; onSave: () => void }) {
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      {saving && <span className="font-ui text-[9px] tracking-wider text-textdim">SAVING…</span>}
+      {!saving && dirty && <span className="font-ui text-[9px] tracking-wider text-gold2">UNSAVED CHANGES</span>}
+      <button
+        type="button"
+        onClick={onSave}
+        className="font-ui text-[9px] tracking-wider text-bg0 bg-gold hover:bg-gold2 px-2.5 py-1 rounded-sm transition-colors"
+      >
+        SAVE
+      </button>
+    </div>
+  )
 }
 
 // Sections in nav order — id (for scroll target + open state), label, and
@@ -92,9 +99,11 @@ export function SettingsPanel() {
     )
   }
 
-  // Debounced network flushes. Edits are applied optimistically via patchLocal,
-  // so the store is always current and saveSettings({}) PUTs the whole of it —
-  // rapid edits coalesce into one request, and nothing can clobber an edit.
+  // Manual save: edits are applied optimistically via patchLocal (instant,
+  // local-only — no network call while typing, so nothing can race a slow
+  // connection and clobber in-progress keystrokes), and the player presses
+  // SAVE to flush the whole of both stores in one PUT each.
+  const [dirty, setDirty] = useState(false)
   const flushSettings = useCallback(() => {
     void track(useSettingsStore.getState().saveSettings({}))
   }, [track])
@@ -112,13 +121,16 @@ export function SettingsPanel() {
       diceEnabled: n.diceEnabled,
     }))
   }, [track])
-  const scheduleSettings = useDebounced(flushSettings, 400)
-  const scheduleNarrator = useDebounced(flushNarrator, 400)
+  const handleSave = useCallback(() => {
+    flushSettings()
+    flushNarrator()
+    setDirty(false)
+  }, [flushSettings, flushNarrator])
 
-  // Optimistic-patch + schedule-flush. Names mirror the old useState setters so
-  // the (large) JSX below and the per-section Reset handlers stay unchanged.
-  const setS = (p: Partial<OpenRouterSettings>) => { settings.patchLocal(p); scheduleSettings() }
-  const setN = (p: Partial<typeof narrator>) => { narrator.patchLocal(p); scheduleNarrator() }
+  // Optimistic local patch only. Names mirror the old useState setters so the
+  // (large) JSX below and the per-section Reset handlers stay unchanged.
+  const setS = (p: Partial<OpenRouterSettings>) => { settings.patchLocal(p); setDirty(true) }
+  const setN = (p: Partial<typeof narrator>) => { narrator.patchLocal(p); setDirty(true) }
   // TTS availability re-checks when the enable toggle changes.
   const setTtsEnabled = (v: boolean) => { setS({ ttsEnabled: v }); void useTtsStore.getState().fetchStatus() }
 
@@ -223,7 +235,19 @@ export function SettingsPanel() {
       <div className="px-5 pt-5 pb-2 border-b border-line">
         <div className="flex items-center justify-between gap-2">
           <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">CONFIG</h2>
-          <SaveStatus state={saveState} onRetry={() => { flushSettings(); flushNarrator() }} />
+          <div className="flex items-center gap-2">
+            <SaveStatus state={saveState} />
+            {dirty && saveState !== 'saving' && (
+              <span className="font-ui text-[9px] tracking-wider text-gold2">UNSAVED CHANGES</span>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              className="font-ui text-[9px] tracking-wider text-bg0 bg-gold hover:bg-gold2 px-2.5 py-1 rounded-sm transition-colors"
+            >
+              SAVE
+            </button>
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap gap-1">
           {SECTIONS.map((s) => (
@@ -1114,18 +1138,24 @@ function BackdropManager() {
   )
 }
 
-// World Rules (R21) — the campaign's ruleset knobs. Auto-saves like the rest of
-// Config: optimistic patchLocal + a debounced PUT to /campaign-rules.
+// World Rules (R21) — the campaign's ruleset knobs. Manual save, like the
+// rest of Config: optimistic local patchLocal, PUT to /campaign-rules only
+// when SAVE is pressed (no debounced auto-flush — see R? "manual Save
+// button" in TODO.md).
 function WorldRulesSection() {
   const rules = useCampaignRulesStore()
-  const flush = useDebounced(() => {
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const save = () => {
+    setSaving(true)
     const r = useCampaignRulesStore.getState()
     void r.save({
       partySize: r.partySize, currencyName: r.currencyName, currencyAbbrev: r.currencyAbbrev,
       currencySymbol: r.currencySymbol, attributes: r.attributes, tone: r.tone,
-    })
-  }, 400)
-  const set = (p: Partial<CampaignRules>) => { rules.patchLocal(p); flush() }
+    }).finally(() => setSaving(false))
+    setDirty(false)
+  }
+  const set = (p: Partial<CampaignRules>) => { rules.patchLocal(p); setDirty(true) }
   const attrs = rules.attributes
   const setAttr = (i: number, patch: Partial<WorldAttribute>) =>
     set({ attributes: attrs.map((a, j) => (j === i ? { ...a, ...patch } : a)) })
@@ -1205,20 +1235,26 @@ function WorldRulesSection() {
       <p className="text-[10px] text-textdim font-body pt-1">
         Tone &amp; content rating moved to <span className="text-textsec">Narrator Instructions</span> above.
       </p>
+
+      <SectionSaveBar dirty={dirty} saving={saving} onSave={save} />
     </div>
   )
 }
 
-// Config: the campaign's Story Style selections — optimistic patchLocal + a
-// debounced PUT to /campaign-style (same pattern as Narration / World Rules).
+// Config: the campaign's Story Style selections — optimistic local patchLocal,
+// manual save (PUT to /campaign-style only when SAVE is pressed).
 function StoryStyleSection() {
   const defs = useStoryStyleStore((s) => s.defs)
   const fields = useStoryStyleStore((s) => s.fields)
   const patchLocal = useStoryStyleStore((s) => s.patchLocal)
   const fetchOptions = useStoryStyleStore((s) => s.fetchOptions)
-  const flush = useDebounced(() => {
-    void useStoryStyleStore.getState().save(useStoryStyleStore.getState().fields)
-  }, 400)
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const save = () => {
+    setSaving(true)
+    void useStoryStyleStore.getState().save(useStoryStyleStore.getState().fields).finally(() => setSaving(false))
+    setDirty(false)
+  }
 
   useEffect(() => { if (defs.length === 0) void fetchOptions() }, [defs.length, fetchOptions])
 
@@ -1230,8 +1266,9 @@ function StoryStyleSection() {
       <StyleFieldsEditor
         defs={defs}
         fields={fields}
-        onChange={(patch) => { patchLocal(patch); flush() }}
+        onChange={(patch) => { patchLocal(patch); setDirty(true) }}
       />
+      <SectionSaveBar dirty={dirty} saving={saving} onSave={save} />
     </div>
   )
 }
@@ -1535,19 +1572,11 @@ function ScopeChip({ scope }: { scope: Scope }) {
   )
 }
 
-function SaveStatus({ state, onRetry }: { state: 'idle' | 'saving' | 'saved' | 'error'; onRetry: () => void }) {
+function SaveStatus({ state }: { state: 'idle' | 'saving' | 'saved' | 'error' }) {
   if (state === 'idle') return null
   if (state === 'saving') return <span className="font-ui text-[9px] tracking-wider text-textdim">SAVING…</span>
   if (state === 'saved') return <span className="font-ui text-[9px] tracking-wider text-gold">ALL CHANGES SAVED</span>
-  return (
-    <button
-      type="button"
-      onClick={onRetry}
-      className="font-ui text-[9px] tracking-wider text-danger border border-danger-border rounded-sm px-1.5 py-0.5 hover:text-danger-hover transition-colors"
-    >
-      SAVE FAILED ↻ RETRY
-    </button>
-  )
+  return <span className="font-ui text-[9px] tracking-wider text-danger">SAVE FAILED — TRY AGAIN</span>
 }
 
 function Section({

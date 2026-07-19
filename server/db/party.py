@@ -24,8 +24,7 @@ class RuntimeCharacter:
     binding_id: str         # PartyBinding row id (internal)
     type: str               # persona | character
     role: str               # pc | member
-    basic_info: dict
-    field_skill: dict
+    basic_info: dict        # unified schema incl. `strengths` (see characters.py)
     equipment: dict
     in_party: bool
     last_spoke_turn: int
@@ -39,7 +38,6 @@ def _compose(binding: PartyBinding, identity: dict | None) -> RuntimeCharacter:
         type=identity.get("type", "persona" if binding.role == "pc" else "character"),
         role=binding.role,
         basic_info=dict(identity.get("basicInfo") or {}),
-        field_skill=dict(identity.get("fieldSkill") or {}),
         equipment=dict(binding.equipment or {}),
         in_party=bool(binding.in_party),
         last_spoke_turn=binding.last_spoke_turn or 0,
@@ -141,19 +139,19 @@ async def active_count(session: AsyncSession) -> int:
 # ── Identity writers (write the file) + create/bind orchestration ─
 
 async def set_pc_identity(
-    session: AsyncSession, basic_info: dict | None, field_skill: dict | None = None
+    session: AsyncSession, basic_info: dict | None
 ) -> RuntimeCharacter:
     """Upsert the player character: create the persona file + pc binding on first
     call; otherwise patch the identity file. Equipment is set separately."""
     b = await pc_binding(session)
     if b is None:
-        identity = char_files.create_character("persona", basic_info, field_skill)
+        identity = char_files.create_character("persona", basic_info)
         b = PartyBinding(character_id=identity["id"], role="pc", in_party=True, sort_order=0)
         session.add(b)
         await session.flush()
     else:
-        identity = char_files.update_identity(b.character_id, basic_info, field_skill) \
-            or char_files.create_character("persona", basic_info, field_skill, cid=b.character_id)
+        identity = char_files.update_identity(b.character_id, basic_info) \
+            or char_files.create_character("persona", basic_info, cid=b.character_id)
     return _compose(b, identity)
 
 
@@ -168,12 +166,11 @@ async def _next_member_order(session: AsyncSession) -> int:
 async def add_member(
     session: AsyncSession,
     basic_info: dict | None = None,
-    field_skill: dict | None = None,
     in_party: bool = True,
     character_id: str | None = None,
 ) -> RuntimeCharacter:
     """Create a new character file + a member binding for this adventure."""
-    identity = char_files.create_character("character", basic_info, field_skill, cid=character_id)
+    identity = char_files.create_character("character", basic_info, cid=character_id)
     b = PartyBinding(
         character_id=identity["id"], role="member",
         in_party=in_party, sort_order=await _next_member_order(session),
@@ -200,12 +197,12 @@ async def bind_existing(
 
 
 async def update_member_identity(
-    session: AsyncSession, character_id: str, basic_info: dict | None, field_skill: dict | None
+    session: AsyncSession, character_id: str, basic_info: dict | None
 ) -> RuntimeCharacter | None:
     b = await binding_for(session, character_id)
     if b is None or b.role != "member":
         return None
-    identity = char_files.update_identity(character_id, basic_info, field_skill)
+    identity = char_files.update_identity(character_id, basic_info)
     if identity is None:
         return None
     return _compose(b, identity)

@@ -493,7 +493,8 @@ async def migrate_characters_to_files() -> None:
             # Don't clobber an existing character file (e.g. a bundled card the
             # row is linked to by id) — only mint identity when it's new.
             if not char_files.exists(pc.id):
-                char_files.create_character("persona", pc.basic_info, None, cid=pc.id)
+                char_files.create_character(
+                    "persona", char_files.migrate_basic_info(pc.basic_info), cid=pc.id)
                 _seed_portrait(pc.id, pc.basic_info)
             s.add(PartyBinding(character_id=pc.id, role="pc",
                                equipment=pc.equipment or {}, in_party=True, sort_order=0))
@@ -502,7 +503,9 @@ async def migrate_characters_to_files() -> None:
         members = (await s.execute(select(PartyMember))).scalars().all() if pm_exists else []
         for i, m in enumerate(members):
             if not char_files.exists(m.id):
-                char_files.create_character("character", m.basic_info, m.field_skill, cid=m.id)
+                # Fold the legacy separate field_skill into basicInfo.strengths.
+                char_files.create_character(
+                    "character", char_files.migrate_basic_info(m.basic_info, m.field_skill), cid=m.id)
                 _seed_portrait(m.id, m.basic_info)
             s.add(PartyBinding(character_id=m.id, role="member", equipment=m.equipment or {},
                                in_party=bool(m.in_party), last_spoke_turn=m.last_spoke_turn or 0,

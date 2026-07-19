@@ -23,18 +23,52 @@ from pathlib import Path
 
 from server.db import database as db
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _CROP_NAME = "crop.jpg"
 _FULL_STEM = "full"
 _VOICE_STEM = "voice"
 _JSON_NAME = "character.json"
 
 # Identity fields carried by a character.json's basicInfo (portrait is NOT one —
-# the portrait is the sibling image files).
+# the portrait is the sibling image files). All strings — the schema is
+# narrative-first (apparentAge is descriptive text, not a number). `strengths`
+# replaces the old separate fieldSkill object (1-3 GM-facing moves as text).
 _BASIC_KEYS = (
-    "name", "gender", "species", "age", "heightCm", "weightKg",
-    "description", "likes", "dislikes", "personality", "drive", "other",
+    "name", "species", "sex", "apparentAge",
+    "description", "personality", "instinct", "strengths", "other",
 )
+
+# Legacy basicInfo keys mapped into the new schema by migrate_basic_info.
+_LEGACY_KEY_MAP = {"gender": "sex", "drive": "instinct"}
+_DROPPED_KEYS = ("likes", "dislikes", "heightCm", "weightKg")
+
+
+def migrate_basic_info(basic_info: dict | None, field_skill: dict | None = None) -> dict:
+    """Upgrade an old-shape ``basicInfo`` (+ the old separate ``fieldSkill``) into
+    the unified new schema. Pure and idempotent:
+
+    - gender → sex, drive → instinct (renamed)
+    - age (int) → apparentAge (str; 0/absent → "")
+    - likes/dislikes/heightCm/weightKg → dropped
+    - fieldSkill {name, description} → strengths "Name — description" (either alone
+      if only one is set); an existing non-empty ``strengths`` is kept as-is
+    - every key coerced to a string
+
+    Callers persist the result themselves if they choose to.
+    """
+    src = dict(basic_info or {})
+    for old, new in _LEGACY_KEY_MAP.items():
+        if old in src and new not in src:
+            src[new] = src[old]
+    # apparentAge from a legacy numeric age (only when apparentAge isn't set).
+    if "apparentAge" not in src and src.get("age"):
+        src["apparentAge"] = str(src["age"])
+    # strengths from a legacy fieldSkill (only when strengths isn't already set).
+    if not (src.get("strengths") or "").strip():
+        fs = dict(field_skill or {})
+        n, d = str(fs.get("name") or "").strip(), str(fs.get("description") or "").strip()
+        src["strengths"] = f"{n} — {d}" if n and d else (d or n)
+    return {k: str(src.get(k) or "") for k in _BASIC_KEYS}
 
 
 def _now() -> str:
@@ -115,19 +149,9 @@ def exists(cid: str) -> bool:
 # ── Identity read/write ───────────────────────────────────────────
 
 def _clean_basic_info(basic_info: dict | None) -> dict:
-    bi = dict(basic_info or {})
-    out: dict = {}
-    for k in _BASIC_KEYS:
-        if k in ("age", "heightCm", "weightKg"):
-            out[k] = int(bi.get(k) or 0)
-        else:
-            out[k] = bi.get(k) or ""
-    return out
-
-
-def _clean_field_skill(field_skill: dict | None) -> dict:
-    fs = dict(field_skill or {})
-    return {"name": fs.get("name") or "", "description": fs.get("description") or ""}
+    # migrate_basic_info both maps any legacy keys and coerces to the new schema,
+    # so a caller may pass either an old- or new-shape dict.
+    return migrate_basic_info(basic_info)
 
 
 # Identity-file cache keyed on the json's mtime — party/PC composites are
@@ -144,6 +168,11 @@ def read_character(cid: str) -> dict | None:
         if cached and cached[0] == mtime:
             return dict(cached[1])
         data = json.loads(path.read_text(encoding="utf-8"))
+        # Upgrade legacy files to the unified schema on read (idempotent): fold
+        # the old separate fieldSkill into basicInfo.strengths, map renamed keys.
+        data["basicInfo"] = migrate_basic_info(data.get("basicInfo"), data.get("fieldSkill"))
+        data.pop("fieldSkill", None)
+        data["schemaVersion"] = SCHEMA_VERSION
         _read_cache[cid] = (mtime, data)
         return dict(data)
     except (OSError, json.JSONDecodeError):
@@ -162,7 +191,6 @@ def write_character(cid: str, data: dict) -> None:
 def create_character(
     type: str = "character",
     basic_info: dict | None = None,
-    field_skill: dict | None = None,
     cid: str | None = None,
     created_at: str | None = None,
 ) -> dict:
@@ -174,24 +202,19 @@ def create_character(
         "schemaVersion": SCHEMA_VERSION,
         "createdAt": created_at or _now(),
         "basicInfo": _clean_basic_info(basic_info),
-        "fieldSkill": _clean_field_skill(field_skill),
     }
     write_character(cid, data)
     return data
 
 
-def update_identity(
-    cid: str, basic_info: dict | None = None, field_skill: dict | None = None
-) -> dict | None:
-    """Patch a character's basicInfo/fieldSkill (whichever is given). Returns the
-    updated identity, or None if the character doesn't exist."""
+def update_identity(cid: str, basic_info: dict | None = None) -> dict | None:
+    """Patch a character's basicInfo. Returns the updated identity, or None if the
+    character doesn't exist."""
     data = read_character(cid)
     if data is None:
         return None
     if basic_info is not None:
         data["basicInfo"] = _clean_basic_info(basic_info)
-    if field_skill is not None:
-        data["fieldSkill"] = _clean_field_skill(field_skill)
     write_character(cid, data)
     return data
 
@@ -232,7 +255,6 @@ def duplicate_character(cid: str) -> dict | None:
     new = create_character(
         type=src.get("type", "character"),
         basic_info=src.get("basicInfo"),
-        field_skill=src.get("fieldSkill"),
     )
     fp = full_path(cid)
     if fp:
@@ -316,10 +338,11 @@ def import_zip(raw: bytes) -> dict | None:
         identity = json.loads(z.read(_JSON_NAME))
     except (KeyError, json.JSONDecodeError):
         return None
+    # A zip may carry a legacy-shaped card — migrate_basic_info (via
+    # create_character's _clean_basic_info) folds fieldSkill into strengths.
     new = create_character(
         type=identity.get("type", "character"),
-        basic_info=identity.get("basicInfo"),
-        field_skill=identity.get("fieldSkill"),
+        basic_info=migrate_basic_info(identity.get("basicInfo"), identity.get("fieldSkill")),
     )
     for name in z.namelist():
         base = name.rsplit("/", 1)[-1]

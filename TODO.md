@@ -1024,7 +1024,9 @@ Ensure Editor has access to this, too.
 [ ] (from the architecture audit) Close the biggest test gaps. Client tests currently cover only the pure libs. Add: tests for the `chatStore` turn state machine (send → stream → done → swipe → regenerate → delete — the app's most complex state machine, currently untested); at least one end-to-end turn-cycle test (Playwright); and a contract test that fails when `shared/types/models.ts` drifts from the server schemas (they're hand-mirrored today with no sync enforcement). Server-side, add a multi-effect `_reverse_message_effects` case (grant + equip + set_scene in one turn, threading instance ids) to cover reversal's edge territory.
 
 ---
-[ ] In Config, the auto-saving makes it really difficult to type anything in (at least on mobile) due to latency in the saving, causing typed letters to disappear. We can return to the manual Save button.
+[x] In Config, the auto-saving makes it really difficult to type anything in (at least on mobile) due to latency in the saving, causing typed letters to disappear. We can return to the manual Save button.
+
+Done (commit b9f4508): Config no longer PUTs on a debounce timer while typing. Every field still updates the store instantly (optimistic `patchLocal`, so the UI stays responsive), but the network save only fires when you press **SAVE** — a slow/mobile round-trip can no longer land late and overwrite keystrokes typed after it was sent. The main Settings/Narrator section keeps its sticky-header save area (now a SAVE button + UNSAVED CHANGES / SAVING… / SAVE FAILED status instead of a silent auto-flush); World Rules and Story Style each got their own local SAVE button. Discrete controls (provider/model switch, checkboxes, selects) still save immediately — this only removes the keystroke-driven debounce.
 
 ---
 [x] Extend Characters in Lore with more fields, and add a dedicated Species section for structured creature/species templates ("monster blocks") covering both sapient peoples and monsters — combinable into one entry at read-time, like the Scenario tab.

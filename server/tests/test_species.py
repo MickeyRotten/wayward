@@ -270,3 +270,56 @@ def test_chronicler_species_proposal_composes_and_reverses(client):
     assert content3 == "Overview: A blind, pale newt found in deep caverns."
 
     run_cleanup(entry_id)
+
+
+# ── Integration: Editor create_lore/update_lore for species ────────
+
+def test_editor_species_create_and_update_composes(client):
+    from server.ai.planner import _exec_tool
+    from server.db.database import new_session
+    from server.db.models import LorebookEntry
+
+    async def create():
+        async with new_session() as s:
+            result, pending = await _exec_tool("create_lore", {
+                "cat": "species", "title": "Bog Sprite", "content": "unused-placeholder",
+                "speciesFields": {"overview": "A small, luminous marsh spirit."},
+            }, s)
+            assert pending is None
+            assert "Bog Sprite" in result
+            entry = (await s.execute(
+                select(LorebookEntry).where(LorebookEntry.title == "Bog Sprite")
+            )).scalars().first()
+            await s.commit()
+            return entry.id
+    entry_id = run(create())
+
+    async def check_created():
+        async with new_session() as s:
+            entry = await s.get(LorebookEntry, entry_id)
+            return entry.species_fields, entry.content
+    fields, content = run(check_created())
+    assert fields == {"overview": "A small, luminous marsh spirit."}
+    assert content == "Overview: A small, luminous marsh spirit."
+
+    async def update():
+        async with new_session() as s:
+            result, pending = await _exec_tool("update_lore", {
+                "title": "Bog Sprite",
+                "speciesFields": {"typicalGear": "None."},
+            }, s)
+            assert pending is None
+            assert "Bog Sprite" in result
+            await s.commit()
+    run(update())
+
+    async def check_updated():
+        async with new_session() as s:
+            entry = await s.get(LorebookEntry, entry_id)
+            return entry.species_fields, entry.content
+    fields2, content2 = run(check_updated())
+    assert fields2["overview"] == "A small, luminous marsh spirit."  # untouched
+    assert fields2["typicalGear"] == "None."
+    assert "Typical Gear: None." in content2
+
+    run_cleanup(entry_id)

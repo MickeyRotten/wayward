@@ -157,3 +157,62 @@ def test_equipment_renders_names_and_descriptions():
                         item_catalog=[sword], include_action_protocol=False)
     pc_block = next(m["content"] for m in msgs if "PLAYER CHARACTER" in m["content"])
     assert "rightHand: Sword — A trusty blade." in pc_block
+
+
+# ── Task notes, objectives, wishlist injection ────────────────────
+
+def _task(text, status="active", notes=""):
+    return NS(text=text, status=status, notes=notes)
+
+
+def _objective(text, status="active", detail=""):
+    return NS(text=text, status=status, detail=detail)
+
+
+def _wish(text, priority=0):
+    return NS(text=text, priority=priority)
+
+
+def test_task_notes_are_shown_to_the_narrator():
+    tasks = [_task("Find the sigil", notes="Ask the smith in Kal-Toth.")]
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", tasks=tasks,
+                        include_action_protocol=False)
+    block = next(m["content"] for m in msgs if "ACTIVE TASKS" in m["content"])
+    assert "Find the sigil" in block
+    assert "Ask the smith in Kal-Toth." in block
+
+
+def test_objectives_inject_only_active():
+    objectives = [
+        _objective("Gather a party of five", detail="Three so far."),
+        _objective("Old goal", status="completed"),
+    ]
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", objectives=objectives,
+                        include_action_protocol=False)
+    block = next(m["content"] for m in msgs if "OVERARCHING OBJECTIVES" in m["content"])
+    assert "Gather a party of five" in block
+    assert "Three so far." in block
+    assert "Old goal" not in block
+
+
+def test_wishlist_injects_with_priority_label():
+    wishes = [_wish("Recruit an Elf", priority=3), _wish("A betrayal arc", priority=0)]
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", wishes=wishes,
+                        include_action_protocol=False)
+    block = next(m["content"] for m in msgs if "PLAYER WISHLIST" in m["content"])
+    assert "Recruit an Elf (priority: high)" in block
+    assert "A betrayal arc" in block  # priority 0 → no label suffix
+    assert "A betrayal arc (priority" not in block
+
+
+def test_empty_goal_lists_inject_nothing():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi",
+                        objectives=[], wishes=[], tasks=[],
+                        include_action_protocol=False)
+    joined = "\n".join(m["content"] for m in msgs)
+    assert "OVERARCHING OBJECTIVES" not in joined
+    assert "PLAYER WISHLIST" not in joined

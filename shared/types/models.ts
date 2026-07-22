@@ -285,6 +285,26 @@ export interface Task {
   notes: string
 }
 
+// Overarching, direction-setting goals — bigger than a Task. They steer the
+// Narrator toward the adventure's guiding aims.
+export interface Objective {
+  id: string
+  text: string
+  status: TaskStatus
+  detail: string
+}
+
+// A player Wishlist entry — something the player hopes to see in the story. The
+// Narrator keeps these in mind and weaves them in when natural. priority:
+// 0 = normal, 1 = low, 2 = medium, 3 = high.
+export type WishPriority = 0 | 1 | 2 | 3
+
+export interface Wish {
+  id: string
+  text: string
+  priority: WishPriority
+}
+
 // Note: 'world' is the internal id for the "Locations" tab (kept for data
 // stability — existing entries and the locked Scenario are cat='world').
 export type LoreCategory = 'pillars' | 'world' | 'characters' | 'items' | 'species' | 'spells'

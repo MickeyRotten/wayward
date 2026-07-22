@@ -16,10 +16,12 @@ from server.api import (
     items,
     lore,
     narrator,
+    objectives,
     planner,
     settings,
     tasks,
     tts,
+    wishlist,
     worldbuild,
 )
 
@@ -35,6 +37,8 @@ for _module in (
     tts,         # text-to-speech
     items,       # item catalog, inventory, equip/unequip
     tasks,       # the flat to-do list
+    objectives,  # overarching, direction-setting goals
+    wishlist,    # player wants the narrator keeps in mind
     chat,        # messages/events, turn/swipe/regenerate/continue, streaming
     worldbuild,  # Chronicler proposals + action suggestions
     planner,     # the Editor's queued-delete apply

@@ -109,7 +109,8 @@ class NarratorUpdate(BaseModel):
     actionSuggestionsEnabled: bool | None = None
     actionSuggestionsInstructions: str | None = None
     actionSuggestionsMode: str | None = None  # 'separate' | 'inline'
-    actionOptionRules: list[str] | None = None
+    actionSuggestionsCount: int | None = None  # how many options to generate (1-6)
+    actionOptionRules: list[str] | None = None  # legacy; retained for back-compat
     firstMessageOptions: list[str] | None = None
     firstMessageAlternates: list[OpeningAlt] | None = None
     diceEnabled: bool | None = None
@@ -127,6 +128,7 @@ class NarratorResponse(BaseModel):
     actionSuggestionsEnabled: bool
     actionSuggestionsInstructions: str
     actionSuggestionsMode: str
+    actionSuggestionsCount: int
     actionOptionRules: list[str]
     firstMessageOptions: list[str]
     firstMessageAlternates: list[OpeningAlt]
@@ -476,6 +478,45 @@ class TaskUpdate(BaseModel):
     text: str | None = None
     status: str | None = None
     notes: str | None = None
+
+
+# --- Objectives (overarching, direction-setting goals) ---
+
+class ObjectiveSchema(BaseModel):
+    id: str
+    text: str
+    status: str = "active"  # active | completed | failed
+    detail: str = ""
+
+
+class ObjectiveCreate(BaseModel):
+    text: str
+    status: str = "active"
+    detail: str = ""
+
+
+class ObjectiveUpdate(BaseModel):
+    text: str | None = None
+    status: str | None = None
+    detail: str | None = None
+
+
+# --- Wishlist (player wants the Narrator keeps in mind) ---
+
+class WishSchema(BaseModel):
+    id: str
+    text: str
+    priority: int = 0  # 0 normal | 1 low | 2 medium | 3 high
+
+
+class WishCreate(BaseModel):
+    text: str
+    priority: int = 0
+
+
+class WishUpdate(BaseModel):
+    text: str | None = None
+    priority: int | None = None
 
 
 # --- Lorebook ---

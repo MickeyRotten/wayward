@@ -17,7 +17,7 @@ from server.api.common import _store_chat_image
 from server.api.schemas import ChatTurnRequest, PlannerDeletesApply
 from server.db import party as party_ops
 from server.db.database import get_session, new_session
-from server.db.models import ChatMessage, LorebookEntry, OpenRouterSettings, Task
+from server.db.models import ChatMessage, LorebookEntry, Objective, OpenRouterSettings, Task
 
 router = APIRouter()
 
@@ -126,6 +126,11 @@ async def planner_apply_deletes(
             t = await session.get(Task, d.targetId)
             if t:
                 await session.delete(t)
+                applied += 1
+        elif d.kind == "objective":
+            o = await session.get(Objective, d.targetId)
+            if o:
+                await session.delete(o)
                 applied += 1
         elif d.kind == "member":
             # Unbind the member from this adventure (identity file stays in the

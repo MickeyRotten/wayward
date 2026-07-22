@@ -222,3 +222,43 @@ def test_background_summary_with_stubbed_llm(client):
     content, boundary = run(check())
     assert content == "THE STORY SO FAR (stub)." and boundary > 0
     assert client.get("/api/journal").json()["summary"] == "THE STORY SO FAR (stub)."
+
+
+def test_objectives_crud(client):
+    created = client.post("/api/objectives", json={"text": "Defeat the Demon Queen", "detail": "Before the Blood Moon."})
+    assert created.status_code == 201
+    oid = created.json()["id"]
+    assert created.json()["status"] == "active"
+
+    listed = client.get("/api/objectives").json()
+    assert any(o["id"] == oid and o["detail"] == "Before the Blood Moon." for o in listed)
+
+    upd = client.put(f"/api/objectives/{oid}", json={"status": "completed"})
+    assert upd.json()["status"] == "completed"
+
+    assert client.delete(f"/api/objectives/{oid}").status_code == 204
+    assert all(o["id"] != oid for o in client.get("/api/objectives").json())
+
+
+def test_wishes_crud_and_priority_clamp_and_sort(client):
+    low = client.post("/api/wishes", json={"text": "A quiet inn night", "priority": 1}).json()
+    high = client.post("/api/wishes", json={"text": "Recruit an Elf", "priority": 99}).json()
+    assert high["priority"] == 3  # clamped to max
+
+    listed = client.get("/api/wishes").json()
+    ids = [w["id"] for w in listed]
+    # High priority sorts before low priority.
+    assert ids.index(high["id"]) < ids.index(low["id"])
+
+    client.put(f"/api/wishes/{low['id']}", json={"text": "A cosy inn night"})
+    assert any(w["id"] == low["id"] and w["text"] == "A cosy inn night" for w in client.get("/api/wishes").json())
+
+    for w in listed:
+        assert client.delete(f"/api/wishes/{w['id']}").status_code == 204
+
+
+def test_narrator_suggestions_count_round_trip_and_clamp(client):
+    assert client.put("/api/narrator", json={"actionSuggestionsCount": 5}).json()["actionSuggestionsCount"] == 5
+    assert client.put("/api/narrator", json={"actionSuggestionsCount": 99}).json()["actionSuggestionsCount"] == 6
+    assert client.put("/api/narrator", json={"actionSuggestionsCount": 0}).json()["actionSuggestionsCount"] == 1
+    client.put("/api/narrator", json={"actionSuggestionsCount": 4})  # restore default

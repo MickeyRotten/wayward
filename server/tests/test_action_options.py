@@ -1,7 +1,10 @@
 from server.ai.action_suggester import (
     DEFAULT_OPTION_RULES,
+    DEFAULT_SUGGESTIONS_COUNT,
     _to_first_person,
+    build_inline_options_guidance,
     normalize_option_rules,
+    normalize_suggestions_count,
     parse_inline_options,
 )
 
@@ -54,3 +57,19 @@ def test_rules_are_trimmed_and_capped():
     rules = normalize_option_rules(["  brave  ", "cowardly"] + ["x"] * 10)
     assert rules[0] == "brave" and rules[1] == "cowardly"
     assert len(rules) <= 6
+
+
+# ── suggestion count (single shared instruction) ──────────────────
+
+def test_suggestions_count_defaults_and_clamps():
+    assert normalize_suggestions_count(None) == DEFAULT_SUGGESTIONS_COUNT
+    assert normalize_suggestions_count("nonsense") == DEFAULT_SUGGESTIONS_COUNT
+    assert normalize_suggestions_count(0) == 1      # clamped up to the min
+    assert normalize_suggestions_count(99) == 6     # clamped down to the cap
+    assert normalize_suggestions_count(3) == 3
+
+
+def test_inline_guidance_requests_the_count_and_has_no_per_slot_rules():
+    guidance = build_inline_options_guidance(5)
+    assert "array of 5" in guidance
+    assert "OPTION RULES" not in guidance

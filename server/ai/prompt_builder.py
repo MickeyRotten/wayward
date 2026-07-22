@@ -7,7 +7,9 @@ from server.db.models import (
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
+    Objective,
     Task,
+    Wish,
 )
 from server.db.party import RuntimeCharacter
 
@@ -97,6 +99,8 @@ def build_prompt(
     story_summary: str | None = None,
     item_catalog: list[LorebookEntry] | None = None,
     tasks: list[Task] | None = None,
+    objectives: list[Objective] | None = None,
+    wishes: list[Wish] | None = None,
     lore_entries: list[LorebookEntry] | None = None,
     lore_config: LorebookConfig | None = None,
     max_context_tokens: int = 128000,
@@ -196,14 +200,51 @@ def build_prompt(
             roster_lines.append("\n".join(lines))
         messages.append({"role": "system", "content": "\n".join(roster_lines)})
 
-    # 5–6. Active task list (the party's open to-dos)
+    # 4b. Overarching objectives — the big, direction-setting goals the story
+    #     should bend toward (bigger than a task). Injected before tasks so the
+    #     narrator reads the destination before the next steps.
+    if objectives:
+        active_objectives = [o for o in objectives if o.status == "active"]
+        if active_objectives:
+            obj_lines = [
+                "OVERARCHING OBJECTIVES (the adventure's guiding goals — steer the "
+                "story toward these; don't resolve them cheaply):"
+            ]
+            for o in active_objectives:
+                obj_lines.append(f"  ◆ {o.text}")
+                if (o.detail or "").strip():
+                    obj_lines.append(f"      {o.detail.strip()}")
+            messages.append({"role": "system", "content": "\n".join(obj_lines)})
+
+    # 5–6. Active task list (the party's open to-dos). A task's notes are shown to
+    #      the narrator too, so context the player/Chronicler/Editor recorded on a
+    #      task informs the scene.
     if tasks:
         active_tasks = [t for t in tasks if t.status == "active"]
         if active_tasks:
             task_lines = ["ACTIVE TASKS:"]
             for t in active_tasks:
                 task_lines.append(f"  [ ] {t.text}")
+                if (t.notes or "").strip():
+                    task_lines.append(f"      Notes: {t.notes.strip()}")
             messages.append({"role": "system", "content": "\n".join(task_lines)})
+
+    # 6b. Player wishlist — soft steers the player hopes to see. Not goals to
+    #     complete; things to weave in naturally when the fiction allows.
+    if wishes:
+        wish_lines = [
+            "PLAYER WISHLIST (things the player hopes to see happen — weave them in "
+            "naturally when the story allows; never force them):"
+        ]
+        _PRIORITY_LABEL = {3: "high", 2: "medium", 1: "low"}
+        for w in wishes:
+            if not (w.text or "").strip():
+                continue
+            label = _PRIORITY_LABEL.get(int(w.priority or 0))
+            suffix = f" (priority: {label})" if label else ""
+            wish_lines.append(f"  • {w.text.strip()}{suffix}")
+        if len(wish_lines) > 1:
+            messages.append({"role": "system", "content": "\n".join(wish_lines)})
 
     # Story summary
     if story_summary:

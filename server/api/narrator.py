@@ -8,7 +8,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.ai.action_suggester import ACTION_SUGGESTIONS_GUIDANCE, normalize_option_rules
+from server.ai.action_suggester import (
+    ACTION_SUGGESTIONS_GUIDANCE,
+    normalize_option_rules,
+    normalize_suggestions_count,
+)
 from server.ai.narrator_actions import ACTION_INSTRUCTION
 from server.ai.planner import PLANNER_GUIDANCE
 from server.ai.scenario import normalize_openings
@@ -38,6 +42,7 @@ def _narrator_response(n: NarratorConfig, has_voice: bool = False) -> NarratorRe
         actionSuggestionsEnabled=bool(getattr(n, "action_suggestions_enabled", False)),
         actionSuggestionsInstructions=getattr(n, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE,
         actionSuggestionsMode=getattr(n, "action_suggestions_mode", "separate") or "separate",
+        actionSuggestionsCount=normalize_suggestions_count(getattr(n, "action_suggestions_count", None)),
         actionOptionRules=normalize_option_rules(getattr(n, "action_option_rules", None)),
         firstMessageOptions=[str(o) for o in (getattr(n, "first_message_options", None) or [])],
         firstMessageAlternates=normalize_openings(getattr(n, "first_message_alternates", None)),
@@ -88,6 +93,8 @@ async def update_narrator(
         n.action_suggestions_instructions = data.actionSuggestionsInstructions
     if data.actionSuggestionsMode is not None and data.actionSuggestionsMode in ("separate", "inline"):
         n.action_suggestions_mode = data.actionSuggestionsMode
+    if data.actionSuggestionsCount is not None:
+        n.action_suggestions_count = normalize_suggestions_count(data.actionSuggestionsCount)
     if data.actionOptionRules is not None:
         # Store exactly what the player configured; blanks are dropped and the
         # defaults kick in when the list ends up empty (mirrors read path).

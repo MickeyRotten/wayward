@@ -24,6 +24,7 @@ interface SettingsState {
   autoRetryCount: number
   reasoningEffort: string
   useTools: boolean
+  toolMode: string
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
   actionSuggestionsModelId: string
@@ -77,6 +78,7 @@ function applyResponse(s: SettingsResponse) {
     autoRetryCount: s.autoRetryCount,
     reasoningEffort: s.reasoningEffort,
     useTools: s.useTools,
+    toolMode: s.toolMode,
     worldbuildingMode: s.worldbuildingMode,
     worldbuildingModelId: s.worldbuildingModelId,
     actionSuggestionsModelId: s.actionSuggestionsModelId,
@@ -115,6 +117,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   autoRetryCount: 2,
   reasoningEffort: '',
   useTools: true,
+  toolMode: 'auto',
   worldbuildingMode: 'confirmation',
   worldbuildingModelId: '',
   actionSuggestionsModelId: '',
@@ -157,6 +160,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       autoRetryCount: update.autoRetryCount ?? state.autoRetryCount,
       reasoningEffort: update.reasoningEffort ?? state.reasoningEffort,
       useTools: update.useTools ?? state.useTools,
+      toolMode: update.toolMode ?? state.toolMode,
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,
       actionSuggestionsModelId: update.actionSuggestionsModelId ?? state.actionSuggestionsModelId,

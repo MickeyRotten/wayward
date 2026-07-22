@@ -138,7 +138,7 @@ export function SettingsPanel() {
   const { provider, modelId, nimModelId, customBaseUrl, customModelId,
     temperature, topP, minP, topK, frequencyPenalty: freqPen, presencePenalty: presPen,
     repetitionPenalty: repPen, maxTokensResponse: maxTokens, maxToolRounds,
-    autoRetryCount, reasoningEffort, useTools, worldbuildingMode: wbMode,
+    autoRetryCount, reasoningEffort, toolMode, worldbuildingMode: wbMode,
     worldbuildingModelId: wbModelId, actionSuggestionsModelId, plannerModelId, summaryThreshold,
     summaryModelId, visionModelId, visionUseSameKey, visionInstructions,
     ttsEnabled, ttsAutoplay } = settings
@@ -157,7 +157,7 @@ export function SettingsPanel() {
   const setMaxToolRounds = (v: number) => setS({ maxToolRounds: v })
   const setAutoRetryCount = (v: number) => setS({ autoRetryCount: v })
   const setReasoningEffort = (v: string) => setS({ reasoningEffort: v })
-  const setUseTools = (v: boolean) => setS({ useTools: v })
+  const setToolMode = (v: string) => setS({ toolMode: v })
   const setWbMode = (v: OpenRouterSettings['worldbuildingMode']) => setS({ worldbuildingMode: v })
   const setWbModelId = (v: string) => setS({ worldbuildingModelId: v })
   const setActionSuggestionsModelId = (v: string) => setS({ actionSuggestionsModelId: v })
@@ -198,7 +198,7 @@ export function SettingsPanel() {
   // text fields fall back to the built-in defaults server-side.
   const resetAiModel = () => setS({ temperature: 0.7, topP: 1, minP: 0, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokensResponse: 1000 })
   const resetAgents = () => {
-    setS({ useTools: true, maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
+    setS({ toolMode: 'auto', maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
     setN({ actionSuggestionsEnabled: false })
   }
   const resetWorld = () => setN({ spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
@@ -423,15 +423,17 @@ export function SettingsPanel() {
 
             {(() => {
               const selected = settings.availableModels.find((m) => m.id === activeModelId)
-              const legacyByModel = useTools && selected && !selected.supportsTools
-              const legacyByToggle = !useTools
-              if (!legacyByModel && !legacyByToggle) return null
+              const autoFallback = toolMode === 'auto' && selected && !selected.supportsTools
+              const forcedText = toolMode === 'text'
+              const forcedOff = toolMode === 'off'
+              if (!autoFallback && !forcedText && !forcedOff) return null
+              const msg = forcedOff
+                ? 'Tool Mode is Off — the narrator writes pure prose and changes no game state.'
+                : forcedText
+                  ? 'Tool Mode is Text protocol — the narrator uses the <<<ACTIONS>>> text block instead of native tools.'
+                  : 'This model does not support tool calling — the narrator falls back to the text-block action protocol.'
               return (
-                <p className="text-[10px] text-gold font-body border border-line bg-bg0 px-2 py-1">
-                  {legacyByToggle
-                    ? 'Tools are off — the narrator uses the legacy text-block action protocol.'
-                    : 'This model does not support tool calling — the narrator will fall back to the legacy text-block action protocol.'}
-                </p>
+                <p className="text-[10px] text-gold font-body border border-line bg-bg0 px-2 py-1">{msg}</p>
               )
             })()}
 
@@ -475,13 +477,14 @@ export function SettingsPanel() {
                   onChange={(e) => setReasoningEffort(e.target.value)}
                 >
                   <option value="">Provider default</option>
+                  <option value="off">Off (disable reasoning)</option>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                 </select>
                 <span className="block text-[10px] text-textdim font-body mt-0.5">
                   Reasoning models only; sent via OpenRouter. Thinking spends the
-                  Max Tokens budget — the chat shows the phase live.
+                  Max Tokens budget — the chat shows the phase live. <span className="text-textsec">Off</span> disables it so the whole budget goes to narration; <span className="text-textsec">Provider default</span> leaves the model's own setting untouched.
                 </span>
               </label>
             </div>
@@ -495,13 +498,18 @@ export function SettingsPanel() {
           </p>
 
           <SubSection title="Narrator Tools" scope="Global">
-            <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
-              <input
-                type="checkbox"
-                checked={useTools}
-                onChange={(e) => setUseTools(e.target.checked)}
-              />
-              Use tools (agent loop)
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Tool Mode</span>
+              <select
+                className="w-full border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2"
+                value={toolMode}
+                onChange={(e) => setToolMode(e.target.value)}
+              >
+                <option value="auto">Auto (native if supported, else text)</option>
+                <option value="native">Native tools (agent loop)</option>
+                <option value="text">Text protocol (&lt;&lt;&lt;ACTIONS&gt;&gt;&gt;)</option>
+                <option value="off">Off (pure prose, no state changes)</option>
+              </select>
             </label>
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Max Tool Rounds</span>
@@ -514,7 +522,7 @@ export function SettingsPanel() {
               />
             </label>
             <p className="text-[10px] text-textdim font-body">
-              When on, the narrator calls tools (grant/equip/scene/etc.) over up to this many round-trips per turn. When off, it uses the legacy text-block protocol.
+              How the narrator changes game state (grant/equip/scene/etc.). <span className="text-textsec">Auto</span> uses native tool calling when the model supports it, otherwise the text-block protocol. <span className="text-textsec">Text protocol</span> forces the text block — more reliable on strong narrative models that call tools poorly. <span className="text-textsec">Native</span> caps at Max Tool Rounds per turn. <span className="text-textsec">Off</span> disables state changes entirely.
             </p>
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Auto-retry on error / safety block</span>

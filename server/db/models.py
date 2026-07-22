@@ -68,6 +68,12 @@ class OpenRouterSettings(Base):
     # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.
     max_tool_rounds: Mapped[int] = mapped_column(Integer, default=6)
     use_tools: Mapped[bool] = mapped_column(Integer, default=True)
+    # Narrator state-mutation path (supersedes use_tools, which now only seeds
+    # this on migration): 'auto' (native tool loop when the model supports tools,
+    # else the hardened <<<ACTIONS>>> text protocol), 'native' (force the tool
+    # loop), 'text' (force the text protocol — reliable on weaker/older narrative
+    # models that call tools poorly), 'off' (no state mutation; pure prose).
+    tool_mode: Mapped[str] = mapped_column(String, default="auto")
     # Auto-retry a turn's model call on an error or safety-filter block, up to
     # this many extra attempts before surfacing the error (0 = off). Retries
     # happen per model call, so tools that already ran are never re-applied.

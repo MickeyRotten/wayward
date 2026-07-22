@@ -389,25 +389,34 @@ async def _load_game_context(session: AsyncSession):
     return settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config
 
 
-async def _should_use_tools(settings: OpenRouterSettings) -> bool:
-    """Agentic tool loop runs when enabled AND the selected model supports tools.
+async def _resolve_narration_mode(settings: OpenRouterSettings) -> str:
+    """Resolve the narrator's state-mutation path from ``tool_mode``:
 
-    Falls back to the legacy text-block path otherwise. Model support is read
-    from the (cached) OpenRouter model list; on any failure we trust the toggle
-    and let the call surface an error rather than silently downgrading."""
-    if not settings.use_tools:
-        return False
+    - ``'native'`` — the agentic tool loop (needs a tool-capable model);
+    - ``'text'``   — the hardened ``<<<ACTIONS>>>`` text protocol (reliable on
+      weaker/older narrative models that call tools poorly);
+    - ``'off'``    — no state mutation; pure prose.
+
+    ``'auto'`` picks native when the selected model advertises tool support, else
+    text. On a model-list fetch failure we assume native and let the call surface
+    any error rather than silently downgrading. (An unset/legacy value derives
+    from the old ``use_tools`` boolean.)"""
+    mode = (getattr(settings, "tool_mode", "") or "").strip().lower()
+    if mode not in ("auto", "native", "text", "off"):
+        mode = "auto" if getattr(settings, "use_tools", True) else "text"
+    if mode != "auto":
+        return mode
     base_url, api_key, main_model = provider_endpoint(settings)
     # Non-OpenRouter providers (NIM/custom) report every model as tool-capable
-    # in fetch_models, so this check is effectively a no-op there — trust the toggle.
+    # in fetch_models, so this resolves to native there — trust the picker.
     try:
         models = await fetch_models(api_key, base_url=base_url)
         m = next((x for x in models if x["id"] == main_model), None)
         if m is not None:
-            return bool(m.get("supportsTools"))
+            return "native" if m.get("supportsTools") else "text"
     except Exception:
-        log.info("_should_use_tools: model list fetch failed; assuming tool support")
-    return True
+        log.info("_resolve_narration_mode: model list fetch failed; assuming native")
+    return "native"
 
 
 async def _maybe_summarize_and_build(
@@ -417,7 +426,7 @@ async def _maybe_summarize_and_build(
     player_message: str,
     current_turn: int,
     session: AsyncSession,
-    agentic: bool = False,
+    narration_mode: str = "native",
     item_catalog: list[LorebookEntry] | None = None,
     tasks: list[Task] | None = None,
     lore_entries: list[LorebookEntry] | None = None,
@@ -495,7 +504,7 @@ async def _maybe_summarize_and_build(
         lore_config=lore_config,
         max_context_tokens=settings.max_context_tokens,
         max_response_tokens=settings.max_tokens_response,
-        include_action_protocol=not agentic,
+        include_action_protocol=(narration_mode == "text"),
         first_message_override=getattr(summary, "opening_message", None),
         campaign_rules=rules_dict,
     )
@@ -612,12 +621,13 @@ async def chat_turn(
     # What the narrator sees: the message text plus the image description.
     prompt_message = augment_user_content(data.message, image_desc) if image_path else data.message
 
-    agentic = await _should_use_tools(settings)
+    mode = await _resolve_narration_mode(settings)
+    agentic = mode == "native"
 
-    # Legacy path: deterministic item-use detection on the player's message
-    # (decrement deferred to the save transaction). In agentic mode the
-    # consume_item tool replaces this, so detection is skipped.
-    player_deltas = [] if agentic else await _detect_player_deltas(data.message, session)
+    # Text-protocol path only: deterministic item-use detection on the player's
+    # message (decrement deferred to the save transaction). Native mode uses the
+    # consume_item tool; 'off' mutates nothing — so both skip detection.
+    player_deltas = await _detect_player_deltas(data.message, session) if mode == "text" else []
     await session.commit()
 
     messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
@@ -627,7 +637,7 @@ async def chat_turn(
         player_message=prompt_message,
         current_turn=current_turn,
         session=session,
-        agentic=agentic,
+        narration_mode=mode,
         item_catalog=catalog,
         tasks=tasks,
         lore_entries=lore_entries,
@@ -709,10 +719,11 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     # of this turn — drop them; the re-run's Chronicler pass will record fresh.
     await reverse_chronicler_effects(session, turn, exact=True)
     await session.commit()
-    agentic = await _should_use_tools(settings)
-    # Re-detect against the now-restored inventory (legacy path only); agentic
-    # mode re-derives item use through the consume_item tool during the loop.
-    player_deltas = [] if agentic else await _detect_player_deltas(user_msg.content, session)
+    mode = await _resolve_narration_mode(settings)
+    agentic = mode == "native"
+    # Re-detect against the now-restored inventory (text-protocol path only);
+    # native mode re-derives item use through the consume_item tool during the loop.
+    player_deltas = await _detect_player_deltas(user_msg.content, session) if mode == "text" else []
 
     messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
         settings, narrator, pc, party,
@@ -724,7 +735,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         ),
         current_turn=turn,
         session=session,
-        agentic=agentic,
+        narration_mode=mode,
         item_catalog=catalog,
         tasks=tasks,
         lore_entries=lore_entries,
@@ -804,10 +815,11 @@ async def regenerate(
     )
 
     await session.commit()
-    agentic = await _should_use_tools(settings)
+    mode = await _resolve_narration_mode(settings)
+    agentic = mode == "native"
     # Re-run detection on the same player message against the restored inventory
-    # (legacy path only; agentic mode uses the consume_item tool).
-    player_deltas = [] if agentic else await _detect_player_deltas(last_user_msg.content, session)
+    # (text-protocol path only; native mode uses the consume_item tool).
+    player_deltas = await _detect_player_deltas(last_user_msg.content, session) if mode == "text" else []
 
     history = [m for m in all_messages if m.turn_number < last_turn]
 
@@ -821,7 +833,7 @@ async def regenerate(
         ),
         current_turn=last_turn,
         session=session,
-        agentic=agentic,
+        narration_mode=mode,
         item_catalog=catalog,
         tasks=tasks,
         lore_entries=lore_entries,
@@ -915,7 +927,7 @@ async def continue_narration(session: AsyncSession = Depends(get_session)):
         player_message=(last_user.content if last_user else "(continue the scene)"),
         current_turn=last_turn,
         session=session,
-        agentic=True,  # skips the legacy action protocol — continuation is prose-only
+        narration_mode="native",  # skips the action protocol — continuation is prose-only
         item_catalog=catalog,
         tasks=tasks,
         lore_entries=lore_entries,

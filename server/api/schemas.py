@@ -224,8 +224,9 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxPartySize: int = 3
     maxToolRounds: int = 6
     autoRetryCount: int = 2
-    reasoningEffort: str = ""  # '' = provider default | low | medium | high
+    reasoningEffort: str = ""  # '' = provider default | low | medium | high | off
     useTools: bool = True
+    toolMode: str = "auto"  # auto | native | text | off
     worldbuildingMode: str = "confirmation"
     worldbuildingModelId: str = ""
     actionSuggestionsModelId: str = ""
@@ -262,6 +263,7 @@ class OpenRouterSettingsResponse(BaseModel):
     autoRetryCount: int
     reasoningEffort: str
     useTools: bool
+    toolMode: str
     worldbuildingMode: str
     worldbuildingModelId: str
     actionSuggestionsModelId: str

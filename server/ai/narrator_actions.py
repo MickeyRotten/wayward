@@ -26,9 +26,61 @@ from server.db.models import (
 
 log = logging.getLogger("wayward.narrator_actions")
 
-ACTION_BLOCK_RE = re.compile(
-    r"<<<ACTIONS>>>\s*(.*?)\s*<<<END ACTIONS>>>", re.DOTALL
-)
+# Tolerant markers: weaker/older narrative models drift on the exact spelling
+# (extra spaces, casing) and routinely forget the closing marker. Matching
+# loosely — and salvaging the JSON even when the block is malformed — keeps the
+# text-protocol path reliable on exactly the models that need it.
+_ACTION_START_RE = re.compile(r"<<<\s*ACTIONS\s*>>>", re.IGNORECASE)
+_ACTION_END_RE = re.compile(r"<<<\s*END\s+ACTIONS\s*>>>", re.IGNORECASE)
+
+
+def _extract_json_object(s: str) -> str | None:
+    """Return the first brace-balanced ``{...}`` object in ``s`` (string- and
+    escape-aware), or None. Salvages a valid object even when the model appended
+    trailing prose after it or wrapped it in stray characters."""
+    start = s.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start:i + 1]
+    return None
+
+
+def _parse_actions_json(candidate: str) -> dict | None:
+    """Parse the JSON between the action markers, tolerant of trailing prose or
+    minor malformation: try the whole span, then a brace-matched object."""
+    candidate = candidate.strip()
+    if not candidate:
+        return None
+    for text in (candidate, _extract_json_object(candidate)):
+        if not text:
+            continue
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    log.warning("Failed to parse narrator action block JSON: %s", candidate[:200])
+    return None
 
 # Maps catalog slot categories to the Equipment field names they can be equipped into.
 # The catalog uses broad categories ("Head", "Hands", "Torso", etc.)
@@ -59,25 +111,34 @@ def parse_action_block(raw_response: str) -> tuple[str, dict | None]:
     Returns:
         (clean_text, actions_dict | None) -- the prose with the block removed,
         and the parsed JSON actions dict if valid, else None.
+
+    Tolerant by design (weaker models are the ones that reach this path): a
+    missing closing marker is accepted (the JSON runs to end-of-text), the JSON
+    is salvaged via brace-matching when the model appended stray characters, and
+    the ``<<<ACTIONS>>>`` span is ALWAYS stripped from the displayed prose — even
+    when parsing fails — so a malformed block can never leak into the scene.
     """
-    match = ACTION_BLOCK_RE.search(raw_response)
-    if not match:
+    m = _ACTION_START_RE.search(raw_response)
+    if not m:
         return raw_response, None
 
-    clean = raw_response[: match.start()].rstrip() + raw_response[match.end() :]
+    before = raw_response[: m.start()]
+    rest = raw_response[m.end():]
+    end = _ACTION_END_RE.search(rest)
+    if end:
+        candidate = rest[: end.start()]
+        after = rest[end.end():]
+    else:
+        # No closing marker — treat everything after <<<ACTIONS>>> as the block.
+        candidate = rest
+        after = ""
+
+    clean = before.rstrip()
+    if after.strip():
+        clean = (clean + "\n" + after.strip()).strip()
     clean = clean.strip()
 
-    try:
-        actions = json.loads(match.group(1))
-    except json.JSONDecodeError:
-        log.warning("Failed to parse narrator action block JSON: %s", match.group(1)[:200])
-        return clean, None
-
-    if not isinstance(actions, dict):
-        log.warning("Narrator action block is not a dict: %s", type(actions))
-        return clean, None
-
-    return clean, actions
+    return clean, _parse_actions_json(candidate)
 
 
 async def execute_actions(

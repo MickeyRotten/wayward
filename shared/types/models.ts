@@ -134,9 +134,11 @@ export interface OpenRouterSettings {
   maxPartySize: number
   maxToolRounds: number
   autoRetryCount: number
-  /** '' = provider default | 'low' | 'medium' | 'high' (OpenRouter reasoning models). */
+  /** '' = provider default | 'low' | 'medium' | 'high' | 'off' (OpenRouter reasoning models). */
   reasoningEffort: string
   useTools: boolean
+  /** Narrator state-mutation path: 'auto' | 'native' | 'text' | 'off'. Supersedes useTools. */
+  toolMode: string
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
   actionSuggestionsModelId: string

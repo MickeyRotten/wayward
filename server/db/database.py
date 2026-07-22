@@ -230,6 +230,18 @@ async def _run_app_migrations() -> None:
             cols = [row[1] for row in result.fetchall()]
             if column not in cols:
                 await conn.execute(text(ddl))
+        # tool_mode supersedes the legacy use_tools boolean. On first add, seed it
+        # from use_tools (True→'auto', False→'text') so a user who had tools off
+        # stays on the reliable text protocol; afterwards the user's own tool_mode
+        # choice is authoritative and never overwritten (guarded on column absence).
+        cols = [row[1] for row in (await conn.execute(
+            text("PRAGMA table_info(openrouter_settings)"))).fetchall()]
+        if "tool_mode" not in cols:
+            await conn.execute(text(
+                "ALTER TABLE openrouter_settings ADD COLUMN tool_mode VARCHAR DEFAULT 'auto'"))
+            await conn.execute(text(
+                "UPDATE openrouter_settings SET tool_mode = "
+                "CASE WHEN use_tools = 0 THEN 'text' ELSE 'auto' END"))
 
 
 async def _run_scope_migrations() -> None:

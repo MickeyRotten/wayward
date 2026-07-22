@@ -39,6 +39,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         autoRetryCount=int(getattr(s, "auto_retry_count", 2) or 0),
         reasoningEffort=getattr(s, "reasoning_effort", "") or "",
         useTools=bool(s.use_tools),
+        toolMode=getattr(s, "tool_mode", "auto") or "auto",
         worldbuildingMode=s.worldbuilding_mode,
         worldbuildingModelId=s.worldbuilding_model_id,
         actionSuggestionsModelId=getattr(s, "action_suggestions_model_id", "") or "",
@@ -97,8 +98,11 @@ async def update_openrouter_settings(
     s.max_party_size = data.maxPartySize
     s.max_tool_rounds = data.maxToolRounds
     s.auto_retry_count = max(0, min(5, data.autoRetryCount))
-    s.reasoning_effort = data.reasoningEffort if data.reasoningEffort in ("", "low", "medium", "high") else ""
-    s.use_tools = data.useTools
+    s.reasoning_effort = data.reasoningEffort if data.reasoningEffort in ("", "low", "medium", "high", "off") else ""
+    s.tool_mode = data.toolMode if data.toolMode in ("auto", "native", "text", "off") else "auto"
+    # use_tools is legacy (superseded by tool_mode); keep it coherent for any
+    # old reader — text/off imply the non-native path.
+    s.use_tools = data.toolMode in ("auto", "native")
     s.worldbuilding_mode = data.worldbuildingMode
     s.worldbuilding_model_id = data.worldbuildingModelId
     s.action_suggestions_model_id = data.actionSuggestionsModelId

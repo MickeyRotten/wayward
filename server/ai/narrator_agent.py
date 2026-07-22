@@ -51,6 +51,19 @@ FINAL_ROUND_NUDGE = (
     "equip, or scene change that wasn't already carried out by a tool above."
 )
 
+# State-write tools whose effect does not need to shape the prose that follows,
+# so a beat narrated *before* the call is still consistent with it. When a model
+# narrates the whole beat and only then appends one of these, we keep the beat
+# instead of discarding and regenerating it (see the preamble handling below).
+# skill_check and the read tools are deliberately excluded — their result must
+# be free to change what actually gets narrated.
+_SAFE_WRITE_TOOLS = frozenset({
+    "set_scene", "grant_item", "remove_item", "consume_item", "equip", "unequip",
+})
+# A streamed beat this long (chars) accompanying only safe writes is treated as
+# real narration, not throwaway tool preamble.
+_MIN_PREAMBLE_NARRATION = 40
+
 # --- Tool schemas (OpenAI/OpenRouter function-calling format) ---------------
 
 _SLOT_ENUM = [
@@ -235,14 +248,17 @@ _HANDLERS = {
 }
 
 
-def _parse_args(raw: str) -> dict:
-    if not raw:
+def _parse_args(raw: str) -> dict | None:
+    """Parse tool-call argument JSON. Returns ``{}`` for a no-argument call and
+    ``None`` when the JSON is malformed — the caller asks the model to resend
+    (validate-and-repair) rather than silently running with empty args."""
+    if not raw or not raw.strip():
         return {}
     try:
         parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else {}
     except json.JSONDecodeError:
-        return {}
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 async def run_narrator_agent(
@@ -387,14 +403,33 @@ async def run_narrator_agent(
                 final_content = content
                 break
 
-            # This was a tool round — any content it streamed was preamble; drop it.
-            if streamed:
+            # A model (notably the DeepSeek family) may narrate the whole beat and
+            # THEN append a state-write tool call in the same message. Treating that
+            # prose as throwaway preamble — discarding it and regenerating on the
+            # next round — is the "write, delete, rewrite" artifact. When the
+            # streamed content is a substantial narration AND every requested tool
+            # is a non-prose-shaping state write, accept it as the final beat: run
+            # the tools and stop, with no wasteful re-narration (#5-1).
+            tool_names = [tc["name"] for tc in tool_calls]
+            accept_preamble = (
+                len(content.strip()) >= _MIN_PREAMBLE_NARRATION
+                and all(n in _SAFE_WRITE_TOOLS for n in tool_names)
+            )
+
+            if accept_preamble:
+                # Keep the already-streamed beat as the final narration.
+                final_content = content
+            elif streamed:
+                # Genuine tool preamble — clear it from the player's view. It is
+                # ALSO dropped from the transcript (content=None below) so the next
+                # round re-narrates the beat cleanly instead of CONTINUING text the
+                # player can no longer see (#5-2).
                 yield {"type": "discard"}
 
             # Record the assistant's tool-call message in the running transcript.
             messages.append({
                 "role": "assistant",
-                "content": content or None,
+                "content": content if accept_preamble else None,
                 "tool_calls": [
                     {"id": tc["id"], "type": "function",
                      "function": {"name": tc["name"], "arguments": tc["arguments"]}}
@@ -405,6 +440,15 @@ async def run_narrator_agent(
             for tc in tool_calls:
                 name = tc["name"]
                 args = _parse_args(tc["arguments"])
+                if args is None:
+                    # Malformed argument JSON — don't guess. Tell the model so it
+                    # can resend on the next round (validate-and-repair).
+                    note = (f"Error: the arguments for {name} were not valid JSON. "
+                            f"Call {name} again with a single valid JSON object.")
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": note})
+                    log.info("AGENT TOOL turn=%s %s -> malformed args, requested resend", current_turn, name)
+                    yield {"type": "tool", "name": name, "result": note, "ok": False}
+                    continue
                 effect = await _execute_tool(name, args, agent_session, current_turn)
                 inv_deltas.extend(effect.inv_deltas)
                 equip_changes.extend(effect.equip_changes)
@@ -422,6 +466,10 @@ async def run_narrator_agent(
                 yield {"type": "tool", "name": name, "result": effect.result, "ok": effect.ok}
 
             await agent_session.commit()
+
+            if accept_preamble:
+                # The beat is written and the state writes are applied — done.
+                break
 
     yield {
         "type": "final",

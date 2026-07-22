@@ -2,7 +2,8 @@
 
 When Planning mode is toggled on, the chat's primary agent becomes the Planner:
 its own core instructions and full CRUD over lore, quests, party members, the
-player character, the Scenario, and the Narrator's instructions. The player
+player character, the Scenario, and the Story Style (including the narrator's
+custom instructions — but never the core Narrator role/behaviour). The player
 talks to it directly and it creates/edits many things per turn, then replies
 conversationally.
 
@@ -56,7 +57,7 @@ EQUIP_SLOTS = [
 ]
 
 
-PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, the party, the player character, the Scenario, and even the Narrator's instructions.
+PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, the party, the player character, the Scenario, and the Story Style (genre/tone/writing style/etc., plus the narrator's freeform custom instructions).
 
 How you work:
 - Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a task, or a character's full set of gear.
@@ -70,9 +71,9 @@ How you work:
 - EQUIPPING — STRICT ORDER: an item must EXIST before it can be equipped. To outfit the PC or a party member, for each piece: (1) create_item first (type Equipment, with a slot), THEN (2) equip it into the precise slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Never call equip on an item you have not created — it will fail. Creating an item does NOT equip it; you must call equip as the second step.
 - TIMELESS ENTRIES: write every lore/item entry as a permanent world fact, not a note about the current scene or party. Items — describe the item itself, generically (what it is/does), never who currently holds or wears it, and always give it a proper type (and slot for Equipment). World/places — describe the place generically; nothing about the party or what they're doing there. Species — the creature or people in general, using the structured speciesFields rather than one blob of content. Spells — the effect and its limits. Characters (NPCs) — who they are, not the party's momentary interaction with them.
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
-- CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
+- CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can read the current Story Style (get_story_style) to match the intended tone, and edit the Scenario, the Story Style, or the opening narration (set_first_message) when asked. You do NOT edit the Narrator's core instructions (its role and behaviour) — to adjust how the narrator writes, change the Story Style: its genre/tone/writing-style/etc. options, or the freeform customInstructions field for anything the options don't cover.
 - READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, task, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
-- SENSITIVE OVERWRITES: set_narrator_instructions and set_first_message REPLACE the whole existing text and take effect immediately — only do them when the player clearly asks. set_scenario and set_story_style are PARTIAL updates instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario / get_story_style first if you need to see the current values before editing one. set_story_style is the right tool when the player asks to change the narration's genre, tone, writing style, verbosity, content rating, perspective, or structure ("make it darker", "write more like Pratchett", "third person"). Always tell the player explicitly in your reply what you changed.
+- SENSITIVE OVERWRITES: set_first_message REPLACES the whole existing opening text and takes effect immediately — only do it when the player clearly asks. set_scenario and set_story_style are PARTIAL updates instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario / get_story_style first if you need to see the current values before editing one. set_story_style is the right tool when the player asks to change how the narration reads — its genre, tone, writing style, verbosity, content rating, perspective, or structure ("make it darker", "write more like Pratchett", "third person") — and its customInstructions field is where extra freeform narration guidance goes ("always end scenes on a hook"). Always tell the player explicitly in your reply what you changed.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
 - If the player is just chatting or asking questions, answer normally without calling tools.
@@ -228,9 +229,6 @@ TOOL_SCHEMAS: list[dict] = [
         [],
     ),
     _fn("get_story_style", "Read the campaign's current Story Style selections (genre, tone, writing style, verbosity, content limit, perspective, structure, custom instructions).", {}, []),
-    _fn("set_narrator_instructions", "Replace the Narrator's core system instructions (tone/rules of narration).",
-        {"content": {"type": "string"}}, ["content"]),
-    _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
     _fn("set_first_message", "Set the opening narration shown before the player's first turn (the campaign's First Message).",
         {"content": {"type": "string"}}, ["content"]),
     _fn("set_first_message_alternates", "Set the ALTERNATE opening narrations (like alternate greetings): the full list of additional openings the player can swipe between at turn 0, besides the primary First Message. Each has its own narration and its own scripted options. Pass the complete list (replaces the existing one); pass [] to clear.",
@@ -556,18 +554,6 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         wire = style.to_wire(getattr(cfg, "style_fields", None) if cfg else None)
         return "\n".join(f"{k}: {v or '(empty)'}" for k, v in wire.items()), None
 
-    if name == "set_narrator_instructions":
-        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
-        if not cfg:
-            cfg = NarratorConfig()
-            session.add(cfg)
-        cfg.instructions = args.get("content", "")
-        return "Updated the Narrator's instructions.", None
-
-    if name == "get_narrator_instructions":
-        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
-        return (cfg.instructions or "(using the built-in default)") if cfg else "(none)", None
-
     if name == "set_first_message":
         cfg = (await session.execute(select(NarratorConfig))).scalars().first()
         if not cfg:
@@ -687,7 +673,10 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
         tool_results: list[str] = []  # for an empty-reply fallback
 
         base_url, api_key, main_model = provider_endpoint(settings)
-        log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, main_model or "?")
+        # Optional separate Editor model (blank => main model), same pattern as
+        # the Chronicler/suggester overrides.
+        editor_model = (getattr(settings, "planner_model_id", "") or "").strip() or main_model
+        log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, editor_model or "?")
 
         for round_idx in range(max_rounds):
             offer_tools = round_idx < max_rounds - 1
@@ -698,7 +687,7 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
 
             def _make_call(_offer=offer_tools):
                 return chat_completion_agent_turn(
-                    api_key=api_key, model_id=main_model, base_url=base_url, messages=messages,
+                    api_key=api_key, model_id=editor_model, base_url=base_url, messages=messages,
                     temperature=settings.temperature, max_tokens=settings.max_tokens_response,
                     tools=TOOL_SCHEMAS if _offer else None,
                     top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,

@@ -86,6 +86,11 @@ class OpenRouterSettings(Base):
     # NarratorConfig.action_suggestions_enabled — this only picks which model
     # runs it, kept app-wide like worldbuilding_model_id/summary_model_id.
     action_suggestions_model_id: Mapped[str] = mapped_column(String, default="")
+    # Editor (Edit Mode's foreground world-builder; internally "planner"):
+    # optional separate model (blank => main model), same pattern as the
+    # Chronicler/suggester overrides. Edit Mode is often better served by a
+    # cheaper, tool-reliable model than the main narrative model.
+    planner_model_id: Mapped[str] = mapped_column(String, default="")
     # History summarisation: compress older turns when context usage exceeds this
     # fraction of the budget; optional separate model (blank => main model).
     summary_threshold: Mapped[float] = mapped_column(Float, default=0.7)

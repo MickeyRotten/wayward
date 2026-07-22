@@ -10,6 +10,9 @@ import { useJournalStore } from './journalStore'
 import { useLoreStore } from './loreStore'
 import { useTasksStore } from './tasksStore'
 import { useNarratorStore } from './narratorStore'
+import { useScenarioStore } from './scenarioStore'
+import { useStoryStyleStore } from './storyStyleStore'
+import { useCampaignRulesStore } from './campaignRulesStore'
 
 const PLANNING_KEY = 'wayward.planningMode'
 
@@ -327,6 +330,12 @@ function refreshWorldPanels() {
   // until a reload. (fetchAll above already refreshes each character's equipment.)
   useItemsStore.getState().fetchInventory()
   useNarratorStore.getState().fetchConfig()
+  // Structured config the Editor edits via set_scenario / set_story_style /
+  // set_world_rules — these stores were previously left stale until a manual
+  // refresh or app relaunch, so refetch them too for live in-UI updates.
+  useScenarioStore.getState().fetchScenario()
+  useStoryStyleStore.getState().fetchFields()
+  useCampaignRulesStore.getState().fetchRules()
 }
 
 async function _handleStream(url: string, body: object, opts: { appendOnDone?: boolean } = {}) {

@@ -27,6 +27,7 @@ interface SettingsState {
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
   actionSuggestionsModelId: string
+  plannerModelId: string
   summaryThreshold: number
   summaryModelId: string
   visionModelId: string
@@ -79,6 +80,7 @@ function applyResponse(s: SettingsResponse) {
     worldbuildingMode: s.worldbuildingMode,
     worldbuildingModelId: s.worldbuildingModelId,
     actionSuggestionsModelId: s.actionSuggestionsModelId,
+    plannerModelId: s.plannerModelId,
     summaryThreshold: s.summaryThreshold,
     summaryModelId: s.summaryModelId,
     visionModelId: s.visionModelId,
@@ -116,6 +118,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   worldbuildingMode: 'confirmation',
   worldbuildingModelId: '',
   actionSuggestionsModelId: '',
+  plannerModelId: '',
   summaryThreshold: 0.7,
   summaryModelId: '',
   visionModelId: 'google/gemma-3-4b-it',
@@ -157,6 +160,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,
       actionSuggestionsModelId: update.actionSuggestionsModelId ?? state.actionSuggestionsModelId,
+      plannerModelId: update.plannerModelId ?? state.plannerModelId,
       summaryThreshold: update.summaryThreshold ?? state.summaryThreshold,
       summaryModelId: update.summaryModelId ?? state.summaryModelId,
       visionModelId: update.visionModelId ?? state.visionModelId,

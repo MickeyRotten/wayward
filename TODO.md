@@ -16,13 +16,16 @@ This is the running log of change requests and new features for the project. How
 
 ### Config & the Editor
 ---
-[ ] Restrict the Editor so it can only edit the **Custom Instructions** (the free-text field within Story Style / Narrator Instructions), never the core Narrator Instructions.
+[x] Restrict the Editor so it can only edit the **Custom Instructions** (the free-text field within Story Style / Narrator Instructions), never the core Narrator Instructions.
+  Done: removed the Editor's `set_narrator_instructions`/`get_narrator_instructions` tools + handlers from `server/ai/planner.py`. The Editor now shapes narration guidance through `set_story_style`'s `customInstructions` field (already supported) instead of overwriting the core Narrator role/behaviour. Updated the PLANNER_GUIDANCE (CONSISTENCY / SENSITIVE OVERWRITES lines) and module docstring to reflect the restriction, and the `prompt_builder.py` comment noting `NarratorConfig.instructions` is now a legacy override the Editor no longer writes. Commit: a26ac7d.
 
 ---
-[ ] Make the Editor's changes apply **live** in the UI. Right now most edits only show up after a refresh or an app relaunch.
+[x] Make the Editor's changes apply **live** in the UI. Right now most edits only show up after a refresh or an app relaunch.
+  Done: `refreshWorldPanels()` (`client/src/state/chatStore.ts`, run after every planner turn + delete-apply) already refetched lore/tasks/party/items/inventory/narrator, but **not** the structured-config stores the Editor edits via `set_scenario`/`set_story_style`/`set_world_rules` — those went stale until reload. Added `useScenarioStore.fetchScenario()`, `useStoryStyleStore.fetchFields()`, and `useCampaignRulesStore.fetchRules()` to the refresh. Commit: a26ac7d.
 
 ---
-[ ] Allow a **separate model** to be assigned to the Editor (the same way the Chronicler and summariser already support model overrides).
+[x] Allow a **separate model** to be assigned to the Editor (the same way the Chronicler and summariser already support model overrides).
+  Done: added `OpenRouterSettings.planner_model_id` (app-scoped, blank → main model) with an additive ALTER migration (`database.py`), wired through `schemas.py`/`settings.py` as `plannerModelId`, resolved in `run_planner_agent` (`planner.py`) exactly like the Chronicler's `worldbuilding_model_id`. Client: `plannerModelId` on the shared type + `settingsStore`, and a new **Editor** subsection (Global, with a `ModelPicker`) in Config → AI & Model. Commit: a26ac7d.
 
 ### Models, parameters & reasoning
 ---

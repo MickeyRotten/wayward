@@ -229,6 +229,7 @@ class OpenRouterSettingsUpdate(BaseModel):
     worldbuildingMode: str = "confirmation"
     worldbuildingModelId: str = ""
     actionSuggestionsModelId: str = ""
+    plannerModelId: str = ""
     summaryThreshold: float = 0.7
     summaryModelId: str = ""
     visionModelId: str = ""
@@ -264,6 +265,7 @@ class OpenRouterSettingsResponse(BaseModel):
     worldbuildingMode: str
     worldbuildingModelId: str
     actionSuggestionsModelId: str
+    plannerModelId: str
     summaryThreshold: float
     summaryModelId: str
     visionModelId: str

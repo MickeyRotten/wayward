@@ -29,11 +29,12 @@ log = logging.getLogger("wayward.action_suggester")
 # arguments blob is unparseable and used to drop the whole set (suggestions
 # "cut off" or vanishing entirely). _extract_actions also salvages a clipped tail.
 _MAX_TOKENS = 700
-_MAX_OPTION_RULES = 6
+_MAX_OPTION_RULES = 6  # also the cap on the option count
+DEFAULT_SUGGESTIONS_COUNT = 4
 
-# One generated option per rule, in order — the text-adventure choice spread.
-# NarratorConfig.action_option_rules (Config → Agents & Tools) overrides these;
-# blank/missing falls back here.
+# Legacy per-slot rules — kept only so old campaigns' option counts can be seeded
+# from len(rules) on migration, and so the wire type still round-trips. No longer
+# used to shape suggestions (a single shared instruction + a count replaced them).
 DEFAULT_OPTION_RULES: list[str] = [
     "A good-hearted, selfless, or merciful course of action.",
     "A neutral, practical, or cautious course of action.",
@@ -43,11 +44,10 @@ DEFAULT_OPTION_RULES: list[str] = [
 
 ACTION_SUGGESTIONS_GUIDANCE = """You write the player's choices for a text adventure: short, concrete actions they could take next, based on the current scene.
 
-Call suggest_actions with EXACTLY one phrase per OPTION RULE listed below, in that order. Each phrase must:
+Call suggest_actions with the requested number of choice phrases. The set as a whole must feel varied — spread them across different intents (cautious vs. bold, kind vs. ruthless, practical vs. curious) so the player has a genuinely different decision in each, rather than several rewordings of the same move. Each phrase must:
 - Be written in the FIRST PERSON, starting with "I" — the player speaking as their character ("I push open the heavy door", "I ask Tifa about the ruins").
 - Be short — 10 words or fewer.
 - Be grounded in something specific just mentioned in the narration (an object, a person, a place, a choice) — not generic.
-- Follow its own OPTION RULE — the rules exist so the choices feel meaningfully different from each other.
 - Sound like THIS player character: when a PLAYER CHARACTER personality and drive are given, the options are that person's impulses — phrase them in their voice, and when the scene allows, let one speak to their drive.
 - Not duplicate the always-available actions: waiting/continuing, looking around, resting, talking to the party, or using an item. Don't suggest attacking or fighting — there is no combat system.
 
@@ -64,11 +64,9 @@ Always call the tool — never reply with prose."""
 INLINE_OPTIONS_MARKER = "<<<OPTIONS>>>"
 
 
-def build_inline_options_guidance(rules: list[str]) -> str:
-    return f"""ACTION OPTIONS: End your reply with one final line containing exactly {INLINE_OPTIONS_MARKER} immediately followed by a JSON array of {len(rules)} short choice phrases for the player — one per OPTION RULE below, in order. Each phrase: FIRST PERSON starting with "I", 10 words or fewer, grounded in what you just narrated, never attacking or fighting, and never duplicating the always-available actions (waiting, looking around, resting, talking to the party, using an item). The options are the PLAYER CHARACTER's impulses — phrase them in that character's voice, shaped by their Personality and Drive, and when the scene allows, let one speak to their drive.
-
-OPTION RULES:
-{_rules_block(rules)}
+def build_inline_options_guidance(count: int) -> str:
+    n = normalize_suggestions_count(count)
+    return f"""ACTION OPTIONS: End your reply with one final line containing exactly {INLINE_OPTIONS_MARKER} immediately followed by a JSON array of {n} short choice phrases for the player. Make the set varied — spread the choices across different intents (cautious vs. bold, kind vs. ruthless, practical vs. curious) so each is a genuinely different decision, not a reworded version of another. Each phrase: FIRST PERSON starting with "I", 10 words or fewer, grounded in what you just narrated, never attacking or fighting, and never duplicating the always-available actions (waiting, looking around, resting, talking to the party, using an item). The options are the PLAYER CHARACTER's impulses — phrase them in that character's voice, shaped by their Personality and Drive, and when the scene allows, let one speak to their drive.
 
 Example ending:
 {INLINE_OPTIONS_MARKER}["I follow the smoky trail.", "I wait for nightfall.", "I pocket the coin purse.", "I climb the watchtower."]
@@ -99,14 +97,19 @@ def parse_inline_options(text: str) -> tuple[str, list[str]]:
 
 
 def normalize_option_rules(raw) -> list[str]:
-    """Player-configured rules → a clean list (non-blank, capped), falling back
-    to the defaults."""
+    """Legacy player-configured rules → a clean list (non-blank, capped), falling
+    back to the defaults. Retained for wire back-compat only."""
     rules = [str(r).strip() for r in raw if str(r).strip()] if isinstance(raw, list) else []
     return rules[:_MAX_OPTION_RULES] or list(DEFAULT_OPTION_RULES)
 
 
-def _rules_block(rules: list[str]) -> str:
-    return "\n".join(f"OPTION {i + 1} must be: {r}" for i, r in enumerate(rules))
+def normalize_suggestions_count(raw) -> int:
+    """Clamp the configured option count to 1-6, defaulting to 4."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SUGGESTIONS_COUNT
+    return max(1, min(n, _MAX_OPTION_RULES))
 
 
 def _tool_schema(n: int) -> list[dict]:
@@ -115,7 +118,7 @@ def _tool_schema(n: int) -> list[dict]:
             "type": "function",
             "function": {
                 "name": "suggest_actions",
-                "description": "Propose the player's next choices — one short action phrase per option rule, in order.",
+                "description": "Propose the player's next choices — a set of short, varied action phrases.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -124,7 +127,7 @@ def _tool_schema(n: int) -> list[dict]:
                             "items": {"type": "string"},
                             "minItems": n,
                             "maxItems": n,
-                            "description": f"Exactly {n} short first-person action phrases starting with 'I', option i following option rule i.",
+                            "description": f"Exactly {n} short first-person action phrases starting with 'I', each a genuinely different choice from the others.",
                         },
                     },
                     "required": ["actions"],
@@ -300,10 +303,11 @@ async def run_action_suggester(turn_number: int) -> list[str]:
 
         model_id = settings.action_suggestions_model_id or main_model
         # Custom guidance (Config → Agents & Tools) overrides the built-in
-        # preamble; the per-slot OPTION RULES are always appended after it.
+        # preamble; a single shared instruction shapes every option (no per-slot
+        # rules), and a count controls how many to produce.
         preamble = getattr(narrator, "action_suggestions_instructions", "") or ACTION_SUGGESTIONS_GUIDANCE
-        rules = normalize_option_rules(getattr(narrator, "action_option_rules", None))
-        guidance = f"{preamble}\n\nOPTION RULES:\n{_rules_block(rules)}"
+        count = normalize_suggestions_count(getattr(narrator, "action_suggestions_count", None))
+        guidance = f"{preamble}\n\nPropose exactly {count} options this turn."
         context = await _build_context(session, turn_number)
 
         messages = [
@@ -326,7 +330,7 @@ async def run_action_suggester(turn_number: int) -> list[str]:
                     messages=messages,
                     temperature=temperature,
                     max_tokens=_MAX_TOKENS,
-                    tools=_tool_schema(len(rules)),
+                    tools=_tool_schema(count),
                 ):
                     if ev["type"] == "result":
                         tool_calls = ev["tool_calls"]
@@ -340,7 +344,7 @@ async def run_action_suggester(turn_number: int) -> list[str]:
                 actions = _extract_actions(tc["arguments"])
                 cleaned = [_to_first_person(a) for a in actions if a.strip()]
                 if cleaned:
-                    return cleaned[: len(rules)]
+                    return cleaned[:count]
 
             log.info(
                 "ACTION-SUGGEST no usable tool call turn=%s | model=%s | attempt=%s",

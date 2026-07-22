@@ -123,7 +123,7 @@ CHRONICLER_GUIDANCE = """You are the Chronicler: a quiet archivist who keeps the
 
 Use your tools to:
 - create_lore / update_lore — record new world rules (pillars), places (world/locations), characters (NPCs), items, species (sapient peoples AND monsters/creatures), or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
-- create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). update_task_status — mark an existing task completed or failed when the fiction resolves it.
+- create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). Optionally add short notes with specifics the narrator should keep in mind (a name, a deadline, a condition). update_task — mark an existing task completed or failed when the fiction resolves it, and/or add a note when the fiction reveals something new about it.
 - create_member — ONLY when a character has clearly and deliberately joined the party as a travelling companion.
 
 Rules (strict — follow them exactly):
@@ -208,6 +208,7 @@ TOOL_SCHEMAS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "The task, phrased as a goal."},
+                    "notes": {"type": "string", "description": "Optional short notes — specifics the narrator should remember for this task."},
                 },
                 "required": ["text"],
             },
@@ -216,15 +217,16 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "update_task_status",
-            "description": "Set an existing task's status (active/completed/failed), matched by its exact text.",
+            "name": "update_task",
+            "description": "Update an existing task, matched by its exact text: set its status (active/completed/failed) and/or append a note the narrator should remember.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "taskText": {"type": "string"},
                     "status": {"type": "string", "enum": sorted(TASK_STATUSES)},
+                    "notes": {"type": "string", "description": "A note to append to the task (new information the fiction revealed)."},
                 },
-                "required": ["taskText", "status"],
+                "required": ["taskText"],
             },
         },
     },
@@ -396,7 +398,9 @@ def _summary(kind: str, operation: str, payload: dict, target_title: str | None 
     if kind == "task":
         if operation == "create":
             return f"New task: {payload.get('text', '?')[:48]}"
-        return f"Task {payload.get('status', 'update')}: {target_title or '?'}"
+        if payload.get("status"):
+            return f"Task {payload['status']}: {target_title or '?'}"
+        return f"Task note: {target_title or '?'}"
     if kind == "member":
         return f"Recruit member: {payload.get('name', '?')}"
     return f"{kind} {operation}"
@@ -470,17 +474,26 @@ async def _proposal_from_call(
         if not text or await _resolve_task(session, text):
             return None
         payload = {"text": text}
+        if (args.get("notes") or "").strip():
+            payload["notes"] = args["notes"].strip()
         return WorldbuildingProposal(
             turn_number=turn_number, kind="task", operation="create",
             payload=payload, summary=_summary("task", "create", payload),
         )
 
-    if name == "update_task_status":
+    if name in ("update_task", "update_task_status"):
         task = await _resolve_task(session, (args.get("taskText") or "").strip())
         status = args.get("status")
-        if not task or status not in TASK_STATUSES:
+        note = (args.get("notes") or "").strip()
+        valid_status = status in TASK_STATUSES
+        # Need at least one real change (a valid status, or a note to append).
+        if not task or (not valid_status and not note):
             return None
-        payload = {"status": status}
+        payload: dict = {}
+        if valid_status:
+            payload["status"] = status
+        if note:
+            payload["notesAppend"] = note
         return WorldbuildingProposal(
             turn_number=turn_number, kind="task", operation="update",
             target_id=task.id, payload=payload,
@@ -564,7 +577,8 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         max_order = (await session.execute(
             select(func.coalesce(func.max(Task.sort_order), -1))
         )).scalar()
-        task = Task(text=p.get("text", ""), status="active", sort_order=(max_order or 0) + 1)
+        task = Task(text=p.get("text", ""), status="active", notes=p.get("notes", ""),
+                    sort_order=(max_order or 0) + 1)
         session.add(task)
         await session.flush()
         proposal.target_id = task.id  # tie the created task to this proposal/turn
@@ -574,9 +588,13 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         task = await session.get(Task, proposal.target_id)
         if not task:
             return False, "Task no longer exists."
-        _snapshot_prev(proposal, {"status": task.status})
+        _snapshot_prev(proposal, {"status": task.status, "notes": task.notes})
         if p.get("status"):
             task.status = p["status"]
+        if p.get("notesAppend"):
+            # Additive: append the new note on its own line, keeping prior notes.
+            existing = (task.notes or "").rstrip()
+            task.notes = f"{existing}\n{p['notesAppend']}" if existing else p["notesAppend"]
         return True, None
 
     if kind == "member" and op == "create":
@@ -643,8 +661,11 @@ async def _reverse_accepted_proposal(p: WorldbuildingProposal, session: AsyncSes
 
     if kind == "task" and op == "update":
         task = await session.get(Task, p.target_id) if p.target_id else None
-        if task is not None and prev and "status" in prev:
-            task.status = prev["status"]
+        if task is not None and prev:
+            if "status" in prev:
+                task.status = prev["status"]
+            if "notes" in prev:
+                task.notes = prev["notes"]
             return True
         return False
 

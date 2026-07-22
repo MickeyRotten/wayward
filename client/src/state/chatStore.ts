@@ -9,6 +9,7 @@ import { useTtsStore } from './ttsStore'
 import { useJournalStore } from './journalStore'
 import { useLoreStore } from './loreStore'
 import { useTasksStore } from './tasksStore'
+import { useObjectivesStore } from './objectivesStore'
 import { useNarratorStore } from './narratorStore'
 import { useScenarioStore } from './scenarioStore'
 import { useStoryStyleStore } from './storyStyleStore'
@@ -323,6 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 function refreshWorldPanels() {
   useLoreStore.getState().fetchEntries()
   useTasksStore.getState().fetchTasks()
+  useObjectivesStore.getState().fetchObjectives()
   usePartyStore.getState().fetchAll()
   useItemsStore.getState().fetchCatalog()
   // Owned instances + derived equipped/stowed state — the Editor's equip/unequip

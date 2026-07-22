@@ -276,6 +276,20 @@ async def _run_scope_migrations() -> None:
             cols = [row[1] for row in result.fetchall()]
             if column not in cols:
                 await conn.execute(text(ddl))
+        # action_suggestions_count supersedes the per-slot action_option_rules. On
+        # first add, seed it from the number of rules the campaign had authored, so
+        # a campaign that used e.g. 5 rules keeps getting 5 options after the switch
+        # to a single shared instruction. Guarded on the column's absence so the
+        # user's own count is authoritative afterwards.
+        nc_cols = [row[1] for row in (await conn.execute(
+            text("PRAGMA campaign.table_info(narrator_configs)"))).fetchall()]
+        if nc_cols and "action_suggestions_count" not in nc_cols:
+            await conn.execute(text(
+                "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_count INTEGER DEFAULT 4"))
+            if "action_option_rules" in nc_cols:
+                await conn.execute(text(
+                    "UPDATE campaign.narrator_configs SET action_suggestions_count = "
+                    "MAX(1, MIN(6, COALESCE(json_array_length(action_option_rules), 4)))"))
         # New adventure-scoped table added after some DBs were created (in-chat
         # persistent toasts). Create it if missing — new DBs already have it.
         if not (await conn.execute(text("PRAGMA adventure.table_info(chat_events)"))).fetchall():
@@ -284,6 +298,22 @@ async def _run_scope_migrations() -> None:
                 "(id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, turn_number INTEGER DEFAULT 0, "
                 "kind VARCHAR DEFAULT 'item', text TEXT DEFAULT '', tethered INTEGER DEFAULT 0, "
                 "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+            ))
+        # New adventure-scoped tables added after some DBs were created:
+        # Objectives (overarching goals) and the player Wishlist. Create if
+        # missing — new DBs already have them from create_all.
+        if not (await conn.execute(text("PRAGMA adventure.table_info(objectives)"))).fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.objectives "
+                "(id VARCHAR NOT NULL PRIMARY KEY, text TEXT DEFAULT '', "
+                "status VARCHAR DEFAULT 'active', detail TEXT DEFAULT '', "
+                "sort_order INTEGER DEFAULT 0)"
+            ))
+        if not (await conn.execute(text("PRAGMA adventure.table_info(wishes)"))).fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.wishes "
+                "(id VARCHAR NOT NULL PRIMARY KEY, text TEXT DEFAULT '', "
+                "priority INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)"
             ))
         # New campaign-scoped table (R21 World Rules). Only for campaigns that
         # PREDATE it (no table): create it and seed one row, back-filling
@@ -311,6 +341,7 @@ async def _run_scope_migrations() -> None:
             ("adventure", "chat_messages", "ix_chat_messages_turn_number", "turn_number"),
             ("campaign", "lorebook_entries", "ix_lorebook_entries_cat", "cat"),
             ("adventure", "tasks", "ix_tasks_status", "status"),
+            ("adventure", "objectives", "ix_objectives_status", "status"),
             ("adventure", "worldbuilding_proposals", "ix_worldbuilding_proposals_status", "status"),
             ("adventure", "worldbuilding_proposals", "ix_worldbuilding_proposals_turn_number", "turn_number"),
         ]

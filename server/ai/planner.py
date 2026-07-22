@@ -41,6 +41,7 @@ from server.db.models import (
     ChatMessage,
     LorebookEntry,
     NarratorConfig,
+    Objective,
     OpenRouterSettings,
     Task,
 )
@@ -57,7 +58,9 @@ EQUIP_SLOTS = [
 ]
 
 
-PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, the party, the player character, the Scenario, and the Story Style (genre/tone/writing style/etc., plus the narrator's freeform custom instructions).
+PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, objectives, the party, the player character, the Scenario, and the Story Style (genre/tone/writing style/etc., plus the narrator's freeform custom instructions).
+
+TASKS vs OBJECTIVES: a task is a concrete to-do ("Find someone who knows about the sigil"); an Objective is a large, overarching goal that steers the whole adventure ("Gather a party of five", "Defeat the Demon Queen before the next Blood Moon"). Use create_objective for the big, direction-setting goals and create_task for the smaller steps. A task's notes are extra context the narrator reads — use them to record anything the narrator should keep in mind.
 
 How you work:
 - Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a task, or a character's full set of gear.
@@ -173,12 +176,26 @@ TOOL_SCHEMAS: list[dict] = [
         {"characterName": {"type": "string"}, "slot": {"type": "string", "enum": EQUIP_SLOTS}},
         ["characterName", "slot"]),
     _fn("create_task", "Create a task (a single goal/to-do — big or small).",
-        {"text": {"type": "string"}}, ["text"]),
-    _fn("update_task", "Edit a task's text or status, matched by its exact current text.",
+        {"text": {"type": "string"},
+         "notes": {"type": "string", "description": "Optional freeform notes — extra context the narrator should keep in mind for this task."}},
+        ["text"]),
+    _fn("update_task", "Edit a task's text, status, or notes, matched by its exact current text.",
         {"text": {"type": "string", "description": "The task's current text (to find it)."},
          "newText": {"type": "string", "description": "New text, to reword the task."},
+         "notes": {"type": "string", "description": "Replace the task's notes (freeform context the narrator reads)."},
          "status": {"type": "string", "enum": sorted(TASK_STATUSES)}}, ["text"]),
     _fn("delete_task", "Remove a task (queued for confirmation), by exact text.",
+        {"text": {"type": "string"}}, ["text"]),
+    _fn("create_objective", "Create an Objective — a large, direction-setting goal that steers the whole adventure (e.g. 'Gather a party of five', 'Defeat the Demon Queen before the next Blood Moon'). Bigger than a task.",
+        {"text": {"type": "string"},
+         "detail": {"type": "string", "description": "Optional stakes/context — what's at risk, the looming threat, or how it might unfold."}},
+        ["text"]),
+    _fn("update_objective", "Edit an Objective's text, detail, or status, matched by its exact current text.",
+        {"text": {"type": "string", "description": "The objective's current text (to find it)."},
+         "newText": {"type": "string", "description": "New text, to reword the objective."},
+         "detail": {"type": "string", "description": "Replace the objective's stakes/detail."},
+         "status": {"type": "string", "enum": sorted(TASK_STATUSES)}}, ["text"]),
+    _fn("delete_objective", "Remove an Objective (queued for confirmation), by exact text.",
         {"text": {"type": "string"}}, ["text"]),
     _fn("create_member", "Add a party member.",
         {"name": {"type": "string"}, "species": {"type": "string"}, "gender": {"type": "string"},
@@ -270,6 +287,16 @@ def _parse_args(raw: str) -> dict:
         return {}
 
 
+async def _resolve_objective(session, text: str) -> Objective | None:
+    if not text:
+        return None
+    return (
+        await session.execute(
+            select(Objective).where(func.lower(Objective.text) == text.lower())
+        )
+    ).scalars().first()
+
+
 # ── Context ───────────────────────────────────────────────────────
 
 async def _build_planner_context(session) -> str:
@@ -285,6 +312,11 @@ async def _build_planner_context(session) -> str:
     for cat in LORE_CAT_ORDER:
         titles = by_cat.get(cat, [])
         lines.append(f"  {cat}: {', '.join(titles) if titles else '(none)'}")
+    objectives = (await session.execute(select(Objective).order_by(Objective.sort_order))).scalars().all()
+    if objectives:
+        lines.append("  objectives: " + ", ".join(f"{o.text} [{o.status}]" for o in objectives))
+    else:
+        lines.append("  objectives: (none)")
     if tasks:
         lines.append("  tasks: " + ", ".join(f"{t.text} [{t.status}]" for t in tasks))
     else:
@@ -428,7 +460,8 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"Task '{text}' is empty or already exists.", None
         max_order = (await session.execute(
             select(func.coalesce(func.max(Task.sort_order), -1)))).scalar()
-        session.add(Task(text=text, status="active", sort_order=(max_order or 0) + 1))
+        session.add(Task(text=text, status="active", notes=(args.get("notes") or ""),
+                         sort_order=(max_order or 0) + 1))
         return f"Created task: {text}.", None
 
     if name == "update_task":
@@ -437,6 +470,8 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"No task matching '{args.get('text', '')}'.", None
         if args.get("newText"):
             task.text = args["newText"]
+        if args.get("notes") is not None:
+            task.notes = args["notes"]
         if args.get("status") in TASK_STATUSES:
             task.status = args["status"]
         return f"Updated task: {task.text}.", None
@@ -447,6 +482,36 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"No task matching '{args.get('text', '')}'.", None
         return f"Queued deletion of task '{task.text}' for confirmation.", \
             {"kind": "task", "targetId": task.id, "label": task.text[:40]}
+
+    # ---- Objectives (overarching goals) ----
+    if name == "create_objective":
+        text = (args.get("text") or "").strip()
+        if not text or await _resolve_objective(session, text):
+            return f"Objective '{text}' is empty or already exists.", None
+        max_order = (await session.execute(
+            select(func.coalesce(func.max(Objective.sort_order), -1)))).scalar()
+        session.add(Objective(text=text, status="active", detail=(args.get("detail") or ""),
+                              sort_order=(max_order or 0) + 1))
+        return f"Created objective: {text}.", None
+
+    if name == "update_objective":
+        obj = await _resolve_objective(session, (args.get("text") or "").strip())
+        if not obj:
+            return f"No objective matching '{args.get('text', '')}'.", None
+        if args.get("newText"):
+            obj.text = args["newText"]
+        if args.get("detail") is not None:
+            obj.detail = args["detail"]
+        if args.get("status") in TASK_STATUSES:
+            obj.status = args["status"]
+        return f"Updated objective: {obj.text}.", None
+
+    if name == "delete_objective":
+        obj = await _resolve_objective(session, (args.get("text") or "").strip())
+        if not obj:
+            return f"No objective matching '{args.get('text', '')}'.", None
+        return f"Queued deletion of objective '{obj.text}' for confirmation.", \
+            {"kind": "objective", "targetId": obj.id, "label": obj.text[:40]}
 
     # ---- Members ----
     if name == "create_member":
@@ -613,6 +678,10 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         if task:
             return json.dumps({"task": task.text, "status": task.status, "notes": task.notes},
                               ensure_ascii=False), None
+        objective = await _resolve_objective(session, q)
+        if objective:
+            return json.dumps({"objective": objective.text, "status": objective.status,
+                               "detail": objective.detail}, ensure_ascii=False), None
         character, _ = await _resolve_character(session, q)
         if character is not None:
             equipped = {}

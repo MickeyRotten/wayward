@@ -116,7 +116,7 @@ export function SettingsPanel() {
       plannerInstructions: n.plannerInstructions,
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
-      actionOptionRules: n.actionOptionRules,
+      actionSuggestionsCount: n.actionSuggestionsCount,
       actionSuggestionsMode: n.actionSuggestionsMode,
       diceEnabled: n.diceEnabled,
     }))
@@ -144,7 +144,7 @@ export function SettingsPanel() {
     ttsEnabled, ttsAutoplay } = settings
   const { spotlightRule, postHistoryInstructions: postHistory,
     plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions,
-    actionOptionRules, actionSuggestionsMode, diceEnabled } = narrator
+    actionSuggestionsCount, actionSuggestionsMode, diceEnabled } = narrator
 
   const setTemperature = (v: number) => setS({ temperature: v })
   const setTopP = (v: number) => setS({ topP: v })
@@ -177,7 +177,7 @@ export function SettingsPanel() {
   const setPlannerInstructions = (v: string) => setN({ plannerInstructions: v })
   const setActionSuggestionsEnabled = (v: boolean) => setN({ actionSuggestionsEnabled: v })
   const setActionSuggestionsInstructions = (v: string) => setN({ actionSuggestionsInstructions: v })
-  const setActionOptionRules = (v: string[]) => setN({ actionOptionRules: v })
+  const setActionSuggestionsCount = (v: number) => setN({ actionSuggestionsCount: Math.max(1, Math.min(6, v)) })
   const setActionSuggestionsMode = (v: string) => setN({ actionSuggestionsMode: v })
   const setDiceEnabled = (v: boolean) => setN({ diceEnabled: v })
 
@@ -197,6 +197,9 @@ export function SettingsPanel() {
   // Reset-to-defaults (applies immediately now — each setter auto-saves). Blank
   // text fields fall back to the built-in defaults server-side.
   const resetAiModel = () => setS({ temperature: 0.7, topP: 1, minP: 0, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokensResponse: 1000 })
+  // Sampling knobs only (not Max Tokens / Reasoning) — the "Reset to default
+  // parameters" affordance in the Sampling subsection.
+  const resetSampling = () => setS({ temperature: 0.7, topP: 1, minP: 0, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1 })
   const resetAgents = () => {
     setS({ toolMode: 'auto', maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
     setN({ actionSuggestionsEnabled: false })
@@ -488,6 +491,16 @@ export function SettingsPanel() {
                 </span>
               </label>
             </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
+                onClick={resetSampling}
+                title="Restore temperature, top-p, penalties, etc. to their defaults (leaves Max Tokens and Reasoning as-is)"
+              >
+                RESET TO DEFAULT PARAMETERS
+              </button>
+            </div>
           </SubSection>
         </Section>
 
@@ -678,52 +691,31 @@ export function SettingsPanel() {
                 Guides how the AI picks suggestions (tone, length, what to favor or avoid). Leave blank to use the built-in default.
               </span>
             </label>
-            <div className="block">
-              <span className="text-[11px] text-textdim font-body">Option Rules — one generated option per rule, in order</span>
-              <div className="mt-1 space-y-1.5">
-                {actionOptionRules.map((rule, i) => (
-                  <div key={i} className="flex items-start gap-1.5">
-                    <span className="font-ui text-[10px] text-golddeep pt-2 w-4 text-right shrink-0">{i + 1}.</span>
-                    <textarea
-                      className="flex-1 border border-line bg-bg0 px-2 py-1 text-[12px] font-body text-text2 outline-none focus:bg-bg2 resize-y min-h-[34px]"
-                      rows={1}
-                      value={rule}
-                      onChange={(e) => setActionOptionRules(actionOptionRules.map((r, j) => (j === i ? e.target.value : r)))}
-                    />
-                    <button
-                      type="button"
-                      title="Remove this option slot"
-                      disabled={actionOptionRules.length <= 1}
-                      className="font-ui text-[11px] text-textdim border border-line px-2 py-1 hover:text-danger hover:border-danger-border transition-colors disabled:opacity-30"
-                      onClick={() => setActionOptionRules(actionOptionRules.filter((_, j) => j !== i))}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-1.5 flex gap-2">
-                <button
-                  type="button"
-                  disabled={actionOptionRules.length >= 6}
-                  className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors disabled:opacity-30"
-                  onClick={() => setActionOptionRules([...actionOptionRules, ''])}
-                >
-                  + ADD OPTION
-                </button>
-                <button
-                  type="button"
-                  className="font-ui text-[10px] tracking-wider text-textsec border border-line px-2 py-1 hover:text-text hover:border-line2 transition-colors"
-                  onClick={() => void narrator.save({ actionOptionRules: [] })}
-                  title="Restore the built-in good / neutral / dark / wildcard spread"
-                >
-                  RESET TO DEFAULTS
-                </button>
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Number of Options ({actionSuggestionsCount})</span>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="range"
+                  min={1}
+                  max={6}
+                  step={1}
+                  className="flex-1"
+                  value={actionSuggestionsCount}
+                  onChange={(e) => setActionSuggestionsCount(Number(e.target.value))}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={6}
+                  className="w-16 border border-line bg-bg0 px-2 py-1 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2"
+                  value={actionSuggestionsCount}
+                  onChange={(e) => setActionSuggestionsCount(Number(e.target.value) || 4)}
+                />
               </div>
               <span className="mt-1 block text-[10px] text-textdim font-body">
-                Each rule shapes one option — by default they differ morally (good / neutral / dark) plus a wildcard. 1-6 options; saved automatically.
+                How many choice options to generate each turn (1-6). A single shared instruction (above) shapes them all — the AI is told to keep the set varied. Saved automatically.
               </span>
-            </div>
+            </label>
           </SubSection>
 
           <SubSection title="Vision" scope="Global">
@@ -1802,18 +1794,37 @@ function Slider({ label, value, min, max, step, defaultValue, onChange }: {
   label: string; value: number; min: number; max: number; step: number; defaultValue?: number; onChange: (v: number) => void
 }) {
   const v = value ?? defaultValue ?? min
+  const clamp = (n: number) => Math.max(min, Math.min(max, n))
   return (
     <label className="block">
-      <span className="text-[11px] text-textdim font-body">{label} ({v.toFixed(2)})</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        className="w-full"
-        value={v}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
+      <span className="text-[11px] text-textdim font-body">{label}</span>
+      {/* Range for coarse dragging + a number input for precise/touch entry —
+          thin range targets are fiddly on mobile, so the field is the reliable
+          way to set an exact value there. */}
+      <div className="mt-0.5 flex items-center gap-2">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          className="flex-1 min-w-0"
+          value={v}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          inputMode="decimal"
+          className="w-16 shrink-0 border border-line bg-bg0 px-1.5 py-1 text-[13px] font-body text-text text-right outline-none focus:border-line2 focus:bg-bg2"
+          value={v}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            if (!Number.isNaN(n)) onChange(clamp(n))
+          }}
+        />
+      </div>
     </label>
   )
 }

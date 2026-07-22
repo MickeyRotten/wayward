@@ -152,9 +152,14 @@ class NarratorConfig(Base):
     # the turn. 'inline': the narrator appends a machine-read <<<OPTIONS>>> line
     # to its narration — no extra call; reroll still uses the separate agent.
     action_suggestions_mode: Mapped[str] = mapped_column(Text, default="separate")
-    # One generated option per rule, in order (each editable in Config). Null/
-    # empty => action_suggester.DEFAULT_OPTION_RULES (good/neutral/dark/wildcard).
+    # Legacy per-slot option rules (one generated option per rule). Superseded by
+    # a single shared instruction + action_suggestions_count; retained only so old
+    # campaigns' counts can be seeded from len(rules) on migration. No longer read
+    # at suggestion time.
     action_option_rules = mapped_column(JSON, nullable=True)
+    # How many action options to generate each turn (all shaped by the single
+    # shared action_suggestions_instructions, not per-slot rules). 1-6, default 4.
+    action_suggestions_count: Mapped[int] = mapped_column(Integer, default=4)
     # Scripted choice options shown with the First Message (turn 0), where the
     # suggester can't run — authored alongside the first message itself.
     first_message_options = mapped_column(JSON, nullable=True)
@@ -414,6 +419,40 @@ class Task(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String, default="active", index=True)  # active | completed | failed
     notes: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Objective(Base):
+    """A large, direction-setting goal that steers the whole adventure — bigger
+    than a Task. Where a Task is a concrete to-do ("Find someone who knows about
+    the sigil"), an Objective is an overarching aim ("Gather a party of five",
+    "Defeat the Demon Queen before the next Blood Moon"). Injected into the
+    narrator prompt so the story bends toward it. Inspired by Dungeon World's
+    Fronts/Stakes: ``detail`` can hold the stakes/impending doom in free text.
+    ``status`` is active | completed | failed."""
+    __tablename__ = "objectives"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    text: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String, default="active", index=True)  # active | completed | failed
+    detail: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Wish(Base):
+    """A player Wishlist entry — something the player hopes to see happen in the
+    story ("I want to recruit an Elf to my party", "I'd love a betrayal arc").
+    Player-authored, never mutated by the agents; injected into the narrator
+    prompt as a soft steer the Narrator keeps in mind and weaves in when natural.
+    ``priority`` is 0=normal, 1=low, 2=medium, 3=high — a hint at how eager the
+    player is to see it."""
+    __tablename__ = "wishes"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    text: Mapped[str] = mapped_column(Text, default="")
+    priority: Mapped[int] = mapped_column(Integer, default=0)  # 0 normal | 1 low | 2 med | 3 high
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 

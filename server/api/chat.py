@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.ai.action_suggester import (
     build_inline_options_guidance,
-    normalize_option_rules,
+    normalize_suggestions_count,
     parse_inline_options,
 )
 from server.ai.item_detection import (
@@ -65,9 +65,11 @@ from server.db.models import (
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
+    Objective,
     OpenRouterSettings,
     StorySummary,
     Task,
+    Wish,
 )
 
 router = APIRouter()
@@ -379,6 +381,10 @@ async def _load_game_context(session: AsyncSession):
         session.add(summary)
     catalog = list((await session.execute(select(LorebookEntry).where(LorebookEntry.cat == "items"))).scalars().all())
     tasks = list((await session.execute(select(Task).order_by(Task.sort_order))).scalars().all())
+    objectives = list((await session.execute(select(Objective).order_by(Objective.sort_order))).scalars().all())
+    wishes = list((await session.execute(
+        select(Wish).order_by(Wish.priority.desc(), Wish.sort_order)
+    )).scalars().all())
     lore_entries = list((await session.execute(select(LorebookEntry))).scalars().all())
     lore_config = (await session.execute(select(LorebookConfig))).scalars().first()
     if not lore_config:
@@ -386,7 +392,8 @@ async def _load_game_context(session: AsyncSession):
         session.add(lore_config)
         await session.commit()
 
-    return settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config
+    return (settings, narrator, pc, party, all_messages, summary, catalog, tasks,
+            objectives, wishes, lore_entries, lore_config)
 
 
 async def _resolve_narration_mode(settings: OpenRouterSettings) -> str:
@@ -429,6 +436,8 @@ async def _maybe_summarize_and_build(
     narration_mode: str = "native",
     item_catalog: list[LorebookEntry] | None = None,
     tasks: list[Task] | None = None,
+    objectives: list[Objective] | None = None,
+    wishes: list[Wish] | None = None,
     lore_entries: list[LorebookEntry] | None = None,
     lore_config: LorebookConfig | None = None,
 ):
@@ -500,6 +509,8 @@ async def _maybe_summarize_and_build(
         story_summary=summary.content or None,
         item_catalog=item_catalog,
         tasks=tasks,
+        objectives=objectives,
+        wishes=wishes,
         lore_entries=lore_entries,
         lore_config=lore_config,
         max_context_tokens=settings.max_context_tokens,
@@ -590,7 +601,7 @@ async def chat_turn(
     if data.mode == "planner":
         return await _planner_turn(data, session)
 
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, tasks, objectives, wishes, lore_entries, lore_config = await _load_game_context(session)
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
@@ -640,6 +651,8 @@ async def chat_turn(
         narration_mode=mode,
         item_catalog=catalog,
         tasks=tasks,
+        objectives=objectives,
+        wishes=wishes,
         lore_entries=lore_entries,
         lore_config=lore_config,
     )
@@ -659,7 +672,7 @@ async def chat_turn(
             schedule_summary=needs_summary,
             user_message_id=user_msg.id,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
-            inline_option_rules=_inline_option_rules(narrator),
+            inline_option_count=_inline_option_count(narrator),
         )
 
     return _stream_llm_response(
@@ -672,7 +685,7 @@ async def chat_turn(
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
         user_message_id=user_msg.id,
-        inline_option_rules=_inline_option_rules(narrator),
+        inline_option_count=_inline_option_count(narrator),
     )
 
 
@@ -681,7 +694,7 @@ async def chat_turn(
 @router.post("/chat/messages/{turn}/swipe")
 async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     """Generate a new variant for a specific turn. Appends to existing variants."""
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, tasks, objectives, wishes, lore_entries, lore_config = await _load_game_context(session)
 
     # Find the user message for this turn — targeted query (not the bounded
     # window) so swiping a turn older than the window still resolves.
@@ -738,6 +751,8 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         narration_mode=mode,
         item_catalog=catalog,
         tasks=tasks,
+        objectives=objectives,
+        wishes=wishes,
         lore_entries=lore_entries,
         lore_config=lore_config,
     )
@@ -755,7 +770,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
-            inline_option_rules=_inline_option_rules(narrator),
+            inline_option_count=_inline_option_count(narrator),
         )
 
     return _stream_llm_response(
@@ -767,7 +782,7 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
-        inline_option_rules=_inline_option_rules(narrator),
+        inline_option_count=_inline_option_count(narrator),
     )
 
 
@@ -779,7 +794,7 @@ async def regenerate(
     session: AsyncSession = Depends(get_session),
 ):
     guidance = (data.get("guidance") or "").strip() if isinstance(data, dict) else ""
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, tasks, objectives, wishes, lore_entries, lore_config = await _load_game_context(session)
 
     if not all_messages:
         raise HTTPException(400, "No messages to regenerate")
@@ -836,6 +851,8 @@ async def regenerate(
         narration_mode=mode,
         item_catalog=catalog,
         tasks=tasks,
+        objectives=objectives,
+        wishes=wishes,
         lore_entries=lore_entries,
         lore_config=lore_config,
     )
@@ -866,7 +883,7 @@ async def regenerate(
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
-            inline_option_rules=_inline_option_rules(narrator),
+            inline_option_count=_inline_option_count(narrator),
         )
 
     # Start fresh at variant 0 since we wiped all previous variants
@@ -879,7 +896,7 @@ async def regenerate(
         schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
-        inline_option_rules=_inline_option_rules(narrator),
+        inline_option_count=_inline_option_count(narrator),
     )
 
 
@@ -905,7 +922,7 @@ async def continue_narration(session: AsyncSession = Depends(get_session)):
     max_tokens_response. Prose-only: no tools, no action protocol, no inline
     options; the appended text carries no reversible effects, so swipe/
     regenerate/delete semantics for the turn are unchanged."""
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    settings, narrator, pc, party, all_messages, summary, catalog, tasks, objectives, wishes, lore_entries, lore_config = await _load_game_context(session)
 
     if not all_messages:
         raise HTTPException(400, "Nothing to continue yet")
@@ -930,6 +947,8 @@ async def continue_narration(session: AsyncSession = Depends(get_session)):
         narration_mode="native",  # skips the action protocol — continuation is prose-only
         item_catalog=catalog,
         tasks=tasks,
+        objectives=objectives,
+        wishes=wishes,
         lore_entries=lore_entries,
         lore_config=lore_config,
     )
@@ -1048,14 +1067,14 @@ async def get_summary(session: AsyncSession = Depends(get_session)):
 
 # ── Shared streaming helper ───────────────────────────────────────
 
-def _inline_option_rules(narrator) -> list[str] | None:
-    """The option rules when suggestions ride the main narration call
-    (action_suggestions_mode == 'inline'), else None."""
+def _inline_option_count(narrator) -> int | None:
+    """The number of options to request when suggestions ride the main narration
+    call (action_suggestions_mode == 'inline'), else None."""
     if not getattr(narrator, "action_suggestions_enabled", False):
         return None
     if (getattr(narrator, "action_suggestions_mode", "separate") or "separate") != "inline":
         return None
-    return normalize_option_rules(getattr(narrator, "action_option_rules", None))
+    return normalize_suggestions_count(getattr(narrator, "action_suggestions_count", None))
 
 
 # Reasoning models can burn the whole response budget on thinking; surface a
@@ -1123,12 +1142,12 @@ def _stream_llm_response(
     spotlight_signals: list[SpotlightSignal] | None = None,
     player_deltas: list[dict] | None = None,
     user_message_id: int | None = None,
-    inline_option_rules: list[str] | None = None,
+    inline_option_count: int | None = None,
 ):
     player_deltas = player_deltas or []
-    if inline_option_rules:
+    if inline_option_count:
         # Suggestions ride this call: teach the <<<OPTIONS>>> ending.
-        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
+        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_count)}, *messages]
 
     context_tokens = estimate_prompt_tokens(messages)
     base_url, api_key, model_id = provider_endpoint(settings)
@@ -1226,7 +1245,7 @@ def _stream_llm_response(
         if actions:
             log.info("LLM ACTIONS parsed: %s", json.dumps(actions, ensure_ascii=False))
         inline_suggestions: list[str] = []
-        if inline_option_rules:
+        if inline_option_count:
             clean_text, inline_suggestions = parse_inline_options(clean_text)
             log.info("LLM INLINE OPTIONS parsed: %s", json.dumps(inline_suggestions, ensure_ascii=False))
         inv_deltas: list[dict] = []
@@ -1358,16 +1377,16 @@ def _stream_agent_response(
     schedule_summary: bool = False,
     user_message_id: int | None = None,
     dice_enabled: bool = True,
-    inline_option_rules: list[str] | None = None,
+    inline_option_count: int | None = None,
 ):
     """Drive the agentic narrator loop and stream its final narration.
 
     Tool calls mutate the DB *during* the loop (inside run_narrator_agent), so
     here we only record the accumulated deltas/scene on the ChatMessage for
     reversal — we do not re-apply them."""
-    if inline_option_rules:
+    if inline_option_count:
         # Suggestions ride this call: teach the <<<OPTIONS>>> ending.
-        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
+        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_count)}, *messages]
     context_tokens = estimate_prompt_tokens(messages)
     max_context = settings.max_context_tokens
     _base_url, _api_key, _log_model = provider_endpoint(settings)
@@ -1442,7 +1461,7 @@ def _stream_agent_response(
         )
 
         inline_suggestions: list[str] = []
-        if inline_option_rules:
+        if inline_option_count:
             final_content, inline_suggestions = parse_inline_options(final_content)
             log.info("LLM INLINE OPTIONS parsed: %s", json.dumps(inline_suggestions, ensure_ascii=False))
 

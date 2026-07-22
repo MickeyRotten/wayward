@@ -18,6 +18,8 @@ import { useChatStore } from './state/chatStore'
 import { useSettingsStore } from './state/settingsStore'
 import { useItemsStore } from './state/itemsStore'
 import { useTasksStore } from './state/tasksStore'
+import { useObjectivesStore } from './state/objectivesStore'
+import { useWishlistStore } from './state/wishlistStore'
 import { useLoreStore } from './state/loreStore'
 import { useScenarioStore } from './state/scenarioStore'
 import { useCampaignRulesStore } from './state/campaignRulesStore'
@@ -72,6 +74,8 @@ function App() {
   const fetchCatalog = useItemsStore((s) => s.fetchCatalog)
   const fetchInventory = useItemsStore((s) => s.fetchInventory)
   const fetchTasks = useTasksStore((s) => s.fetchTasks)
+  const fetchObjectives = useObjectivesStore((s) => s.fetchObjectives)
+  const fetchWishes = useWishlistStore((s) => s.fetchWishes)
   const fetchLoreEntries = useLoreStore((s) => s.fetchEntries)
   const fetchLoreConfig = useLoreStore((s) => s.fetchConfig)
   const fetchRules = useCampaignRulesStore((s) => s.fetchRules)
@@ -93,6 +97,8 @@ function App() {
     fetchCatalog()
     fetchInventory()
     fetchTasks()
+    fetchObjectives()
+    fetchWishes()
     fetchLoreEntries()
     fetchLoreConfig()
     fetchRules()
@@ -102,7 +108,7 @@ function App() {
     fetchAdventures()
     fetchTtsStatus()
     fetchJournal(true)
-  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchTasks, fetchLoreEntries, fetchLoreConfig, fetchRules, fetchScenario, fetchStoryStyle, fetchProposals, fetchAdventures, fetchCampaigns, fetchTtsStatus, fetchJournal])
+  }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchTasks, fetchObjectives, fetchWishes, fetchLoreEntries, fetchLoreConfig, fetchRules, fetchScenario, fetchStoryStyle, fetchProposals, fetchAdventures, fetchCampaigns, fetchTtsStatus, fetchJournal])
 
   const handleTabChange = (tab: TabId) => {
     prevTabRef.current = tab

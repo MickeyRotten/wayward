@@ -42,6 +42,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         worldbuildingMode=s.worldbuilding_mode,
         worldbuildingModelId=s.worldbuilding_model_id,
         actionSuggestionsModelId=getattr(s, "action_suggestions_model_id", "") or "",
+        plannerModelId=getattr(s, "planner_model_id", "") or "",
         summaryThreshold=getattr(s, "summary_threshold", 0.7) or 0.7,
         summaryModelId=getattr(s, "summary_model_id", "") or "",
         visionModelId=getattr(s, "vision_model_id", "") or "google/gemma-3-4b-it",
@@ -101,6 +102,7 @@ async def update_openrouter_settings(
     s.worldbuilding_mode = data.worldbuildingMode
     s.worldbuilding_model_id = data.worldbuildingModelId
     s.action_suggestions_model_id = data.actionSuggestionsModelId
+    s.planner_model_id = data.plannerModelId
     s.summary_threshold = data.summaryThreshold
     s.summary_model_id = data.summaryModelId
     s.vision_model_id = data.visionModelId

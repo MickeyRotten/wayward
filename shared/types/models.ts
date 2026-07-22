@@ -140,6 +140,7 @@ export interface OpenRouterSettings {
   worldbuildingMode: WorldbuildingMode
   worldbuildingModelId: string
   actionSuggestionsModelId: string
+  plannerModelId: string
   summaryThreshold: number
   summaryModelId: string
   // Vision agent (describes player-attached chat images). Blank model id →

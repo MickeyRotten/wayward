@@ -118,10 +118,11 @@ def build_prompt(
     #    clear role definition. (Falls back to a code constant if the JSON is gone.)
     messages.append({"role": "system", "content": core_instructions()})
 
-    # 1a'. System: optional per-campaign instruction override (the Editor's
-    #      set_narrator_instructions). Injected only when it's a genuine custom
-    #      value — a stored built-in default is skipped so the JSON core (which now
-    #      owns that text) isn't duplicated.
+    # 1a'. System: optional per-campaign instruction override (a legacy field —
+    #      the Editor no longer writes the core instructions; it edits the Story
+    #      Style's customInstructions instead). Injected only when it's a genuine
+    #      custom value — a stored built-in default is skipped so the JSON core
+    #      (which now owns that text) isn't duplicated.
     base_instructions = (getattr(narrator_config, "instructions", "") or "").strip()
     if base_instructions and base_instructions not in _LEGACY_DEFAULT_INSTRUCTIONS:
         messages.append({"role": "system", "content": base_instructions})

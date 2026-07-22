@@ -208,6 +208,7 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "summary_threshold", "ALTER TABLE openrouter_settings ADD COLUMN summary_threshold FLOAT DEFAULT 0.7"),
         ("openrouter_settings", "summary_model_id", "ALTER TABLE openrouter_settings ADD COLUMN summary_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "action_suggestions_model_id", "ALTER TABLE openrouter_settings ADD COLUMN action_suggestions_model_id VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "planner_model_id", "ALTER TABLE openrouter_settings ADD COLUMN planner_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "vision_model_id", "ALTER TABLE openrouter_settings ADD COLUMN vision_model_id VARCHAR DEFAULT 'google/gemma-3-4b-it'"),
         ("openrouter_settings", "vision_use_same_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_use_same_key INTEGER DEFAULT 1"),
         ("openrouter_settings", "vision_api_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_api_key VARCHAR DEFAULT ''"),

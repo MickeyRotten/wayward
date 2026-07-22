@@ -139,7 +139,7 @@ export function SettingsPanel() {
     temperature, topP, minP, topK, frequencyPenalty: freqPen, presencePenalty: presPen,
     repetitionPenalty: repPen, maxTokensResponse: maxTokens, maxToolRounds,
     autoRetryCount, reasoningEffort, useTools, worldbuildingMode: wbMode,
-    worldbuildingModelId: wbModelId, actionSuggestionsModelId, summaryThreshold,
+    worldbuildingModelId: wbModelId, actionSuggestionsModelId, plannerModelId, summaryThreshold,
     summaryModelId, visionModelId, visionUseSameKey, visionInstructions,
     ttsEnabled, ttsAutoplay } = settings
   const { spotlightRule, postHistoryInstructions: postHistory,
@@ -161,6 +161,7 @@ export function SettingsPanel() {
   const setWbMode = (v: OpenRouterSettings['worldbuildingMode']) => setS({ worldbuildingMode: v })
   const setWbModelId = (v: string) => setS({ worldbuildingModelId: v })
   const setActionSuggestionsModelId = (v: string) => setS({ actionSuggestionsModelId: v })
+  const setPlannerModelId = (v: string) => setS({ plannerModelId: v })
   const setSummaryThreshold = (v: number) => setS({ summaryThreshold: v })
   const setSummaryModelId = (v: string) => setS({ summaryModelId: v })
   const setVisionModelId = (v: string) => setS({ visionModelId: v })
@@ -197,7 +198,7 @@ export function SettingsPanel() {
   // text fields fall back to the built-in defaults server-side.
   const resetAiModel = () => setS({ temperature: 0.7, topP: 1, minP: 0, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokensResponse: 1000 })
   const resetAgents = () => {
-    setS({ useTools: true, maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
+    setS({ useTools: true, maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
     setN({ actionSuggestionsEnabled: false })
   }
   const resetWorld = () => setN({ spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
@@ -588,6 +589,21 @@ export function SettingsPanel() {
               />
               <span className="text-[10px] text-textdim font-body">
                 Optional. A cheap/fast model is a good choice for summarising.
+              </span>
+            </label>
+          </SubSection>
+
+          <SubSection title="Editor" scope="Global">
+            <label className="block">
+              <span className="text-[11px] text-textdim font-body">Editor Model</span>
+              <ModelPicker
+                value={plannerModelId}
+                onChange={setPlannerModelId}
+                models={settings.availableModels}
+                showAll={showAllModels}
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Optional. Leave as "Use main model", or pick a tool-capable model for Edit Mode's world-building (its instructions live in World → Editor Instructions).
               </span>
             </label>
           </SubSection>

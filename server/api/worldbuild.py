@@ -43,7 +43,7 @@ async def worldbuild_run(
         ).scalar() or 0
     if turn <= 0:
         return []
-    proposals = await run_worldbuilder(turn)
+    proposals = await run_worldbuilder(turn, force=bool(getattr(data, "force", False)))
     return [_proposal_to_schema(p) for p in proposals]
 
 

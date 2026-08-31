@@ -104,9 +104,22 @@ def test_settings_round_trip_reasoning_effort(client):
     res = client.put("/api/settings/openrouter", json=payload)
     assert res.status_code == 200, res.text
     assert res.json()["reasoningEffort"] == "high"
+    # 'off' explicitly disables reasoning and is a valid, persisted value.
+    payload["reasoningEffort"] = "off"
+    assert client.put("/api/settings/openrouter", json=payload).json()["reasoningEffort"] == "off"
     # Bogus values are stored as '' (provider default).
     payload["reasoningEffort"] = "maximum-overdrive"
     assert client.put("/api/settings/openrouter", json=payload).json()["reasoningEffort"] == ""
+
+
+def test_settings_round_trip_tool_mode(client):
+    current = client.get("/api/settings/openrouter").json()
+    base = {k: v for k, v in current.items() if not k.endswith("KeySet")}
+    for mode in ("native", "text", "off", "auto"):
+        got = client.put("/api/settings/openrouter", json={**base, "toolMode": mode}).json()
+        assert got["toolMode"] == mode
+    # Bogus values fall back to 'auto'.
+    assert client.put("/api/settings/openrouter", json={**base, "toolMode": "banana"}).json()["toolMode"] == "auto"
 
 
 def test_usage_fields_round_trip_on_messages(client):

@@ -138,6 +138,7 @@ async def apply_template(name: str, style_fields: dict | None = None) -> bool:
             post_history_instructions=nar.get("postHistoryInstructions", ""),
             first_message=nar.get("firstMessage", ""),
             action_option_rules=nar.get("actionOptionRules") or None,
+            action_suggestions_count=int(nar.get("actionSuggestionsCount") or 4),
             first_message_options=nar.get("firstMessageOptions") or None,
             first_message_alternates=nar.get("firstMessageAlternates") or None,
             style_fields=normalize_style_fields(style_fields) or None,

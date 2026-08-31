@@ -7,6 +7,8 @@ import { useChatStore } from './chatStore'
 import { useSettingsStore } from './settingsStore'
 import { useItemsStore } from './itemsStore'
 import { useTasksStore } from './tasksStore'
+import { useObjectivesStore } from './objectivesStore'
+import { useWishlistStore } from './wishlistStore'
 import { useLoreStore } from './loreStore'
 import { useCampaignRulesStore } from './campaignRulesStore'
 import { useScenarioStore } from './scenarioStore'
@@ -39,6 +41,8 @@ export async function reloadAll() {
     useItemsStore.getState().fetchCatalog(),
     useItemsStore.getState().fetchInventory(),
     useTasksStore.getState().fetchTasks(),
+    useObjectivesStore.getState().fetchObjectives(),
+    useWishlistStore.getState().fetchWishes(),
     useLoreStore.getState().fetchEntries(),
     useLoreStore.getState().fetchConfig(),
     useCampaignRulesStore.getState().fetchRules(),

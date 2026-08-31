@@ -17,6 +17,7 @@ interface NarratorConfigResponse {
   actionSuggestionsEnabled: boolean
   actionSuggestionsInstructions: string
   actionSuggestionsMode: string
+  actionSuggestionsCount: number
   actionOptionRules: string[]
   firstMessageOptions: string[]
   firstMessageAlternates: OpeningAlt[]
@@ -34,6 +35,7 @@ interface NarratorState {
   actionSuggestionsEnabled: boolean
   actionSuggestionsInstructions: string
   actionSuggestionsMode: string
+  actionSuggestionsCount: number
   actionOptionRules: string[]
   firstMessageOptions: string[]
   firstMessageAlternates: OpeningAlt[]
@@ -56,6 +58,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
   actionSuggestionsEnabled: false,
   actionSuggestionsInstructions: '',
   actionSuggestionsMode: 'separate',
+  actionSuggestionsCount: 4,
   actionOptionRules: [],
   firstMessageOptions: [],
   firstMessageAlternates: [],
@@ -74,6 +77,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
       actionSuggestionsMode: n.actionSuggestionsMode,
+      actionSuggestionsCount: n.actionSuggestionsCount,
       actionOptionRules: n.actionOptionRules,
       firstMessageOptions: n.firstMessageOptions,
       firstMessageAlternates: n.firstMessageAlternates,
@@ -94,6 +98,7 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       actionSuggestionsEnabled: n.actionSuggestionsEnabled,
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
       actionSuggestionsMode: n.actionSuggestionsMode,
+      actionSuggestionsCount: n.actionSuggestionsCount,
       actionOptionRules: n.actionOptionRules,
       firstMessageOptions: n.firstMessageOptions,
       firstMessageAlternates: n.firstMessageAlternates,

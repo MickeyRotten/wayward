@@ -208,6 +208,7 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "summary_threshold", "ALTER TABLE openrouter_settings ADD COLUMN summary_threshold FLOAT DEFAULT 0.7"),
         ("openrouter_settings", "summary_model_id", "ALTER TABLE openrouter_settings ADD COLUMN summary_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "action_suggestions_model_id", "ALTER TABLE openrouter_settings ADD COLUMN action_suggestions_model_id VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "planner_model_id", "ALTER TABLE openrouter_settings ADD COLUMN planner_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "vision_model_id", "ALTER TABLE openrouter_settings ADD COLUMN vision_model_id VARCHAR DEFAULT 'google/gemma-3-4b-it'"),
         ("openrouter_settings", "vision_use_same_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_use_same_key INTEGER DEFAULT 1"),
         ("openrouter_settings", "vision_api_key", "ALTER TABLE openrouter_settings ADD COLUMN vision_api_key VARCHAR DEFAULT ''"),
@@ -222,6 +223,7 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "custom_api_key", "ALTER TABLE openrouter_settings ADD COLUMN custom_api_key VARCHAR DEFAULT ''"),
         ("openrouter_settings", "custom_model_id", "ALTER TABLE openrouter_settings ADD COLUMN custom_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "reasoning_effort", "ALTER TABLE openrouter_settings ADD COLUMN reasoning_effort VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "worldbuilding_interval", "ALTER TABLE openrouter_settings ADD COLUMN worldbuilding_interval INTEGER DEFAULT 2"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:
@@ -229,6 +231,18 @@ async def _run_app_migrations() -> None:
             cols = [row[1] for row in result.fetchall()]
             if column not in cols:
                 await conn.execute(text(ddl))
+        # tool_mode supersedes the legacy use_tools boolean. On first add, seed it
+        # from use_tools (True→'auto', False→'text') so a user who had tools off
+        # stays on the reliable text protocol; afterwards the user's own tool_mode
+        # choice is authoritative and never overwritten (guarded on column absence).
+        cols = [row[1] for row in (await conn.execute(
+            text("PRAGMA table_info(openrouter_settings)"))).fetchall()]
+        if "tool_mode" not in cols:
+            await conn.execute(text(
+                "ALTER TABLE openrouter_settings ADD COLUMN tool_mode VARCHAR DEFAULT 'auto'"))
+            await conn.execute(text(
+                "UPDATE openrouter_settings SET tool_mode = "
+                "CASE WHEN use_tools = 0 THEN 'text' ELSE 'auto' END"))
 
 
 async def _run_scope_migrations() -> None:
@@ -237,6 +251,7 @@ async def _run_scope_migrations() -> None:
     a no-op for them; kept for forward compatibility.)"""
     migrations: list[tuple[str, str, str]] = [
         ("adventure.chat_messages", "day", "ALTER TABLE adventure.chat_messages ADD COLUMN day INTEGER"),
+        ("adventure.chat_messages", "scene_minutes", "ALTER TABLE adventure.chat_messages ADD COLUMN scene_minutes INTEGER"),
         ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
         ("campaign.narrator_configs", "action_suggestions_instructions", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_instructions TEXT DEFAULT ''"),
         ("campaign.narrator_configs", "action_option_rules", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_option_rules JSON"),
@@ -263,6 +278,20 @@ async def _run_scope_migrations() -> None:
             cols = [row[1] for row in result.fetchall()]
             if column not in cols:
                 await conn.execute(text(ddl))
+        # action_suggestions_count supersedes the per-slot action_option_rules. On
+        # first add, seed it from the number of rules the campaign had authored, so
+        # a campaign that used e.g. 5 rules keeps getting 5 options after the switch
+        # to a single shared instruction. Guarded on the column's absence so the
+        # user's own count is authoritative afterwards.
+        nc_cols = [row[1] for row in (await conn.execute(
+            text("PRAGMA campaign.table_info(narrator_configs)"))).fetchall()]
+        if nc_cols and "action_suggestions_count" not in nc_cols:
+            await conn.execute(text(
+                "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_count INTEGER DEFAULT 4"))
+            if "action_option_rules" in nc_cols:
+                await conn.execute(text(
+                    "UPDATE campaign.narrator_configs SET action_suggestions_count = "
+                    "MAX(1, MIN(6, COALESCE(json_array_length(action_option_rules), 4)))"))
         # New adventure-scoped table added after some DBs were created (in-chat
         # persistent toasts). Create it if missing — new DBs already have it.
         if not (await conn.execute(text("PRAGMA adventure.table_info(chat_events)"))).fetchall():
@@ -271,6 +300,22 @@ async def _run_scope_migrations() -> None:
                 "(id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, turn_number INTEGER DEFAULT 0, "
                 "kind VARCHAR DEFAULT 'item', text TEXT DEFAULT '', tethered INTEGER DEFAULT 0, "
                 "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+            ))
+        # New adventure-scoped tables added after some DBs were created:
+        # Objectives (overarching goals) and the player Wishlist. Create if
+        # missing — new DBs already have them from create_all.
+        if not (await conn.execute(text("PRAGMA adventure.table_info(objectives)"))).fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.objectives "
+                "(id VARCHAR NOT NULL PRIMARY KEY, text TEXT DEFAULT '', "
+                "status VARCHAR DEFAULT 'active', detail TEXT DEFAULT '', "
+                "sort_order INTEGER DEFAULT 0)"
+            ))
+        if not (await conn.execute(text("PRAGMA adventure.table_info(wishes)"))).fetchall():
+            await conn.execute(text(
+                "CREATE TABLE adventure.wishes "
+                "(id VARCHAR NOT NULL PRIMARY KEY, text TEXT DEFAULT '', "
+                "priority INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0)"
             ))
         # New campaign-scoped table (R21 World Rules). Only for campaigns that
         # PREDATE it (no table): create it and seed one row, back-filling
@@ -298,6 +343,7 @@ async def _run_scope_migrations() -> None:
             ("adventure", "chat_messages", "ix_chat_messages_turn_number", "turn_number"),
             ("campaign", "lorebook_entries", "ix_lorebook_entries_cat", "cat"),
             ("adventure", "tasks", "ix_tasks_status", "status"),
+            ("adventure", "objectives", "ix_objectives_status", "status"),
             ("adventure", "worldbuilding_proposals", "ix_worldbuilding_proposals_status", "status"),
             ("adventure", "worldbuilding_proposals", "ix_worldbuilding_proposals_turn_number", "turn_number"),
         ]

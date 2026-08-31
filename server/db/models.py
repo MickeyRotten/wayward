@@ -66,8 +66,18 @@ class OpenRouterSettings(Base):
     max_party_size: Mapped[int] = mapped_column(Integer, default=3)
     # Agentic tool loop: cap on tool round-trips per turn, and a master toggle
     # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.
-    max_tool_rounds: Mapped[int] = mapped_column(Integer, default=6)
+    # Each round is a full round-trip that re-sends the ENTIRE prompt, so this
+    # is the most expensive dial in the app. Scene state left the tool surface
+    # for the trailing turn block, which removed the single most common round —
+    # 4 is now comfortably more than a turn needs.
+    max_tool_rounds: Mapped[int] = mapped_column(Integer, default=4)
     use_tools: Mapped[bool] = mapped_column(Integer, default=True)
+    # Narrator state-mutation path (supersedes use_tools, which now only seeds
+    # this on migration): 'auto' (native tool loop when the model supports tools,
+    # else the hardened <<<ACTIONS>>> text protocol), 'native' (force the tool
+    # loop), 'text' (force the text protocol — reliable on weaker/older narrative
+    # models that call tools poorly), 'off' (no state mutation; pure prose).
+    tool_mode: Mapped[str] = mapped_column(String, default="auto")
     # Auto-retry a turn's model call on an error or safety-filter block, up to
     # this many extra attempts before surfacing the error (0 = off). Retries
     # happen per model call, so tools that already ran are never re-applied.
@@ -80,12 +90,23 @@ class OpenRouterSettings(Base):
     # Chronicler (world-building agent): when/how it creates lore/quests/members.
     # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
     worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")
+    # How often the Chronicler runs, in player turns (1-10). It costs a whole
+    # second generation per run, and looking at one beat is also the worst
+    # vantage point for judging "is this genuinely new?" — which is how it ends
+    # up re-proposing the entry it wrote two turns ago. 2 halves the spend and
+    # gives it a wider window; 1 is the old every-turn behaviour.
+    worldbuilding_interval: Mapped[int] = mapped_column(Integer, default=2)
     worldbuilding_model_id: Mapped[str] = mapped_column(String, default="")
     # Action Suggestions (contextual quick-action buttons): optional separate
     # model (blank => main model). Enablement is per-campaign, on
     # NarratorConfig.action_suggestions_enabled — this only picks which model
     # runs it, kept app-wide like worldbuilding_model_id/summary_model_id.
     action_suggestions_model_id: Mapped[str] = mapped_column(String, default="")
+    # Editor (Edit Mode's foreground world-builder; internally "planner"):
+    # optional separate model (blank => main model), same pattern as the
+    # Chronicler/suggester overrides. Edit Mode is often better served by a
+    # cheaper, tool-reliable model than the main narrative model.
+    planner_model_id: Mapped[str] = mapped_column(String, default="")
     # History summarisation: compress older turns when context usage exceeds this
     # fraction of the budget; optional separate model (blank => main model).
     summary_threshold: Mapped[float] = mapped_column(Float, default=0.7)
@@ -140,10 +161,18 @@ class NarratorConfig(Base):
     # 'separate' (default): the options come from their own small LLM call after
     # the turn. 'inline': the narrator appends a machine-read <<<OPTIONS>>> line
     # to its narration — no extra call; reroll still uses the separate agent.
-    action_suggestions_mode: Mapped[str] = mapped_column(Text, default="separate")
-    # One generated option per rule, in order (each editable in Config). Null/
-    # empty => action_suggester.DEFAULT_OPTION_RULES (good/neutral/dark/wildcard).
+    # 'inline' by default: the options ride the narration call's trailing block
+    # instead of buying a second model call every single turn. 'separate' is
+    # still the reroll and self-heal path, which is what it is good at.
+    action_suggestions_mode: Mapped[str] = mapped_column(Text, default="inline")
+    # Legacy per-slot option rules (one generated option per rule). Superseded by
+    # a single shared instruction + action_suggestions_count; retained only so old
+    # campaigns' counts can be seeded from len(rules) on migration. No longer read
+    # at suggestion time.
     action_option_rules = mapped_column(JSON, nullable=True)
+    # How many action options to generate each turn (all shaped by the single
+    # shared action_suggestions_instructions, not per-slot rules). 1-6, default 4.
+    action_suggestions_count: Mapped[int] = mapped_column(Integer, default=4)
     # Scripted choice options shown with the First Message (turn 0), where the
     # suggester can't run — authored alongside the first message itself.
     first_message_options = mapped_column(JSON, nullable=True)
@@ -321,8 +350,15 @@ class ChatMessage(Base):
     location: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     time_of_day: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     weather: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
-    # In-game day number, declared by the narrator (like location/time/weather).
+    # In-game day number. NOT narrator-written any more — the narrator emits a
+    # duration label off a fixed ladder and the server owns the calendar
+    # (server/ai/clock.py). Carried per message so swipe/regenerate/delete
+    # reversal restores the clock for free: dropping the message drops its time.
     day: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    # Minute of the in-game day (0-1439). Internal — the player and the model
+    # only ever see the phase word (`clock.phase_of`), so nothing can narrate
+    # "half past two" and contradict it two beats later.
+    scene_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
@@ -403,6 +439,40 @@ class Task(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String, default="active", index=True)  # active | completed | failed
     notes: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Objective(Base):
+    """A large, direction-setting goal that steers the whole adventure — bigger
+    than a Task. Where a Task is a concrete to-do ("Find someone who knows about
+    the sigil"), an Objective is an overarching aim ("Gather a party of five",
+    "Defeat the Demon Queen before the next Blood Moon"). Injected into the
+    narrator prompt so the story bends toward it. Inspired by Dungeon World's
+    Fronts/Stakes: ``detail`` can hold the stakes/impending doom in free text.
+    ``status`` is active | completed | failed."""
+    __tablename__ = "objectives"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    text: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String, default="active", index=True)  # active | completed | failed
+    detail: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Wish(Base):
+    """A player Wishlist entry — something the player hopes to see happen in the
+    story ("I want to recruit an Elf to my party", "I'd love a betrayal arc").
+    Player-authored, never mutated by the agents; injected into the narrator
+    prompt as a soft steer the Narrator keeps in mind and weaves in when natural.
+    ``priority`` is 0=normal, 1=low, 2=medium, 3=high — a hint at how eager the
+    player is to see it."""
+    __tablename__ = "wishes"
+    __table_args__ = ADVENTURE
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    text: Mapped[str] = mapped_column(Text, default="")
+    priority: Mapped[int] = mapped_column(Integer, default=0)  # 0 normal | 1 low | 2 med | 3 high
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 

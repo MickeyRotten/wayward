@@ -123,7 +123,7 @@ CHRONICLER_GUIDANCE = """You are the Chronicler: a quiet archivist who keeps the
 
 Use your tools to:
 - create_lore / update_lore — record new world rules (pillars), places (world/locations), characters (NPCs), items, species (sapient peoples AND monsters/creatures), or spells that the fiction has established, or update an existing entry with new facts. Pick the right category.
-- create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). update_task_status — mark an existing task completed or failed when the fiction resolves it.
+- create_task — record a NEW goal/to-do the party has clearly taken on (big like "Reach the Sunken Chapel" or small like "Find someone who knows about the sigil"). Optionally add short notes with specifics the narrator should keep in mind (a name, a deadline, a condition). update_task — mark an existing task completed or failed when the fiction resolves it, and/or add a note when the fiction reveals something new about it.
 - create_member — ONLY when a character has clearly and deliberately joined the party as a travelling companion.
 
 Rules (strict — follow them exactly):
@@ -208,6 +208,7 @@ TOOL_SCHEMAS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "The task, phrased as a goal."},
+                    "notes": {"type": "string", "description": "Optional short notes — specifics the narrator should remember for this task."},
                 },
                 "required": ["text"],
             },
@@ -216,15 +217,16 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "update_task_status",
-            "description": "Set an existing task's status (active/completed/failed), matched by its exact text.",
+            "name": "update_task",
+            "description": "Update an existing task, matched by its exact text: set its status (active/completed/failed) and/or append a note the narrator should remember.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "taskText": {"type": "string"},
                     "status": {"type": "string", "enum": sorted(TASK_STATUSES)},
+                    "notes": {"type": "string", "description": "A note to append to the task (new information the fiction revealed)."},
                 },
-                "required": ["taskText", "status"],
+                "required": ["taskText"],
             },
         },
     },
@@ -319,14 +321,23 @@ async def _build_world_state(session: AsyncSession) -> str:
     return "\n".join(lines)
 
 
-async def _latest_narration(session: AsyncSession, turn_number: int) -> str:
-    """The active narration for this turn (highest variant), for the bolded-item check."""
+async def _latest_narration(session: AsyncSession, turn_number: int, since_turn: int | None = None) -> str:
+    """The active narration across the span being chronicled (highest variant per
+    turn), for the pre-filter and the bolded-item check."""
+    low = turn_number if since_turn is None else since_turn + 1
     msgs = (await session.execute(
         select(ChatMessage).where(
-            ChatMessage.turn_number == turn_number, ChatMessage.role == "assistant"
+            ChatMessage.turn_number >= low,
+            ChatMessage.turn_number <= turn_number,
+            ChatMessage.role == "assistant",
         )
     )).scalars().all()
-    return max(msgs, key=lambda m: m.variant).content if msgs else ""
+    by_turn: dict[int, ChatMessage] = {}
+    for m in msgs:
+        cur = by_turn.get(m.turn_number)
+        if cur is None or m.variant > cur.variant:
+            by_turn[m.turn_number] = m
+    return "\n\n".join(by_turn[t].content or "" for t in sorted(by_turn))
 
 
 def _clip(text: str, limit: int) -> str:
@@ -352,27 +363,29 @@ async def _known_name_tokens(session: AsyncSession) -> set[str]:
     return tokens
 
 
-async def _turn_context(session: AsyncSession, turn_number: int) -> str:
-    """The just-played turn (player + latest narration) plus a little prior
-    context. Content is clipped to keep this second LLM pass lean."""
-    turn_msgs = (
+async def _turn_context(session: AsyncSession, turn_number: int, since_turn: int) -> str:
+    """The span of turns being recorded (player + active narration each) plus a
+    little prior context. Content is clipped to keep this second pass lean.
+
+    A span rather than a single turn: running every turn made the Chronicler
+    judge "is this new?" from one beat, which is exactly when it re-proposes an
+    entry it wrote two beats ago. Seeing the whole stretch at once is both
+    cheaper and a better judge."""
+    low = since_turn + 1
+    span = (
         await session.execute(
             select(ChatMessage)
-            .where(ChatMessage.turn_number == turn_number)
+            .where(ChatMessage.turn_number >= low, ChatMessage.turn_number <= turn_number)
             .order_by(ChatMessage.id)
         )
     ).scalars().all()
-
-    player = next((m for m in turn_msgs if m.role == "user"), None)
-    variants = [m for m in turn_msgs if m.role == "assistant"]
-    narration = max(variants, key=lambda m: m.variant).content if variants else ""
 
     # Two prior messages for continuity, each clipped (targeted query — never
     # load the whole adventure for this second, lean LLM pass).
     prior = list(reversed((
         await session.execute(
             select(ChatMessage)
-            .where(ChatMessage.turn_number < turn_number)
+            .where(ChatMessage.turn_number < low)
             .order_by(ChatMessage.id.desc())
             .limit(2)
         )
@@ -382,10 +395,18 @@ async def _turn_context(session: AsyncSession, turn_number: int) -> str:
         who = "Player" if m.role == "user" else "Narrator"
         lines.append(f"  [{who}] {_clip(m.content, 280)}")
     lines.append("")
-    lines.append("THE TURN TO RECORD:")
-    if player:
-        lines.append(f"  [Player] {_clip(player.content, 400)}")
-    lines.append(f"  [Narrator] {_clip(narration, 1600)}")
+    lines.append("THE TURNS TO RECORD:" if turn_number > low else "THE TURN TO RECORD:")
+    for t in range(low, turn_number + 1):
+        msgs = [m for m in span if m.turn_number == t]
+        player = next((m for m in msgs if m.role == "user"), None)
+        variants = [m for m in msgs if m.role == "assistant"]
+        if not player and not variants:
+            continue
+        if player:
+            lines.append(f"  [Player] {_clip(player.content, 400)}")
+        if variants:
+            narration = max(variants, key=lambda m: m.variant).content
+            lines.append(f"  [Narrator] {_clip(narration, 1600)}")
     return "\n".join(lines)
 
 
@@ -396,7 +417,9 @@ def _summary(kind: str, operation: str, payload: dict, target_title: str | None 
     if kind == "task":
         if operation == "create":
             return f"New task: {payload.get('text', '?')[:48]}"
-        return f"Task {payload.get('status', 'update')}: {target_title or '?'}"
+        if payload.get("status"):
+            return f"Task {payload['status']}: {target_title or '?'}"
+        return f"Task note: {target_title or '?'}"
     if kind == "member":
         return f"Recruit member: {payload.get('name', '?')}"
     return f"{kind} {operation}"
@@ -470,17 +493,26 @@ async def _proposal_from_call(
         if not text or await _resolve_task(session, text):
             return None
         payload = {"text": text}
+        if (args.get("notes") or "").strip():
+            payload["notes"] = args["notes"].strip()
         return WorldbuildingProposal(
             turn_number=turn_number, kind="task", operation="create",
             payload=payload, summary=_summary("task", "create", payload),
         )
 
-    if name == "update_task_status":
+    if name in ("update_task", "update_task_status"):
         task = await _resolve_task(session, (args.get("taskText") or "").strip())
         status = args.get("status")
-        if not task or status not in TASK_STATUSES:
+        note = (args.get("notes") or "").strip()
+        valid_status = status in TASK_STATUSES
+        # Need at least one real change (a valid status, or a note to append).
+        if not task or (not valid_status and not note):
             return None
-        payload = {"status": status}
+        payload: dict = {}
+        if valid_status:
+            payload["status"] = status
+        if note:
+            payload["notesAppend"] = note
         return WorldbuildingProposal(
             turn_number=turn_number, kind="task", operation="update",
             target_id=task.id, payload=payload,
@@ -564,7 +596,8 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         max_order = (await session.execute(
             select(func.coalesce(func.max(Task.sort_order), -1))
         )).scalar()
-        task = Task(text=p.get("text", ""), status="active", sort_order=(max_order or 0) + 1)
+        task = Task(text=p.get("text", ""), status="active", notes=p.get("notes", ""),
+                    sort_order=(max_order or 0) + 1)
         session.add(task)
         await session.flush()
         proposal.target_id = task.id  # tie the created task to this proposal/turn
@@ -574,9 +607,13 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         task = await session.get(Task, proposal.target_id)
         if not task:
             return False, "Task no longer exists."
-        _snapshot_prev(proposal, {"status": task.status})
+        _snapshot_prev(proposal, {"status": task.status, "notes": task.notes})
         if p.get("status"):
             task.status = p["status"]
+        if p.get("notesAppend"):
+            # Additive: append the new note on its own line, keeping prior notes.
+            existing = (task.notes or "").rstrip()
+            task.notes = f"{existing}\n{p['notesAppend']}" if existing else p["notesAppend"]
         return True, None
 
     if kind == "member" and op == "create":
@@ -643,8 +680,11 @@ async def _reverse_accepted_proposal(p: WorldbuildingProposal, session: AsyncSes
 
     if kind == "task" and op == "update":
         task = await session.get(Task, p.target_id) if p.target_id else None
-        if task is not None and prev and "status" in prev:
-            task.status = prev["status"]
+        if task is not None and prev:
+            if "status" in prev:
+                task.status = prev["status"]
+            if "notes" in prev:
+                task.notes = prev["notes"]
             return True
         return False
 
@@ -702,11 +742,30 @@ async def reverse_chronicler_effects(
     return reversed_count
 
 
-async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
-    """Run the Chronicler for a turn. Returns the proposals it produced.
+def chronicler_span(turn_number: int, interval: int) -> int | None:
+    """The turn this run should look back to, or None when it should not run.
+
+    A cadence rather than every turn. The pass costs a whole second generation,
+    and running it on every beat also made it judge "is this genuinely new?" from
+    a single beat — which is when it re-proposes the entry it wrote two turns
+    ago. Deterministic in the turn number, so it needs no bookkeeping and a
+    swipe/regenerate of a covered turn lands on the same decision. An interval of
+    1 is the old behaviour exactly."""
+    interval = max(1, min(int(interval or 1), 10))
+    if interval == 1:
+        return turn_number - 1
+    if turn_number % interval != 0:
+        return None
+    return turn_number - interval
+
+
+async def run_worldbuilder(turn_number: int, force: bool = False) -> list[WorldbuildingProposal]:
+    """Run the Chronicler over the turns since it last ran. Returns its proposals.
 
     Clears any stale 'pending' proposals for this turn first (so swipe/regen
-    don't accumulate duplicates). No-op when mode is 'disabled'.
+    don't accumulate duplicates). No-op when mode is 'disabled', or when the
+    cadence says this is not a Chronicler turn (``force`` overrides — the manual
+    "run now" path).
     """
     async with new_session() as session:
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
@@ -718,6 +777,14 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
         mode = settings.worldbuilding_mode or "confirmation"
         if mode == "disabled":
             return []
+
+        since_turn = turn_number - 1 if force else chronicler_span(
+            turn_number, getattr(settings, "worldbuilding_interval", 2) or 2
+        )
+        if since_turn is None:
+            log.info("CHRONICLER SKIP turn=%s (not a Chronicler turn)", turn_number)
+            return []
+        since_turn = max(0, since_turn)
 
         # Prune pending proposals so they don't accumulate forever: drop this
         # turn's stale pending (a re-run replaces them), anything older than the
@@ -735,7 +802,7 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
 
         # Cheap deterministic pre-filter: skip the whole second LLM pass when the
         # turn plausibly introduced nothing new (the common case).
-        narration = await _latest_narration(session, turn_number)
+        narration = await _latest_narration(session, turn_number, since_turn)
         known_tokens = await _known_name_tokens(session)
         if not _worth_chronicling(narration, known_tokens):
             await session.commit()  # persist the stale-pending cleanup
@@ -743,7 +810,7 @@ async def run_worldbuilder(turn_number: int) -> list[WorldbuildingProposal]:
             return []
 
         world_state = await _build_world_state(session)
-        turn_ctx = await _turn_context(session, turn_number)
+        turn_ctx = await _turn_context(session, turn_number, since_turn)
         model_id = settings.worldbuilding_model_id or main_model
 
         # Guard data for the deterministic rule backstop: every party member

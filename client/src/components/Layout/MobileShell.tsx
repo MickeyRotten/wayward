@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { useCallback, type ReactNode } from 'react'
 import { MobileNav } from './MobileNav'
+import { useBackHandler } from '../../lib/useBackHandler'
 import { useUiStore } from '../../state/uiStore'
 
 // Phone / portrait-tablet shell (<1024px): one full-screen view at a time over
@@ -16,6 +17,12 @@ export function MobileShell({
   const select = useUiStore((s) => s.select)
   const mobileView = useUiStore((s) => s.mobileView)
   const isChat = mobileView === 'chat'
+
+  // The Inspector is a full-screen drill-in, so the Android hardware Back button
+  // has to close it. Without this, Back quit the app from the screen a phone
+  // player spends most of their time on.
+  const closeInspector = useCallback(() => select(null), [select])
+  useBackHandler(selection !== null, closeInspector)
 
   return (
     <div className="flex h-full flex-col">

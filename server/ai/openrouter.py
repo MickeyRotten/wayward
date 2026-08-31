@@ -242,6 +242,94 @@ def _delta_reasoning(delta: dict) -> str:
     return delta.get("reasoning") or delta.get("reasoning_content") or ""
 
 
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+
+
+def _partial_suffix(text: str, marker: str) -> int:
+    """Longest k (0 < k < len(marker)) such that ``text`` ends with ``marker[:k]``
+    — i.e. a marker possibly split across streaming deltas. 0 if none."""
+    for k in range(min(len(text), len(marker) - 1), 0, -1):
+        if text.endswith(marker[:k]):
+            return k
+    return 0
+
+
+class _ThinkStripper:
+    """Split a content stream into visible narration and inline
+    ``<think>…</think>`` reasoning, tolerant of a tag split across deltas.
+
+    Some DeepSeek deployments (self-hosted vLLM/SGLang behind the custom/NIM
+    providers, or providers without a reasoning parser) emit chain-of-thought
+    *inline* in ``delta.content`` instead of a dedicated ``reasoning`` field.
+    Left alone it renders as narration and then the real answer follows, which
+    reads as the model writing a reply, deleting it, and rewriting it. This
+    routes a **leading** think block to the reasoning channel instead.
+
+    Only a leading block (optionally after whitespace) is stripped — once real
+    visible content has streamed, a later ``<think>`` is treated as literal text,
+    so ordinary prose containing the token is never mangled. Providers that use a
+    real reasoning field never emit these tags, so this is a passthrough there.
+    """
+
+    def __init__(self) -> None:
+        self._in_think = False
+        self._closed = False  # leading block consumed or real content seen
+        self._buf = ""        # a partial tag held across a delta boundary
+
+    def feed(self, s: str) -> tuple[str, str]:
+        """Consume one content delta → ``(visible, reasoning)``."""
+        text = self._buf + s
+        self._buf = ""
+        vis: list[str] = []
+        rea: list[str] = []
+        while text:
+            if self._closed:
+                vis.append(text)
+                break
+            if not self._in_think:
+                i = text.find(_THINK_OPEN)
+                if i != -1 and text[:i].strip() == "":
+                    vis.append(text[:i])  # leading whitespace, harmless
+                    text = text[i + len(_THINK_OPEN):]
+                    self._in_think = True
+                    continue
+                hold = _partial_suffix(text, _THINK_OPEN)
+                if hold and text[: len(text) - hold].strip() == "":
+                    # still only whitespace before a possible tag — wait for more
+                    vis.append(text[: len(text) - hold])
+                    self._buf = text[len(text) - hold:]
+                    break
+                # real content precedes any tag — emit and lock out stripping
+                vis.append(text)
+                if text.strip():
+                    self._closed = True
+                break
+            # inside the leading think block
+            i = text.find(_THINK_CLOSE)
+            if i != -1:
+                rea.append(text[:i])
+                text = text[i + len(_THINK_CLOSE):]
+                self._in_think = False
+                self._closed = True  # only the first block is stripped
+                continue
+            hold = _partial_suffix(text, _THINK_CLOSE)
+            if hold:
+                rea.append(text[: len(text) - hold])
+                self._buf = text[len(text) - hold:]
+            else:
+                rea.append(text)
+            break
+        return "".join(vis), "".join(rea)
+
+    def flush(self) -> tuple[str, str]:
+        """Emit any held partial at stream end (the tag never completed)."""
+        if not self._buf:
+            return "", ""
+        b, self._buf = self._buf, ""
+        return ("", b) if self._in_think else (b, "")
+
+
 async def chat_completion_stream(
     api_key: str,
     model_id: str,
@@ -277,6 +365,7 @@ async def chat_completion_stream(
     client = _client()
     for attempt in range(_MAX_ATTEMPTS):
         usage: dict | None = None
+        stripper = _ThinkStripper()
         async with client.stream(
             "POST",
             f"{base_url}/chat/completions",
@@ -320,7 +409,17 @@ async def chat_completion_stream(
                         yield {"type": "reasoning", "text": reasoning}
                 content = delta.get("content", "")
                 if content:
-                    yield {"type": "content", "text": content} if yield_events else content
+                    vis, think = stripper.feed(content)
+                    if think and yield_events:
+                        yield {"type": "reasoning", "text": think}
+                    if vis:
+                        yield {"type": "content", "text": vis} if yield_events else vis
+            # Flush any think-tag partial held across the final delta boundary.
+            vis, think = stripper.flush()
+            if think and yield_events:
+                yield {"type": "reasoning", "text": think}
+            if vis:
+                yield {"type": "content", "text": vis} if yield_events else vis
             if yield_events and usage:
                 yield {"type": "usage", **usage}
             return
@@ -373,6 +472,7 @@ async def chat_completion_agent_turn(
 
     client = _client()
     for attempt in range(_MAX_ATTEMPTS):
+        stripper = _ThinkStripper()
         async with client.stream(
             "POST",
             f"{base_url}/chat/completions",
@@ -419,8 +519,12 @@ async def chat_completion_agent_turn(
                     yield {"type": "reasoning", "text": reasoning}
                 content = delta.get("content")
                 if content:
-                    content_parts.append(content)
-                    yield {"type": "content", "text": content}
+                    vis, think = stripper.feed(content)
+                    if think:
+                        yield {"type": "reasoning", "text": think}
+                    if vis:
+                        content_parts.append(vis)
+                        yield {"type": "content", "text": vis}
 
                 for tc in delta.get("tool_calls") or []:
                     idx = tc.get("index", 0)
@@ -432,6 +536,13 @@ async def chat_completion_agent_turn(
                         acc["name"] = fn["name"]
                     if fn.get("arguments"):
                         acc["arguments"] += fn["arguments"]
+            # Flush any think-tag partial held across the final delta boundary.
+            vis, think = stripper.flush()
+            if think:
+                yield {"type": "reasoning", "text": think}
+            if vis:
+                content_parts.append(vis)
+                yield {"type": "content", "text": vis}
             break  # streamed successfully; stop retrying
 
     tool_calls = [tool_acc[i] for i in sorted(tool_acc)]

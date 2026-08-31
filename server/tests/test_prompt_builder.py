@@ -126,7 +126,7 @@ def test_party_roster_includes_personality_and_other():
     )
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[pm],
                         chat_history=[], player_message="Hi", include_action_protocol=False)
-    roster = next(m["content"] for m in msgs if "PARTY ROSTER" in m["content"])
+    roster = next(m["content"] for m in msgs if "PARTY SHEETS" in m["content"])
     assert "Personality: Wry" in roster and "Other: Collects teeth" in roster
 
 
@@ -157,3 +157,119 @@ def test_equipment_renders_names_and_descriptions():
                         item_catalog=[sword], include_action_protocol=False)
     pc_block = next(m["content"] for m in msgs if "PLAYER CHARACTER" in m["content"])
     assert "rightHand: Sword — A trusty blade." in pc_block
+
+
+# ── Task notes, objectives, wishlist injection ────────────────────
+
+def _task(text, status="active", notes=""):
+    return NS(text=text, status=status, notes=notes)
+
+
+def _objective(text, status="active", detail=""):
+    return NS(text=text, status=status, detail=detail)
+
+
+def _wish(text, priority=0):
+    return NS(text=text, priority=priority)
+
+
+def test_task_notes_are_shown_to_the_narrator():
+    tasks = [_task("Find the sigil", notes="Ask the smith in Kal-Toth.")]
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", tasks=tasks,
+                        include_action_protocol=False)
+    block = next(m["content"] for m in msgs if "ACTIVE TASKS" in m["content"])
+    assert "Find the sigil" in block
+    assert "Ask the smith in Kal-Toth." in block
+
+
+def test_objectives_inject_only_active():
+    objectives = [
+        _objective("Gather a party of five", detail="Three so far."),
+        _objective("Old goal", status="completed"),
+    ]
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", objectives=objectives,
+                        include_action_protocol=False)
+    block = next(m["content"] for m in msgs if "OVERARCHING OBJECTIVES" in m["content"])
+    assert "Gather a party of five" in block
+    assert "Three so far." in block
+    assert "Old goal" not in block
+
+
+def test_wishlist_injects_with_priority_label():
+    wishes = [_wish("Recruit an Elf", priority=3), _wish("A betrayal arc", priority=0)]
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi", wishes=wishes,
+                        include_action_protocol=False)
+    block = next(m["content"] for m in msgs if "PLAYER WISHLIST" in m["content"])
+    assert "Recruit an Elf (priority: high)" in block
+    assert "A betrayal arc" in block  # priority 0 → no label suffix
+    assert "A betrayal arc (priority" not in block
+
+
+def test_empty_goal_lists_inject_nothing():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[],
+                        chat_history=[], player_message="Hi",
+                        objectives=[], wishes=[], tasks=[],
+                        include_action_protocol=False)
+    joined = "\n".join(m["content"] for m in msgs)
+    assert "OVERARCHING OBJECTIVES" not in joined
+    assert "PLAYER WISHLIST" not in joined
+
+
+# ── Tier order: the rule that everything the history can contradict comes
+#    AFTER the history, and that tier 1 stays a stable cacheable prefix. ────
+
+def _msgs(n=4):
+    return [NS(role=("user" if i % 2 == 0 else "assistant"),
+               content=f"beat {i}", turn_number=i // 2 + 1,
+               location=None, time_of_day=None, weather=None, day=None,
+               scene_minutes=None, image_path=None, image_description=None)
+            for i in range(n)]
+
+
+def _index_of(msgs, needle):
+    return next(i for i, m in enumerate(msgs) if needle in m["content"])
+
+
+def test_state_of_play_is_stated_after_the_history():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                        party_members=[], chat_history=_msgs(),
+                        player_message="Hi", include_action_protocol=False)
+    last_history = max(i for i, m in enumerate(msgs) if m["content"].startswith("beat "))
+    assert _index_of(msgs, "STATE OF PLAY") > last_history
+
+
+def test_the_roll_call_is_emitted_even_for_an_empty_party():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                        party_members=[], chat_history=[], player_message="Hi",
+                        include_action_protocol=False)
+    state = next(m["content"] for m in msgs if "STATE OF PLAY" in m["content"])
+    assert "ALONE" in state
+
+
+def test_the_state_tier_carries_one_authority_line():
+    pm = NS(basic_info={"name": "Tifa"}, field_skill={}, equipment={})
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                        party_members=[pm], chat_history=_msgs(),
+                        player_message="Hi", include_action_protocol=False,
+                        inventory_lines=["Rope — coiled hemp"],
+                        scene={"location": "Damp Cellar", "day": 3, "minutes": 8 * 60})
+    state = [m["content"] for m in msgs if "STATE OF PLAY" in m["content"]]
+    assert len(state) == 1, "three blocks each claiming authority read as three arguments"
+    assert "Damp Cellar" in state[0] and "Rope" in state[0] and "Tifa" in state[0]
+    assert "morning" in state[0], "time reaches the model as a phase word"
+
+
+def test_the_standing_context_is_identical_across_turns():
+    # Tier 1 is the cacheable prefix: it must not move when the volatile half does.
+    def prefix(history, tasks):
+        msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                            party_members=[], chat_history=history, tasks=tasks,
+                            player_message="Hi", include_action_protocol=False)
+        return [m["content"] for m in msgs[:2]]
+
+    assert prefix([], None) == prefix(
+        _msgs(6), [NS(status="active", text="Find the key", notes="")]
+    )

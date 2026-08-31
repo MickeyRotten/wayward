@@ -2,7 +2,8 @@
 
 When Planning mode is toggled on, the chat's primary agent becomes the Planner:
 its own core instructions and full CRUD over lore, quests, party members, the
-player character, the Scenario, and the Narrator's instructions. The player
+player character, the Scenario, and the Story Style (including the narrator's
+custom instructions — but never the core Narrator role/behaviour). The player
 talks to it directly and it creates/edits many things per turn, then replies
 conversationally.
 
@@ -40,6 +41,7 @@ from server.db.models import (
     ChatMessage,
     LorebookEntry,
     NarratorConfig,
+    Objective,
     OpenRouterSettings,
     Task,
 )
@@ -56,7 +58,9 @@ EQUIP_SLOTS = [
 ]
 
 
-PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, the party, the player character, the Scenario, and even the Narrator's instructions.
+PLANNER_GUIDANCE = """You are the Editor: a collaborative world-building assistant. You are NOT the narrator — you do not narrate scenes or play the adventure. Your job is to help the player build and shape their adventure: places, characters, items, species, spells, tasks, objectives, the party, the player character, the Scenario, and the Story Style (genre/tone/writing style/etc., plus the narrator's freeform custom instructions).
+
+TASKS vs OBJECTIVES: a task is a concrete to-do ("Find someone who knows about the sigil"); an Objective is a large, overarching goal that steers the whole adventure ("Gather a party of five", "Defeat the Demon Queen before the next Blood Moon"). Use create_objective for the big, direction-setting goals and create_task for the smaller steps. A task's notes are extra context the narrator reads — use them to record anything the narrator should keep in mind.
 
 How you work:
 - Use your tools to create, edit, and remove world content. You may make several changes in one turn (within reason) — e.g. a region plus a few NPCs plus a task, or a character's full set of gear.
@@ -70,9 +74,9 @@ How you work:
 - EQUIPPING — STRICT ORDER: an item must EXIST before it can be equipped. To outfit the PC or a party member, for each piece: (1) create_item first (type Equipment, with a slot), THEN (2) equip it into the precise slot (head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2). Never call equip on an item you have not created — it will fail. Creating an item does NOT equip it; you must call equip as the second step.
 - TIMELESS ENTRIES: write every lore/item entry as a permanent world fact, not a note about the current scene or party. Items — describe the item itself, generically (what it is/does), never who currently holds or wears it, and always give it a proper type (and slot for Equipment). World/places — describe the place generically; nothing about the party or what they're doing there. Species — the creature or people in general, using the structured speciesFields rather than one blob of content. Spells — the effect and its limits. Characters (NPCs) — who they are, not the party's momentary interaction with them.
 - HONESTY: never tell the player something succeeded if the tool result was an error. If equip says the item doesn't exist, create it and retry; if something can't be done, say so plainly rather than claiming success.
-- CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can also read the Narrator's instructions (get_narrator_instructions) to match the intended tone, and edit the Scenario, the Narrator's instructions, or the opening narration (set_first_message) when asked.
+- CONSISTENCY: the Scenario is included in your context — keep new content consistent with it. You can read the current Story Style (get_story_style) to match the intended tone, and edit the Scenario, the Story Style, or the opening narration (set_first_message) when asked. You do NOT edit the Narrator's core instructions (its role and behaviour) — to adjust how the narrator writes, change the Story Style: its genre/tone/writing-style/etc. options, or the freeform customInstructions field for anything the options don't cover.
 - READ BEFORE YOU EDIT: your world list shows only NAMES. Before changing an existing lore entry, task, or character, call get_entry first to read its current content, then extend it — don't blindly overwrite facts you haven't seen.
-- SENSITIVE OVERWRITES: set_narrator_instructions and set_first_message REPLACE the whole existing text and take effect immediately — only do them when the player clearly asks. set_scenario and set_story_style are PARTIAL updates instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario / get_story_style first if you need to see the current values before editing one. set_story_style is the right tool when the player asks to change the narration's genre, tone, writing style, verbosity, content rating, perspective, or structure ("make it darker", "write more like Pratchett", "third person"). Always tell the player explicitly in your reply what you changed.
+- SENSITIVE OVERWRITES: set_first_message REPLACES the whole existing opening text and takes effect immediately — only do it when the player clearly asks. set_scenario and set_story_style are PARTIAL updates instead: pass only the field(s) you're changing and omit the rest — omitted fields are left untouched. Call get_scenario / get_story_style first if you need to see the current values before editing one. set_story_style is the right tool when the player asks to change how the narration reads — its genre, tone, writing style, verbosity, content rating, perspective, or structure ("make it darker", "write more like Pratchett", "third person") — and its customInstructions field is where extra freeform narration guidance goes ("always end scenes on a hook"). Always tell the player explicitly in your reply what you changed.
 - Deletions are not applied immediately — they are queued for the player to confirm, so feel free to propose them when asked.
 - After making changes, reply briefly and conversationally: say what you did and offer sensible next steps ("Forged and equipped Tifa's kit — want the gauntlets bumped to Rare?").
 - If the player is just chatting or asking questions, answer normally without calling tools.
@@ -172,12 +176,26 @@ TOOL_SCHEMAS: list[dict] = [
         {"characterName": {"type": "string"}, "slot": {"type": "string", "enum": EQUIP_SLOTS}},
         ["characterName", "slot"]),
     _fn("create_task", "Create a task (a single goal/to-do — big or small).",
-        {"text": {"type": "string"}}, ["text"]),
-    _fn("update_task", "Edit a task's text or status, matched by its exact current text.",
+        {"text": {"type": "string"},
+         "notes": {"type": "string", "description": "Optional freeform notes — extra context the narrator should keep in mind for this task."}},
+        ["text"]),
+    _fn("update_task", "Edit a task's text, status, or notes, matched by its exact current text.",
         {"text": {"type": "string", "description": "The task's current text (to find it)."},
          "newText": {"type": "string", "description": "New text, to reword the task."},
+         "notes": {"type": "string", "description": "Replace the task's notes (freeform context the narrator reads)."},
          "status": {"type": "string", "enum": sorted(TASK_STATUSES)}}, ["text"]),
     _fn("delete_task", "Remove a task (queued for confirmation), by exact text.",
+        {"text": {"type": "string"}}, ["text"]),
+    _fn("create_objective", "Create an Objective — a large, direction-setting goal that steers the whole adventure (e.g. 'Gather a party of five', 'Defeat the Demon Queen before the next Blood Moon'). Bigger than a task.",
+        {"text": {"type": "string"},
+         "detail": {"type": "string", "description": "Optional stakes/context — what's at risk, the looming threat, or how it might unfold."}},
+        ["text"]),
+    _fn("update_objective", "Edit an Objective's text, detail, or status, matched by its exact current text.",
+        {"text": {"type": "string", "description": "The objective's current text (to find it)."},
+         "newText": {"type": "string", "description": "New text, to reword the objective."},
+         "detail": {"type": "string", "description": "Replace the objective's stakes/detail."},
+         "status": {"type": "string", "enum": sorted(TASK_STATUSES)}}, ["text"]),
+    _fn("delete_objective", "Remove an Objective (queued for confirmation), by exact text.",
         {"text": {"type": "string"}}, ["text"]),
     _fn("create_member", "Add a party member.",
         {"name": {"type": "string"}, "species": {"type": "string"}, "gender": {"type": "string"},
@@ -228,9 +246,6 @@ TOOL_SCHEMAS: list[dict] = [
         [],
     ),
     _fn("get_story_style", "Read the campaign's current Story Style selections (genre, tone, writing style, verbosity, content limit, perspective, structure, custom instructions).", {}, []),
-    _fn("set_narrator_instructions", "Replace the Narrator's core system instructions (tone/rules of narration).",
-        {"content": {"type": "string"}}, ["content"]),
-    _fn("get_narrator_instructions", "Read the Narrator's current core instructions (to keep your edits consistent with them).", {}, []),
     _fn("set_first_message", "Set the opening narration shown before the player's first turn (the campaign's First Message).",
         {"content": {"type": "string"}}, ["content"]),
     _fn("set_first_message_alternates", "Set the ALTERNATE opening narrations (like alternate greetings): the full list of additional openings the player can swipe between at turn 0, besides the primary First Message. Each has its own narration and its own scripted options. Pass the complete list (replaces the existing one); pass [] to clear.",
@@ -272,6 +287,16 @@ def _parse_args(raw: str) -> dict:
         return {}
 
 
+async def _resolve_objective(session, text: str) -> Objective | None:
+    if not text:
+        return None
+    return (
+        await session.execute(
+            select(Objective).where(func.lower(Objective.text) == text.lower())
+        )
+    ).scalars().first()
+
+
 # ── Context ───────────────────────────────────────────────────────
 
 async def _build_planner_context(session) -> str:
@@ -287,6 +312,11 @@ async def _build_planner_context(session) -> str:
     for cat in LORE_CAT_ORDER:
         titles = by_cat.get(cat, [])
         lines.append(f"  {cat}: {', '.join(titles) if titles else '(none)'}")
+    objectives = (await session.execute(select(Objective).order_by(Objective.sort_order))).scalars().all()
+    if objectives:
+        lines.append("  objectives: " + ", ".join(f"{o.text} [{o.status}]" for o in objectives))
+    else:
+        lines.append("  objectives: (none)")
     if tasks:
         lines.append("  tasks: " + ", ".join(f"{t.text} [{t.status}]" for t in tasks))
     else:
@@ -430,7 +460,8 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"Task '{text}' is empty or already exists.", None
         max_order = (await session.execute(
             select(func.coalesce(func.max(Task.sort_order), -1)))).scalar()
-        session.add(Task(text=text, status="active", sort_order=(max_order or 0) + 1))
+        session.add(Task(text=text, status="active", notes=(args.get("notes") or ""),
+                         sort_order=(max_order or 0) + 1))
         return f"Created task: {text}.", None
 
     if name == "update_task":
@@ -439,6 +470,8 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"No task matching '{args.get('text', '')}'.", None
         if args.get("newText"):
             task.text = args["newText"]
+        if args.get("notes") is not None:
+            task.notes = args["notes"]
         if args.get("status") in TASK_STATUSES:
             task.status = args["status"]
         return f"Updated task: {task.text}.", None
@@ -449,6 +482,36 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
             return f"No task matching '{args.get('text', '')}'.", None
         return f"Queued deletion of task '{task.text}' for confirmation.", \
             {"kind": "task", "targetId": task.id, "label": task.text[:40]}
+
+    # ---- Objectives (overarching goals) ----
+    if name == "create_objective":
+        text = (args.get("text") or "").strip()
+        if not text or await _resolve_objective(session, text):
+            return f"Objective '{text}' is empty or already exists.", None
+        max_order = (await session.execute(
+            select(func.coalesce(func.max(Objective.sort_order), -1)))).scalar()
+        session.add(Objective(text=text, status="active", detail=(args.get("detail") or ""),
+                              sort_order=(max_order or 0) + 1))
+        return f"Created objective: {text}.", None
+
+    if name == "update_objective":
+        obj = await _resolve_objective(session, (args.get("text") or "").strip())
+        if not obj:
+            return f"No objective matching '{args.get('text', '')}'.", None
+        if args.get("newText"):
+            obj.text = args["newText"]
+        if args.get("detail") is not None:
+            obj.detail = args["detail"]
+        if args.get("status") in TASK_STATUSES:
+            obj.status = args["status"]
+        return f"Updated objective: {obj.text}.", None
+
+    if name == "delete_objective":
+        obj = await _resolve_objective(session, (args.get("text") or "").strip())
+        if not obj:
+            return f"No objective matching '{args.get('text', '')}'.", None
+        return f"Queued deletion of objective '{obj.text}' for confirmation.", \
+            {"kind": "objective", "targetId": obj.id, "label": obj.text[:40]}
 
     # ---- Members ----
     if name == "create_member":
@@ -556,18 +619,6 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         wire = style.to_wire(getattr(cfg, "style_fields", None) if cfg else None)
         return "\n".join(f"{k}: {v or '(empty)'}" for k, v in wire.items()), None
 
-    if name == "set_narrator_instructions":
-        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
-        if not cfg:
-            cfg = NarratorConfig()
-            session.add(cfg)
-        cfg.instructions = args.get("content", "")
-        return "Updated the Narrator's instructions.", None
-
-    if name == "get_narrator_instructions":
-        cfg = (await session.execute(select(NarratorConfig))).scalars().first()
-        return (cfg.instructions or "(using the built-in default)") if cfg else "(none)", None
-
     if name == "set_first_message":
         cfg = (await session.execute(select(NarratorConfig))).scalars().first()
         if not cfg:
@@ -627,6 +678,10 @@ async def _exec_tool(name: str, args: dict, session) -> tuple[str, dict | None]:
         if task:
             return json.dumps({"task": task.text, "status": task.status, "notes": task.notes},
                               ensure_ascii=False), None
+        objective = await _resolve_objective(session, q)
+        if objective:
+            return json.dumps({"objective": objective.text, "status": objective.status,
+                               "detail": objective.detail}, ensure_ascii=False), None
         character, _ = await _resolve_character(session, q)
         if character is not None:
             equipped = {}
@@ -687,7 +742,10 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
         tool_results: list[str] = []  # for an empty-reply fallback
 
         base_url, api_key, main_model = provider_endpoint(settings)
-        log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, main_model or "?")
+        # Optional separate Editor model (blank => main model), same pattern as
+        # the Chronicler/suggester overrides.
+        editor_model = (getattr(settings, "planner_model_id", "") or "").strip() or main_model
+        log.info("EDITOR REQUEST turn=%s | model=%s", turn_number, editor_model or "?")
 
         for round_idx in range(max_rounds):
             offer_tools = round_idx < max_rounds - 1
@@ -698,7 +756,7 @@ async def run_planner_agent(turn_number: int) -> AsyncGenerator[dict, None]:
 
             def _make_call(_offer=offer_tools):
                 return chat_completion_agent_turn(
-                    api_key=api_key, model_id=main_model, base_url=base_url, messages=messages,
+                    api_key=api_key, model_id=editor_model, base_url=base_url, messages=messages,
                     temperature=settings.temperature, max_tokens=settings.max_tokens_response,
                     tools=TOOL_SCHEMAS if _offer else None,
                     top_p=settings.top_p, min_p=settings.min_p, top_k=settings.top_k,

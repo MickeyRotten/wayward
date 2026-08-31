@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useTasksStore } from '../../state/tasksStore'
 import { useUiStore } from '../../state/uiStore'
 import { SelectionBar } from '../SelectionBar'
+import { ObjectivesSection } from './ObjectivesSection'
+import { WishlistSection } from './WishlistSection'
 import type { Task } from '@shared/types/models'
 
 export function TasksPanel() {
@@ -19,13 +21,17 @@ export function TasksPanel() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-5 pt-5 pb-4">
-        <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">TASKS</h2>
+        <h2 className="font-disp text-[24px] pt-[3px] leading-none text-text">TASKS &amp; GOALS</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {/* Overarching objectives — the big goals that steer the story */}
+        <ObjectivesSection />
+
         {/* Active tasks */}
-        <div className="px-2 pb-1">
+        <div className="flex items-center gap-2 px-3 pt-1 pb-1">
           <span className="font-ui text-[9px] text-textsec tracking-wider">TO DO</span>
+          <div className="flex-1 border-t border-line" />
         </div>
 
         {activeTasks.length === 0 && (
@@ -61,6 +67,9 @@ export function TasksPanel() {
         </div>
 
         <NewTaskInput />
+
+        {/* Player wishlist — things they hope to see; the Narrator keeps in mind */}
+        <WishlistSection />
       </div>
     </div>
   )

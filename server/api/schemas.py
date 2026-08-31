@@ -109,7 +109,8 @@ class NarratorUpdate(BaseModel):
     actionSuggestionsEnabled: bool | None = None
     actionSuggestionsInstructions: str | None = None
     actionSuggestionsMode: str | None = None  # 'separate' | 'inline'
-    actionOptionRules: list[str] | None = None
+    actionSuggestionsCount: int | None = None  # how many options to generate (1-6)
+    actionOptionRules: list[str] | None = None  # legacy; retained for back-compat
     firstMessageOptions: list[str] | None = None
     firstMessageAlternates: list[OpeningAlt] | None = None
     diceEnabled: bool | None = None
@@ -127,6 +128,7 @@ class NarratorResponse(BaseModel):
     actionSuggestionsEnabled: bool
     actionSuggestionsInstructions: str
     actionSuggestionsMode: str
+    actionSuggestionsCount: int
     actionOptionRules: list[str]
     firstMessageOptions: list[str]
     firstMessageAlternates: list[OpeningAlt]
@@ -224,11 +226,14 @@ class OpenRouterSettingsUpdate(BaseModel):
     maxPartySize: int = 3
     maxToolRounds: int = 6
     autoRetryCount: int = 2
-    reasoningEffort: str = ""  # '' = provider default | low | medium | high
+    reasoningEffort: str = ""  # '' = provider default | low | medium | high | off
     useTools: bool = True
+    toolMode: str = "auto"  # auto | native | text | off
     worldbuildingMode: str = "confirmation"
+    worldbuildingInterval: int = 2
     worldbuildingModelId: str = ""
     actionSuggestionsModelId: str = ""
+    plannerModelId: str = ""
     summaryThreshold: float = 0.7
     summaryModelId: str = ""
     visionModelId: str = ""
@@ -261,9 +266,12 @@ class OpenRouterSettingsResponse(BaseModel):
     autoRetryCount: int
     reasoningEffort: str
     useTools: bool
+    toolMode: str
     worldbuildingMode: str
+    worldbuildingInterval: int
     worldbuildingModelId: str
     actionSuggestionsModelId: str
+    plannerModelId: str
     summaryThreshold: float
     summaryModelId: str
     visionModelId: str
@@ -360,6 +368,8 @@ class PlannerDeletesApply(BaseModel):
 
 class WorldbuildRunRequest(BaseModel):
     turn: int | None = None
+    # Bypass the cadence — the player asked for it explicitly.
+    force: bool = False
 
 
 class WorldbuildProposalSchema(BaseModel):
@@ -472,6 +482,45 @@ class TaskUpdate(BaseModel):
     text: str | None = None
     status: str | None = None
     notes: str | None = None
+
+
+# --- Objectives (overarching, direction-setting goals) ---
+
+class ObjectiveSchema(BaseModel):
+    id: str
+    text: str
+    status: str = "active"  # active | completed | failed
+    detail: str = ""
+
+
+class ObjectiveCreate(BaseModel):
+    text: str
+    status: str = "active"
+    detail: str = ""
+
+
+class ObjectiveUpdate(BaseModel):
+    text: str | None = None
+    status: str | None = None
+    detail: str | None = None
+
+
+# --- Wishlist (player wants the Narrator keeps in mind) ---
+
+class WishSchema(BaseModel):
+    id: str
+    text: str
+    priority: int = 0  # 0 normal | 1 low | 2 medium | 3 high
+
+
+class WishCreate(BaseModel):
+    text: str
+    priority: int = 0
+
+
+class WishUpdate(BaseModel):
+    text: str | None = None
+    priority: int | None = None
 
 
 # --- Lorebook ---

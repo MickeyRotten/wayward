@@ -134,12 +134,17 @@ export interface OpenRouterSettings {
   maxPartySize: number
   maxToolRounds: number
   autoRetryCount: number
-  /** '' = provider default | 'low' | 'medium' | 'high' (OpenRouter reasoning models). */
+  /** '' = provider default | 'low' | 'medium' | 'high' | 'off' (OpenRouter reasoning models). */
   reasoningEffort: string
   useTools: boolean
+  /** Narrator state-mutation path: 'auto' | 'native' | 'text' | 'off'. Supersedes useTools. */
+  toolMode: string
   worldbuildingMode: WorldbuildingMode
+  /** How often the Chronicler runs, in player turns (1-10). */
+  worldbuildingInterval: number
   worldbuildingModelId: string
   actionSuggestionsModelId: string
+  plannerModelId: string
   summaryThreshold: number
   summaryModelId: string
   // Vision agent (describes player-attached chat images). Blank model id →
@@ -280,6 +285,26 @@ export interface Task {
   text: string
   status: TaskStatus
   notes: string
+}
+
+// Overarching, direction-setting goals — bigger than a Task. They steer the
+// Narrator toward the adventure's guiding aims.
+export interface Objective {
+  id: string
+  text: string
+  status: TaskStatus
+  detail: string
+}
+
+// A player Wishlist entry — something the player hopes to see in the story. The
+// Narrator keeps these in mind and weaves them in when natural. priority:
+// 0 = normal, 1 = low, 2 = medium, 3 = high.
+export type WishPriority = 0 | 1 | 2 | 3
+
+export interface Wish {
+  id: string
+  text: string
+  priority: WishPriority
 }
 
 // Note: 'world' is the internal id for the "Locations" tab (kept for data

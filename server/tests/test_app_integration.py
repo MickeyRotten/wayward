@@ -79,7 +79,11 @@ def test_narrator_item_tools_and_reversal(client, boot_adventure_id):
     instance model must restore the exact prior state."""
     client.post(f"/api/adventures/{boot_adventure_id}/load")
     from server.ai.item_detection import reverse_inventory_deltas
-    from server.ai.narrator_actions import reverse_equipment_changes, tool_equip, tool_grant_item
+    from server.ai.narrator_actions import (
+        reverse_equipment_changes,
+        tool_equip,
+        tool_grant_item,
+    )
     from server.db import party as party_ops
     from server.db.database import new_session
 
@@ -113,9 +117,22 @@ def test_narrator_item_tools_and_reversal(client, boot_adventure_id):
             return pc.equipment.get("rightHand")
     prev_slot = run(read_slot())
 
-    async def equip():
+    # Re-equipping what is ALREADY worn is a no-op, not a second equip: it must
+    # record no equipment change, or reversal would replay a bogus one forever.
+    async def redundant_equip():
         async with new_session() as s:
             eff = await tool_equip({"characterName": "Hero", "slot": "rightHand", "itemName": "Sword"}, s)
+            await s.commit()
+            return eff
+    noop = run(redundant_equip())
+    assert noop.ok and not noop.equip_changes, "already-worn equip must change nothing"
+    assert "already" in noop.result.lower()
+
+    # A real equip: a DIFFERENT item into the occupied slot, so reversal has a
+    # prior occupant to restore.
+    async def equip():
+        async with new_session() as s:
+            eff = await tool_equip({"characterName": "Hero", "slot": "rightHand", "itemName": "Longbow"}, s)
             await s.commit()
             return eff
     eff = run(equip())
@@ -124,7 +141,7 @@ def test_narrator_item_tools_and_reversal(client, boot_adventure_id):
     assert new_slot, "slot holds an instance id"
     inv = client.get("/api/inventory").json()
     worn = next(s for s in inv if s["instanceId"] == new_slot)
-    assert worn["item"]["name"] == "Sword" and worn["equippedBy"]
+    assert worn["item"]["name"] == "Longbow" and worn["equippedBy"]
 
     async def undo_equip():
         async with new_session() as s:
@@ -222,3 +239,43 @@ def test_background_summary_with_stubbed_llm(client):
     content, boundary = run(check())
     assert content == "THE STORY SO FAR (stub)." and boundary > 0
     assert client.get("/api/journal").json()["summary"] == "THE STORY SO FAR (stub)."
+
+
+def test_objectives_crud(client):
+    created = client.post("/api/objectives", json={"text": "Defeat the Demon Queen", "detail": "Before the Blood Moon."})
+    assert created.status_code == 201
+    oid = created.json()["id"]
+    assert created.json()["status"] == "active"
+
+    listed = client.get("/api/objectives").json()
+    assert any(o["id"] == oid and o["detail"] == "Before the Blood Moon." for o in listed)
+
+    upd = client.put(f"/api/objectives/{oid}", json={"status": "completed"})
+    assert upd.json()["status"] == "completed"
+
+    assert client.delete(f"/api/objectives/{oid}").status_code == 204
+    assert all(o["id"] != oid for o in client.get("/api/objectives").json())
+
+
+def test_wishes_crud_and_priority_clamp_and_sort(client):
+    low = client.post("/api/wishes", json={"text": "A quiet inn night", "priority": 1}).json()
+    high = client.post("/api/wishes", json={"text": "Recruit an Elf", "priority": 99}).json()
+    assert high["priority"] == 3  # clamped to max
+
+    listed = client.get("/api/wishes").json()
+    ids = [w["id"] for w in listed]
+    # High priority sorts before low priority.
+    assert ids.index(high["id"]) < ids.index(low["id"])
+
+    client.put(f"/api/wishes/{low['id']}", json={"text": "A cosy inn night"})
+    assert any(w["id"] == low["id"] and w["text"] == "A cosy inn night" for w in client.get("/api/wishes").json())
+
+    for w in listed:
+        assert client.delete(f"/api/wishes/{w['id']}").status_code == 204
+
+
+def test_narrator_suggestions_count_round_trip_and_clamp(client):
+    assert client.put("/api/narrator", json={"actionSuggestionsCount": 5}).json()["actionSuggestionsCount"] == 5
+    assert client.put("/api/narrator", json={"actionSuggestionsCount": 99}).json()["actionSuggestionsCount"] == 6
+    assert client.put("/api/narrator", json={"actionSuggestionsCount": 0}).json()["actionSuggestionsCount"] == 1
+    client.put("/api/narrator", json={"actionSuggestionsCount": 4})  # restore default

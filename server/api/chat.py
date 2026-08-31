@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import pathlib as _pathlib
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -13,20 +14,27 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.ai.action_suggester import (
-    build_inline_options_guidance,
-    normalize_option_rules,
-    parse_inline_options,
-)
+from server.ai.action_suggester import normalize_suggestions_count
+from server.ai.clock import advance_clock, phase_of
 from server.ai.item_detection import (
     apply_inventory_deltas,
     detect_item_use,
     reverse_inventory_deltas,
 )
-from server.ai.narrator_actions import execute_actions, parse_action_block, reverse_equipment_changes
+from server.ai.narrator_actions import (
+    coerce_scene,
+    execute_actions,
+    parse_action_block,
+    reverse_equipment_changes,
+)
 from server.ai.narrator_agent import run_narrator_agent
 from server.ai.openrouter import chat_completion_stream, fetch_models, provider_endpoint, stream_with_retry
-from server.ai.prompt_builder import augment_user_content, build_prompt, estimate_prompt_tokens
+from server.ai.prompt_builder import (
+    CONTEXT_TURNS,
+    augment_user_content,
+    build_prompt,
+    estimate_prompt_tokens,
+)
 from server.ai.spotlight import (
     SpotlightSignal,
     _name_mentioned,
@@ -39,6 +47,7 @@ from server.ai.summarizer import (
     pick_messages_to_summarize,
     should_summarize,
 )
+from server.ai.turn_block import build_turn_block_guidance, parse_turn_block
 from server.ai.vision import describe_image
 from server.ai.worldbuilder import reverse_chronicler_effects
 from server.api.common import (
@@ -57,17 +66,21 @@ from server.api.schemas import (
     ChatTurnRequest,
 )
 from server.db import events as event_ops
+from server.db import inventory as inv_ops
 from server.db import party as party_ops
 from server.db.database import get_session, new_session
 from server.db.models import (
     CampaignRules,
     ChatMessage,
+    ItemInstance,
     LorebookConfig,
     LorebookEntry,
     NarratorConfig,
+    Objective,
     OpenRouterSettings,
     StorySummary,
     Task,
+    Wish,
 )
 
 router = APIRouter()
@@ -341,10 +354,87 @@ async def _detect_player_deltas(
 # Newest messages loaded per turn. The prompt is token-trimmed far below this
 # and older history lives in the StorySummary, so nothing above the window can
 # ever reach the model — loading it would be pure waste on long adventures.
-_HISTORY_WINDOW = 500
+# The newest-message window a turn reads. 500 was chosen as "definitely enough"
+# and is roughly ten times what any model context can actually hold — every turn
+# paid for a 500-row read and a 500-element list build to then trim most of it
+# away in build_prompt. 160 messages is ~80 turns, comfortably past the largest
+# prompt budget, and swipe/regenerate still resolve older turns through their own
+# targeted queries.
+_HISTORY_WINDOW = 160
 
 
-async def _load_game_context(session: AsyncSession):
+@dataclass
+class GameContext:
+    """Everything one narration turn reads, loaded once.
+
+    Previously a twelve-element tuple unpacked identically in four places and
+    threaded onward as six separate keyword arguments; the state tier needs
+    three more facts and a fifteen-tuple is not a thing anyone should have to
+    read."""
+    settings: OpenRouterSettings
+    narrator: NarratorConfig
+    pc: object
+    party: list            # active (in-party) members — the scene
+    benched: list          # in the world, not travelling — named in the roll call
+    messages: list[ChatMessage]
+    summary: StorySummary
+    catalog: list[LorebookEntry]
+    tasks: list[Task]
+    objectives: list[Objective]
+    wishes: list[Wish]
+    lore_entries: list[LorebookEntry]
+    lore_config: LorebookConfig
+    scene: dict            # latest-wins location/day/minutes/weather
+    inventory_lines: list[str]
+
+
+def _derive_scene(messages: list[ChatMessage]) -> dict:
+    """Carry the scene forward from the newest message that declared each field.
+
+    Latest-wins per field, walking backwards — the same rule the chat banner
+    uses client-side, so the narrator and the player never disagree about where
+    they are."""
+    scene: dict = {}
+    for m in reversed(messages):
+        for key, attr in (("location", "location"), ("timeOfDay", "time_of_day"),
+                          ("weather", "weather"), ("day", "day"), ("minutes", "scene_minutes")):
+            if key not in scene:
+                v = getattr(m, attr, None)
+                if v is not None and (not isinstance(v, str) or v.strip()):
+                    scene[key] = v
+        if len(scene) == 5:
+            break
+    scene.setdefault("day", 1)
+    scene.setdefault("minutes", 8 * 60)  # a new adventure opens mid-morning
+    return scene
+
+
+async def _inventory_lines(session: AsyncSession, catalog: list[LorebookEntry]) -> list[str]:
+    """The pack as compact ``Label xN — description`` lines.
+
+    Stated in the state tier rather than the standing context because the output
+    protocol's rules point straight at it ("use the label already in INVENTORY"),
+    and up top the rule and the list it names sat a whole history window apart."""
+    by_id = {c.id: c for c in catalog}
+    equipped = await inv_ops.equipped_map(session)
+    instances = list((await session.execute(select(ItemInstance))).scalars().all())
+    counts: dict[str, int] = {}
+    for inst in instances:
+        if inst.id in equipped:
+            continue  # worn gear is on the sheets; stating it twice invites a re-statement
+        counts[inst.item_id] = counts.get(inst.item_id, 0) + max(1, int(inst.count or 1))
+    lines: list[str] = []
+    for item_id, n in counts.items():
+        entry = by_id.get(item_id)
+        if not entry:
+            continue
+        label = entry.title + (f" x{n}" if n > 1 else "")
+        desc = (entry.content or "").strip().split("\n")[0][:120]
+        lines.append(f"{label} — {desc}" if desc else label)
+    return sorted(lines)
+
+
+async def _load_game_context(session: AsyncSession) -> GameContext:
     """Load all game state needed for a chat turn."""
     settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
     if not settings:
@@ -360,10 +450,12 @@ async def _load_game_context(session: AsyncSession):
     if not pc:
         raise HTTPException(400, "No player character created")
 
-    # Only active (in-party) members participate in narration and spotlight.
-    party = [m for m in await party_ops.load_party(session) if m.in_party]
-    # Narration only ever sees the 'narrator' thread — Planning-mode messages
-    # live in their own thread and never enter narration context. Bounded to the
+    everyone = await party_ops.load_party(session)
+    party = [m for m in everyone if m.in_party]
+    benched = [m for m in everyone if not m.in_party]
+
+    # Narration only ever sees the 'narrator' thread — Editor-mode messages live
+    # in their own thread and never enter narration context. Bounded to the
     # newest window (ascending after reversal); the newest turn is always inside
     # it, so max()/variant lookups on recent turns behave exactly as before.
     recent = (await session.execute(
@@ -379,6 +471,10 @@ async def _load_game_context(session: AsyncSession):
         session.add(summary)
     catalog = list((await session.execute(select(LorebookEntry).where(LorebookEntry.cat == "items"))).scalars().all())
     tasks = list((await session.execute(select(Task).order_by(Task.sort_order))).scalars().all())
+    objectives = list((await session.execute(select(Objective).order_by(Objective.sort_order))).scalars().all())
+    wishes = list((await session.execute(
+        select(Wish).order_by(Wish.priority.desc(), Wish.sort_order)
+    )).scalars().all())
     lore_entries = list((await session.execute(select(LorebookEntry))).scalars().all())
     lore_config = (await session.execute(select(LorebookConfig))).scalars().first()
     if not lore_config:
@@ -386,42 +482,52 @@ async def _load_game_context(session: AsyncSession):
         session.add(lore_config)
         await session.commit()
 
-    return settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config
+    return GameContext(
+        settings=settings, narrator=narrator, pc=pc, party=party, benched=benched,
+        messages=all_messages, summary=summary, catalog=catalog, tasks=tasks,
+        objectives=objectives, wishes=wishes, lore_entries=lore_entries,
+        lore_config=lore_config, scene=_derive_scene(all_messages),
+        inventory_lines=await _inventory_lines(session, catalog),
+    )
 
 
-async def _should_use_tools(settings: OpenRouterSettings) -> bool:
-    """Agentic tool loop runs when enabled AND the selected model supports tools.
+async def _resolve_narration_mode(settings: OpenRouterSettings) -> str:
+    """Resolve the narrator's state-mutation path from ``tool_mode``:
 
-    Falls back to the legacy text-block path otherwise. Model support is read
-    from the (cached) OpenRouter model list; on any failure we trust the toggle
-    and let the call surface an error rather than silently downgrading."""
-    if not settings.use_tools:
-        return False
+    - ``'native'`` — the agentic tool loop (needs a tool-capable model);
+    - ``'text'``   — the hardened ``<<<ACTIONS>>>`` text protocol (reliable on
+      weaker/older narrative models that call tools poorly);
+    - ``'off'``    — no state mutation; pure prose.
+
+    ``'auto'`` picks native when the selected model advertises tool support, else
+    text. On a model-list fetch failure we assume native and let the call surface
+    any error rather than silently downgrading. (An unset/legacy value derives
+    from the old ``use_tools`` boolean.)"""
+    mode = (getattr(settings, "tool_mode", "") or "").strip().lower()
+    if mode not in ("auto", "native", "text", "off"):
+        mode = "auto" if getattr(settings, "use_tools", True) else "text"
+    if mode != "auto":
+        return mode
     base_url, api_key, main_model = provider_endpoint(settings)
     # Non-OpenRouter providers (NIM/custom) report every model as tool-capable
-    # in fetch_models, so this check is effectively a no-op there — trust the toggle.
+    # in fetch_models, so this resolves to native there — trust the picker.
     try:
         models = await fetch_models(api_key, base_url=base_url)
         m = next((x for x in models if x["id"] == main_model), None)
         if m is not None:
-            return bool(m.get("supportsTools"))
+            return "native" if m.get("supportsTools") else "text"
     except Exception:
-        log.info("_should_use_tools: model list fetch failed; assuming tool support")
-    return True
+        log.info("_resolve_narration_mode: model list fetch failed; assuming native")
+    return "native"
 
 
 async def _maybe_summarize_and_build(
-    settings, narrator, pc, party_list,
+    ctx: "GameContext",
     history: list[ChatMessage],
-    summary: StorySummary,
     player_message: str,
     current_turn: int,
     session: AsyncSession,
-    agentic: bool = False,
-    item_catalog: list[LorebookEntry] | None = None,
-    tasks: list[Task] | None = None,
-    lore_entries: list[LorebookEntry] | None = None,
-    lore_config: LorebookConfig | None = None,
+    narration_mode: str = "native",
 ):
     """Build the turn's prompt and measure it against the summary threshold.
     Returns (prompt_messages, needs_summary, spotlight_signals).
@@ -430,15 +536,17 @@ async def _maybe_summarize_and_build(
     threshold, ``needs_summary`` tells the stream driver to schedule a
     background compression AFTER the narration is delivered
     (_summarize_in_background), so the player never waits on the summariser."""
+    narrator, pc, party_list, summary = ctx.narrator, ctx.pc, ctx.party, ctx.summary
 
     # Filter history to only unsummarized turns
     filtered = [m for m in history if m.turn_number > summary.summary_up_to_turn]
 
-    # Compute spotlight
+    # Compute spotlight. The scan window is CONTEXT_TURNS — the SAME window lore
+    # matching uses — so "mentioned" means one thing across every gate.
     spotlight_block = None
     spotlight_signals = []
     if party_list:
-        recent_assistant = [m.content for m in filtered if m.role == "assistant"][-3:]
+        recent_assistant = [m.content for m in filtered if m.role == "assistant"][-CONTEXT_TURNS:]
         recent_context = " ".join(recent_assistant)
         spotlight_signals = compute_spotlight_signals(
             player_message=player_message,
@@ -450,11 +558,12 @@ async def _maybe_summarize_and_build(
             spotlight_signals, getattr(narrator, "spotlight_rule", "") or None
         )
 
-    # If the player addressed a benched (not-in-party) member by name, hint the
-    # narrator to acknowledge their absence rather than silently ignoring it.
-    benched = [m for m in await party_ops.load_party(session) if not m.in_party]
+    # If the player addressed a benched member by name, hint the narrator to
+    # acknowledge their absence rather than silently ignoring it. (The roll call
+    # in the state tier already names them as not present; this is the case
+    # where the player asked directly and deserves an answer.)
     absent = [
-        pm.basic_info["name"] for pm in benched
+        pm.basic_info["name"] for pm in ctx.benched
         if pm.basic_info.get("name") and _name_mentioned(pm.basic_info["name"], player_message)
     ]
     if absent:
@@ -467,11 +576,12 @@ async def _maybe_summarize_and_build(
         )
         spotlight_block = f"{spotlight_block}\n\n{note}" if spotlight_block else note
 
-    # World Rules (R21) — injected into the narrator prompt (party/currency/
-    # attributes/tone). One small query per turn; None-safe if the row is absent.
+    # World Rules — party/currency/attributes/tone. One small query per turn;
+    # None-safe if the row is absent.
     _rules = (await session.execute(select(CampaignRules))).scalars().first()
     rules_dict = {
         "party_size": _rules.party_size,
+        "partySize": _rules.party_size,
         "currency_name": _rules.currency_name,
         "currency_abbrev": _rules.currency_abbrev,
         "currency_symbol": _rules.currency_symbol,
@@ -485,19 +595,24 @@ async def _maybe_summarize_and_build(
         narrator_config=narrator,
         player_character=pc,
         party_members=party_list,
+        benched_members=ctx.benched,
         chat_history=filtered,
         player_message=player_message,
         spotlight_block=spotlight_block,
         story_summary=summary.content or None,
-        item_catalog=item_catalog,
-        tasks=tasks,
-        lore_entries=lore_entries,
-        lore_config=lore_config,
-        max_context_tokens=settings.max_context_tokens,
-        max_response_tokens=settings.max_tokens_response,
-        include_action_protocol=not agentic,
+        item_catalog=ctx.catalog,
+        tasks=ctx.tasks,
+        objectives=ctx.objectives,
+        wishes=ctx.wishes,
+        lore_entries=ctx.lore_entries,
+        lore_config=ctx.lore_config,
+        max_context_tokens=ctx.settings.max_context_tokens,
+        max_response_tokens=ctx.settings.max_tokens_response,
+        include_action_protocol=(narration_mode == "text"),
         first_message_override=getattr(summary, "opening_message", None),
         campaign_rules=rules_dict,
+        scene=ctx.scene,
+        inventory_lines=ctx.inventory_lines,
     )
 
     preamble_tokens = estimate_prompt_tokens(test_prompt)
@@ -507,8 +622,8 @@ async def _maybe_summarize_and_build(
     # we just flag it and the stream driver compresses in the background AFTER
     # the narration is delivered (see _summarize_in_background).
     needs_summary = should_summarize(
-        preamble_tokens, 0, settings.max_context_tokens, settings.max_tokens_response,
-        threshold=getattr(settings, "summary_threshold", None) or 0.7,
+        preamble_tokens, 0, ctx.settings.max_context_tokens, ctx.settings.max_tokens_response,
+        threshold=getattr(ctx.settings, "summary_threshold", None) or 0.7,
     )
 
     return test_prompt, needs_summary, spotlight_signals
@@ -581,7 +696,9 @@ async def chat_turn(
     if data.mode == "planner":
         return await _planner_turn(data, session)
 
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    ctx = await _load_game_context(session)
+    settings, narrator, pc, party = ctx.settings, ctx.narrator, ctx.pc, ctx.party
+    all_messages, summary = ctx.messages, ctx.summary
 
     max_turn = max((m.turn_number for m in all_messages), default=0)
     current_turn = max_turn + 1
@@ -612,26 +729,22 @@ async def chat_turn(
     # What the narrator sees: the message text plus the image description.
     prompt_message = augment_user_content(data.message, image_desc) if image_path else data.message
 
-    agentic = await _should_use_tools(settings)
+    mode = await _resolve_narration_mode(settings)
+    agentic = mode == "native"
 
-    # Legacy path: deterministic item-use detection on the player's message
-    # (decrement deferred to the save transaction). In agentic mode the
-    # consume_item tool replaces this, so detection is skipped.
-    player_deltas = [] if agentic else await _detect_player_deltas(data.message, session)
+    # Text-protocol path only: deterministic item-use detection on the player's
+    # message (decrement deferred to the save transaction). Native mode uses the
+    # consume_item tool; 'off' mutates nothing — so both skip detection.
+    player_deltas = await _detect_player_deltas(data.message, session) if mode == "text" else []
     await session.commit()
 
     messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
-        settings, narrator, pc, party,
+        ctx,
         history=all_messages,
-        summary=summary,
         player_message=prompt_message,
         current_turn=current_turn,
         session=session,
-        agentic=agentic,
-        item_catalog=catalog,
-        tasks=tasks,
-        lore_entries=lore_entries,
-        lore_config=lore_config,
+        narration_mode=mode,
     )
 
     variant_count = sum(
@@ -649,7 +762,10 @@ async def chat_turn(
             schedule_summary=needs_summary,
             user_message_id=user_msg.id,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
-            inline_option_rules=_inline_option_rules(narrator),
+            inline_option_count=_inline_option_count(narrator),
+            turn_guidance=_turn_block_guidance(narrator, mode != "off"),
+            prev_scene=ctx.scene,
+            allow_clock=mode != "off",
         )
 
     return _stream_llm_response(
@@ -662,7 +778,10 @@ async def chat_turn(
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
         user_message_id=user_msg.id,
-        inline_option_rules=_inline_option_rules(narrator),
+        inline_option_count=_inline_option_count(narrator),
+        turn_guidance=_turn_block_guidance(narrator, mode != "off"),
+        prev_scene=ctx.scene,
+        allow_clock=mode != "off",
     )
 
 
@@ -671,7 +790,9 @@ async def chat_turn(
 @router.post("/chat/messages/{turn}/swipe")
 async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     """Generate a new variant for a specific turn. Appends to existing variants."""
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    ctx = await _load_game_context(session)
+    settings, narrator, pc, party = ctx.settings, ctx.narrator, ctx.pc, ctx.party
+    all_messages, summary = ctx.messages, ctx.summary
 
     # Find the user message for this turn — targeted query (not the bounded
     # window) so swiping a turn older than the window still resolves.
@@ -709,26 +830,22 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
     # of this turn — drop them; the re-run's Chronicler pass will record fresh.
     await reverse_chronicler_effects(session, turn, exact=True)
     await session.commit()
-    agentic = await _should_use_tools(settings)
-    # Re-detect against the now-restored inventory (legacy path only); agentic
-    # mode re-derives item use through the consume_item tool during the loop.
-    player_deltas = [] if agentic else await _detect_player_deltas(user_msg.content, session)
+    mode = await _resolve_narration_mode(settings)
+    agentic = mode == "native"
+    # Re-detect against the now-restored inventory (text-protocol path only);
+    # native mode re-derives item use through the consume_item tool during the loop.
+    player_deltas = await _detect_player_deltas(user_msg.content, session) if mode == "text" else []
 
     messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
-        settings, narrator, pc, party,
+        ctx,
         history=history,
-        summary=summary,
         player_message=(
             augment_user_content(user_msg.content, getattr(user_msg, "image_description", None))
             if getattr(user_msg, "image_path", None) else user_msg.content
         ),
         current_turn=turn,
         session=session,
-        agentic=agentic,
-        item_catalog=catalog,
-        tasks=tasks,
-        lore_entries=lore_entries,
-        lore_config=lore_config,
+        narration_mode=mode,
     )
 
     # Count existing variants for this turn to determine next variant number
@@ -744,7 +861,13 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
-            inline_option_rules=_inline_option_rules(narrator),
+            inline_option_count=_inline_option_count(narrator),
+            turn_guidance=_turn_block_guidance(narrator, mode != "off"),
+            # The clock advances from where the turn STARTED, not from the
+            # variant being replaced — re-telling a beat must not age the world
+            # twice.
+            prev_scene=_derive_scene([m for m in all_messages if m.turn_number < turn]),
+            allow_clock=mode != "off",
         )
 
     return _stream_llm_response(
@@ -756,7 +879,10 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
         schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
-        inline_option_rules=_inline_option_rules(narrator),
+        inline_option_count=_inline_option_count(narrator),
+        turn_guidance=_turn_block_guidance(narrator, mode != "off"),
+        prev_scene=_derive_scene([m for m in all_messages if m.turn_number < turn]),
+        allow_clock=mode != "off",
     )
 
 
@@ -768,7 +894,9 @@ async def regenerate(
     session: AsyncSession = Depends(get_session),
 ):
     guidance = (data.get("guidance") or "").strip() if isinstance(data, dict) else ""
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    ctx = await _load_game_context(session)
+    settings, narrator, pc, party = ctx.settings, ctx.narrator, ctx.pc, ctx.party
+    all_messages, summary = ctx.messages, ctx.summary
 
     if not all_messages:
         raise HTTPException(400, "No messages to regenerate")
@@ -804,28 +932,24 @@ async def regenerate(
     )
 
     await session.commit()
-    agentic = await _should_use_tools(settings)
+    mode = await _resolve_narration_mode(settings)
+    agentic = mode == "native"
     # Re-run detection on the same player message against the restored inventory
-    # (legacy path only; agentic mode uses the consume_item tool).
-    player_deltas = [] if agentic else await _detect_player_deltas(last_user_msg.content, session)
+    # (text-protocol path only; native mode uses the consume_item tool).
+    player_deltas = await _detect_player_deltas(last_user_msg.content, session) if mode == "text" else []
 
     history = [m for m in all_messages if m.turn_number < last_turn]
 
     messages, needs_summary, spotlight_signals = await _maybe_summarize_and_build(
-        settings, narrator, pc, party,
+        ctx,
         history=history,
-        summary=summary,
         player_message=(
             augment_user_content(last_user_msg.content, getattr(last_user_msg, "image_description", None))
             if getattr(last_user_msg, "image_path", None) else last_user_msg.content
         ),
         current_turn=last_turn,
         session=session,
-        agentic=agentic,
-        item_catalog=catalog,
-        tasks=tasks,
-        lore_entries=lore_entries,
-        lore_config=lore_config,
+        narration_mode=mode,
     )
 
     # Optional steering note for THIS regeneration only — injected right before
@@ -854,7 +978,10 @@ async def regenerate(
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
             dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
-            inline_option_rules=_inline_option_rules(narrator),
+            inline_option_count=_inline_option_count(narrator),
+            turn_guidance=_turn_block_guidance(narrator, mode != "off"),
+            prev_scene=_derive_scene([m for m in all_messages if m.turn_number < last_turn]),
+            allow_clock=mode != "off",
         )
 
     # Start fresh at variant 0 since we wiped all previous variants
@@ -867,7 +994,10 @@ async def regenerate(
         schedule_summary=needs_summary,
         spotlight_signals=spotlight_signals,
         player_deltas=player_deltas,
-        inline_option_rules=_inline_option_rules(narrator),
+        inline_option_count=_inline_option_count(narrator),
+        turn_guidance=_turn_block_guidance(narrator, mode != "off"),
+        prev_scene=_derive_scene([m for m in all_messages if m.turn_number < last_turn]),
+        allow_clock=mode != "off",
     )
 
 
@@ -877,7 +1007,7 @@ _CONTINUE_NUDGE = (
     "CONTINUE: Pick up the narration exactly where the previous passage stops — "
     "same scene, same tense, mid-flow. Do NOT repeat or rephrase anything already "
     "written, do not summarise, and do not open with a greeting or a scene reset. "
-    "Just write what comes next. Do not append an <<<OPTIONS>>> block."
+    "Just write what comes next. Do not append a <<<TURN>>> block."
 )
 
 # Characters that end a complete sentence/beat — used to pick the separator when
@@ -893,7 +1023,9 @@ async def continue_narration(session: AsyncSession = Depends(get_session)):
     max_tokens_response. Prose-only: no tools, no action protocol, no inline
     options; the appended text carries no reversible effects, so swipe/
     regenerate/delete semantics for the turn are unchanged."""
-    settings, narrator, pc, party, all_messages, summary, catalog, tasks, lore_entries, lore_config = await _load_game_context(session)
+    ctx = await _load_game_context(session)
+    settings, narrator, pc, party = ctx.settings, ctx.narrator, ctx.pc, ctx.party
+    all_messages, summary = ctx.messages, ctx.summary
 
     if not all_messages:
         raise HTTPException(400, "Nothing to continue yet")
@@ -909,17 +1041,12 @@ async def continue_narration(session: AsyncSession = Depends(get_session)):
 
     history = [m for m in all_messages if m.turn_number < last_turn]
     messages, _needs_summary, _signals = await _maybe_summarize_and_build(
-        settings, narrator, pc, party,
+        ctx,
         history=history,
-        summary=summary,
         player_message=(last_user.content if last_user else "(continue the scene)"),
         current_turn=last_turn,
         session=session,
-        agentic=True,  # skips the legacy action protocol — continuation is prose-only
-        item_catalog=catalog,
-        tasks=tasks,
-        lore_entries=lore_entries,
-        lore_config=lore_config,
+        narration_mode="native",  # skips the action protocol — continuation is prose-only
     )
     # The passage being extended goes last, then the continue instruction.
     messages.append({"role": "assistant", "content": target.content})
@@ -992,8 +1119,10 @@ def _stream_continue_response(messages: list[dict], settings: OpenRouterSettings
             yield f"data: {json.dumps({'type': 'error', 'content': _REASONING_ATE_BUDGET})}\n\n"
             return
 
-        # Defensive: strip a stray inline-options block if the model added one.
-        addition, _ = parse_inline_options(addition.strip())
+        # Defensive: strip a stray turn block if the model appended one. A
+        # continuation extends the beat in place — it changes no state — so the
+        # block is discarded rather than applied.
+        addition, _ = parse_turn_block(addition.strip())
         saved_message: dict | None = None
         if addition:
             try:
@@ -1036,14 +1165,70 @@ async def get_summary(session: AsyncSession = Depends(get_session)):
 
 # ── Shared streaming helper ───────────────────────────────────────
 
-def _inline_option_rules(narrator) -> list[str] | None:
-    """The option rules when suggestions ride the main narration call
-    (action_suggestions_mode == 'inline'), else None."""
+def _inline_option_count(narrator) -> int | None:
+    """The number of options to request when suggestions ride the main narration
+    call (action_suggestions_mode == 'inline'), else None."""
     if not getattr(narrator, "action_suggestions_enabled", False):
         return None
     if (getattr(narrator, "action_suggestions_mode", "separate") or "separate") != "inline":
         return None
-    return normalize_option_rules(getattr(narrator, "action_option_rules", None))
+    return normalize_suggestions_count(getattr(narrator, "action_suggestions_count", None))
+
+
+def _with_turn_guidance(messages: list[dict], guidance: str) -> list[dict]:
+    """Insert the output protocol immediately BEFORE the player's action.
+
+    The shape of the reply should be the last thing the model reads before it is
+    asked to produce one — but the *ask* still has to come last, or a model reads
+    the protocol as the thing it is answering."""
+    if not guidance:
+        return messages
+    out = list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") == "user":
+            out.insert(i, {"role": "system", "content": guidance})
+            return out
+    out.append({"role": "system", "content": guidance})
+    return out
+
+
+def _turn_block_guidance(narrator, mutates_state: bool) -> str:
+    """The trailing-block protocol for this turn, or "" when it carries nothing.
+
+    Scene and clock ride the block only when the turn is allowed to change state
+    at all (``tool_mode`` is not "off"), because a named field is an invitation:
+    a model shown ``"duration"`` will produce one whether or not anything reads
+    it."""
+    return build_turn_block_guidance(
+        _inline_option_count(narrator),
+        include_scene=mutates_state,
+        include_clock=mutates_state,
+    )
+
+
+def _apply_turn_block(block: dict, prev_scene: dict, allow_clock: bool = True) -> dict:
+    """Fold a parsed turn block into storable scene fields.
+
+    The narrator names a place and how long the beat took; the SERVER decides
+    what day it is and what time. ``day`` is not in the block's contract at all,
+    which is the point — it was a value nothing validated, free to freeze, jump
+    or run backwards."""
+    scene = coerce_scene(block)
+    if not allow_clock:
+        return scene
+    day, minutes, _rested = advance_clock(
+        prev_scene.get("day") or 1,
+        prev_scene.get("minutes") if prev_scene.get("minutes") is not None else 8 * 60,
+        block.get("duration"),
+    )
+    scene["day"] = day
+    scene["minutes"] = minutes
+    # The phase word is the only form time takes outside clock.py, and it
+    # OVERRIDES anything the model wrote: the server owns the clock, so a
+    # narrator-supplied "timeOfDay" is not a second opinion. It is what the
+    # backdrop matcher and the scene banner read.
+    scene["timeOfDay"] = phase_of(minutes)
+    return scene
 
 
 # Reasoning models can burn the whole response budget on thinking; surface a
@@ -1111,12 +1296,14 @@ def _stream_llm_response(
     spotlight_signals: list[SpotlightSignal] | None = None,
     player_deltas: list[dict] | None = None,
     user_message_id: int | None = None,
-    inline_option_rules: list[str] | None = None,
+    inline_option_count: int | None = None,
+    turn_guidance: str = "",
+    prev_scene: dict | None = None,
+    allow_clock: bool = True,
 ):
     player_deltas = player_deltas or []
-    if inline_option_rules:
-        # Suggestions ride this call: teach the <<<OPTIONS>>> ending.
-        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
+    prev_scene = prev_scene or {}
+    messages = _with_turn_guidance(messages, turn_guidance)
 
     context_tokens = estimate_prompt_tokens(messages)
     base_url, api_key, model_id = provider_endpoint(settings)
@@ -1214,9 +1401,12 @@ def _stream_llm_response(
         if actions:
             log.info("LLM ACTIONS parsed: %s", json.dumps(actions, ensure_ascii=False))
         inline_suggestions: list[str] = []
-        if inline_option_rules:
-            clean_text, inline_suggestions = parse_inline_options(clean_text)
-            log.info("LLM INLINE OPTIONS parsed: %s", json.dumps(inline_suggestions, ensure_ascii=False))
+        block: dict = {}
+        if turn_guidance:
+            clean_text, block = parse_turn_block(clean_text)
+            inline_suggestions = block.get("options") or []
+            log.info("LLM TURN BLOCK turn=%s %s", current_turn,
+                     json.dumps(block, ensure_ascii=False))
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
         saved_message: dict | None = None
@@ -1245,26 +1435,17 @@ def _stream_llm_response(
                                 spot_reason = "Hasn't spoken in a while"
                             break
 
-                # Narrator-declared scene state (parsed from the action block).
-                location: str | None = None
-                time_of_day: str | None = None
-                weather: str | None = None
-                day: int | None = None
-                if actions:
-                    loc = actions.get("location")
-                    if isinstance(loc, str) and loc.strip():
-                        location = loc.strip()
-                    tod = actions.get("timeOfDay")
-                    if isinstance(tod, str) and tod.strip():
-                        time_of_day = tod.strip()
-                    wx = actions.get("weather")
-                    if isinstance(wx, str) and wx.strip():
-                        weather = wx.strip()
-                    dy = actions.get("day")
-                    if isinstance(dy, int) and dy > 0:
-                        day = dy
-                    elif isinstance(dy, str) and dy.strip().isdigit():
-                        day = int(dy.strip())
+                # Narrator-declared scene state. The trailing turn block wins
+                # over the legacy action block: it is what the model wrote
+                # alongside the beat, and it is the only one carrying a duration
+                # the server can turn into a calendar.
+                scene: dict = coerce_scene(actions, prev_scene.get("day")) if actions else {}
+                if turn_guidance:
+                    scene.update(_apply_turn_block(block, prev_scene, allow_clock))
+                location = scene.get("location")
+                time_of_day = scene.get("timeOfDay")
+                weather = scene.get("weather")
+                day = scene.get("day")
 
                 # Execute narrator actions if present
                 if actions:
@@ -1290,6 +1471,7 @@ def _stream_llm_response(
                     time_of_day=time_of_day,
                     weather=weather,
                     day=day,
+                    scene_minutes=scene.get("minutes"),
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=combined_inv_deltas if combined_inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,
@@ -1346,16 +1528,20 @@ def _stream_agent_response(
     schedule_summary: bool = False,
     user_message_id: int | None = None,
     dice_enabled: bool = True,
-    inline_option_rules: list[str] | None = None,
+    inline_option_count: int | None = None,
+    turn_guidance: str = "",
+    prev_scene: dict | None = None,
+    allow_clock: bool = True,
 ):
     """Drive the agentic narrator loop and stream its final narration.
 
     Tool calls mutate the DB *during* the loop (inside run_narrator_agent), so
     here we only record the accumulated deltas/scene on the ChatMessage for
     reversal — we do not re-apply them."""
-    if inline_option_rules:
-        # Suggestions ride this call: teach the <<<OPTIONS>>> ending.
-        messages = [{"role": "system", "content": build_inline_options_guidance(inline_option_rules)}, *messages]
+    prev_scene = prev_scene or {}
+    # Scene state and the player's options both ride the trailing block, so
+    # neither costs a tool round-trip.
+    messages = _with_turn_guidance(messages, turn_guidance)
     context_tokens = estimate_prompt_tokens(messages)
     max_context = settings.max_context_tokens
     _base_url, _api_key, _log_model = provider_endpoint(settings)
@@ -1391,6 +1577,7 @@ def _stream_agent_response(
                 settings=settings,
                 base_messages=messages,
                 current_turn=current_turn,
+                variant=variant,
                 dice_enabled=dice_enabled,
             ):
                 etype = ev["type"]
@@ -1429,10 +1616,18 @@ def _stream_agent_response(
             current_turn, variant, len(final_content), scene, inv_deltas, equip_changes, usage,
         )
 
+        # The trailing block: scene + options in one read, always stripped from
+        # the prose even when its JSON is malformed.
         inline_suggestions: list[str] = []
-        if inline_option_rules:
-            final_content, inline_suggestions = parse_inline_options(final_content)
-            log.info("LLM INLINE OPTIONS parsed: %s", json.dumps(inline_suggestions, ensure_ascii=False))
+        if turn_guidance:
+            final_content, block = parse_turn_block(final_content)
+            inline_suggestions = block.get("options") or []
+            block_scene = _apply_turn_block(block, prev_scene, allow_clock)
+            # A tool-written scene (the legacy handler, still reachable) loses to
+            # the block: the block is what the model wrote alongside the beat.
+            scene = {**scene, **block_scene}
+            log.info("LLM TURN BLOCK turn=%s scene=%s options=%s", current_turn,
+                     block_scene, json.dumps(inline_suggestions, ensure_ascii=False))
 
         try:
             async with new_session() as save_session:
@@ -1465,6 +1660,7 @@ def _stream_agent_response(
                     time_of_day=scene.get("timeOfDay"),
                     weather=scene.get("weather"),
                     day=scene.get("day"),
+                    scene_minutes=scene.get("minutes"),
                     spotlight_reason=spot_reason,
                     applied_inventory_deltas=inv_deltas if inv_deltas else None,
                     applied_equipment_changes=equip_changes if equip_changes else None,

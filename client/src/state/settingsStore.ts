@@ -24,9 +24,14 @@ interface SettingsState {
   autoRetryCount: number
   reasoningEffort: string
   useTools: boolean
+  toolMode: string
   worldbuildingMode: WorldbuildingMode
+  /** How often the Chronicler runs, in player turns (1-10). Each run is a whole
+   *  extra generation, so 2 halves the per-turn spend. */
+  worldbuildingInterval: number
   worldbuildingModelId: string
   actionSuggestionsModelId: string
+  plannerModelId: string
   summaryThreshold: number
   summaryModelId: string
   visionModelId: string
@@ -76,9 +81,12 @@ function applyResponse(s: SettingsResponse) {
     autoRetryCount: s.autoRetryCount,
     reasoningEffort: s.reasoningEffort,
     useTools: s.useTools,
+    toolMode: s.toolMode,
     worldbuildingMode: s.worldbuildingMode,
+    worldbuildingInterval: s.worldbuildingInterval,
     worldbuildingModelId: s.worldbuildingModelId,
     actionSuggestionsModelId: s.actionSuggestionsModelId,
+    plannerModelId: s.plannerModelId,
     summaryThreshold: s.summaryThreshold,
     summaryModelId: s.summaryModelId,
     visionModelId: s.visionModelId,
@@ -113,9 +121,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   autoRetryCount: 2,
   reasoningEffort: '',
   useTools: true,
+  toolMode: 'auto',
   worldbuildingMode: 'confirmation',
+  worldbuildingInterval: 2,
   worldbuildingModelId: '',
   actionSuggestionsModelId: '',
+  plannerModelId: '',
   summaryThreshold: 0.7,
   summaryModelId: '',
   visionModelId: 'google/gemma-3-4b-it',
@@ -154,9 +165,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       autoRetryCount: update.autoRetryCount ?? state.autoRetryCount,
       reasoningEffort: update.reasoningEffort ?? state.reasoningEffort,
       useTools: update.useTools ?? state.useTools,
+      toolMode: update.toolMode ?? state.toolMode,
       worldbuildingMode: update.worldbuildingMode ?? state.worldbuildingMode,
       worldbuildingModelId: update.worldbuildingModelId ?? state.worldbuildingModelId,
       actionSuggestionsModelId: update.actionSuggestionsModelId ?? state.actionSuggestionsModelId,
+      plannerModelId: update.plannerModelId ?? state.plannerModelId,
       summaryThreshold: update.summaryThreshold ?? state.summaryThreshold,
       summaryModelId: update.summaryModelId ?? state.summaryModelId,
       visionModelId: update.visionModelId ?? state.visionModelId,

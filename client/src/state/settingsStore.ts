@@ -26,6 +26,9 @@ interface SettingsState {
   useTools: boolean
   toolMode: string
   worldbuildingMode: WorldbuildingMode
+  /** How often the Chronicler runs, in player turns (1-10). Each run is a whole
+   *  extra generation, so 2 halves the per-turn spend. */
+  worldbuildingInterval: number
   worldbuildingModelId: string
   actionSuggestionsModelId: string
   plannerModelId: string
@@ -80,6 +83,7 @@ function applyResponse(s: SettingsResponse) {
     useTools: s.useTools,
     toolMode: s.toolMode,
     worldbuildingMode: s.worldbuildingMode,
+    worldbuildingInterval: s.worldbuildingInterval,
     worldbuildingModelId: s.worldbuildingModelId,
     actionSuggestionsModelId: s.actionSuggestionsModelId,
     plannerModelId: s.plannerModelId,
@@ -119,6 +123,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   useTools: true,
   toolMode: 'auto',
   worldbuildingMode: 'confirmation',
+  worldbuildingInterval: 2,
   worldbuildingModelId: '',
   actionSuggestionsModelId: '',
   plannerModelId: '',

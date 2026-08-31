@@ -126,7 +126,7 @@ def test_party_roster_includes_personality_and_other():
     )
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[pm],
                         chat_history=[], player_message="Hi", include_action_protocol=False)
-    roster = next(m["content"] for m in msgs if "PARTY ROSTER" in m["content"])
+    roster = next(m["content"] for m in msgs if "PARTY SHEETS" in m["content"])
     assert "Personality: Wry" in roster and "Other: Collects teeth" in roster
 
 
@@ -216,3 +216,60 @@ def test_empty_goal_lists_inject_nothing():
     joined = "\n".join(m["content"] for m in msgs)
     assert "OVERARCHING OBJECTIVES" not in joined
     assert "PLAYER WISHLIST" not in joined
+
+
+# ── Tier order: the rule that everything the history can contradict comes
+#    AFTER the history, and that tier 1 stays a stable cacheable prefix. ────
+
+def _msgs(n=4):
+    return [NS(role=("user" if i % 2 == 0 else "assistant"),
+               content=f"beat {i}", turn_number=i // 2 + 1,
+               location=None, time_of_day=None, weather=None, day=None,
+               scene_minutes=None, image_path=None, image_description=None)
+            for i in range(n)]
+
+
+def _index_of(msgs, needle):
+    return next(i for i, m in enumerate(msgs) if needle in m["content"])
+
+
+def test_state_of_play_is_stated_after_the_history():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                        party_members=[], chat_history=_msgs(),
+                        player_message="Hi", include_action_protocol=False)
+    last_history = max(i for i, m in enumerate(msgs) if m["content"].startswith("beat "))
+    assert _index_of(msgs, "STATE OF PLAY") > last_history
+
+
+def test_the_roll_call_is_emitted_even_for_an_empty_party():
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                        party_members=[], chat_history=[], player_message="Hi",
+                        include_action_protocol=False)
+    state = next(m["content"] for m in msgs if "STATE OF PLAY" in m["content"])
+    assert "ALONE" in state
+
+
+def test_the_state_tier_carries_one_authority_line():
+    pm = NS(basic_info={"name": "Tifa"}, field_skill={}, equipment={})
+    msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                        party_members=[pm], chat_history=_msgs(),
+                        player_message="Hi", include_action_protocol=False,
+                        inventory_lines=["Rope — coiled hemp"],
+                        scene={"location": "Damp Cellar", "day": 3, "minutes": 8 * 60})
+    state = [m["content"] for m in msgs if "STATE OF PLAY" in m["content"]]
+    assert len(state) == 1, "three blocks each claiming authority read as three arguments"
+    assert "Damp Cellar" in state[0] and "Rope" in state[0] and "Tifa" in state[0]
+    assert "morning" in state[0], "time reaches the model as a phase word"
+
+
+def test_the_standing_context_is_identical_across_turns():
+    # Tier 1 is the cacheable prefix: it must not move when the volatile half does.
+    def prefix(history, tasks):
+        msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
+                            party_members=[], chat_history=history, tasks=tasks,
+                            player_message="Hi", include_action_protocol=False)
+        return [m["content"] for m in msgs[:2]]
+
+    assert prefix([], None) == prefix(
+        _msgs(6), [NS(status="active", text="Find the key", notes="")]
+    )

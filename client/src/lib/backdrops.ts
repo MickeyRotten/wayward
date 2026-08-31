@@ -1,4 +1,5 @@
 import { api } from './api'
+import { daylightToken } from './clock'
 
 /** Fallback backdrop when nothing matches the scene (per design). */
 export const DEFAULT_BACKDROP = 'forest_day.png'
@@ -26,16 +27,6 @@ export function invalidateBackdrops(): void {
   cached = null
 }
 
-// Narrator time-of-day values → the day/night vocabulary used in backdrop
-// filenames (forest_day.png, city_night.png, …).
-const TIME_TOKENS: Record<string, string> = {
-  morning: 'day',
-  day: 'day',
-  afternoon: 'day',
-  evening: 'night',
-  night: 'night',
-}
-
 function tokenize(s: string): string[] {
   return s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
 }
@@ -58,8 +49,11 @@ export function pickBackdrop(
   const haystack = new Set(tokenize(location))
   const time = (timeOfDay ?? '').toLowerCase().trim()
   if (time) {
-    haystack.add(time)
-    const mapped = TIME_TOKENS[time]
+    // The phase word itself scores ("dusk" matches dusk art if any exists), and
+    // its day/night bucket scores too, so the eight phases keep matching the
+    // two-value filenames the art actually uses (forest_day, city_night).
+    for (const t of time.split(/[^a-z0-9]+/).filter(Boolean)) haystack.add(t)
+    const mapped = daylightToken(time)
     if (mapped) haystack.add(mapped)
   }
 

@@ -61,39 +61,6 @@ Always call the tool — never reply with prose."""
 # drivers parse off and send in the `done` event. The separate suggester agent
 # still serves reroll and the client's self-healing fetch.
 
-INLINE_OPTIONS_MARKER = "<<<OPTIONS>>>"
-
-
-def build_inline_options_guidance(count: int) -> str:
-    n = normalize_suggestions_count(count)
-    return f"""ACTION OPTIONS: End your reply with one final line containing exactly {INLINE_OPTIONS_MARKER} immediately followed by a JSON array of {n} short choice phrases for the player. Make the set varied — spread the choices across different intents (cautious vs. bold, kind vs. ruthless, practical vs. curious) so each is a genuinely different decision, not a reworded version of another. Each phrase: FIRST PERSON starting with "I", 10 words or fewer, grounded in what you just narrated, never attacking or fighting, and never duplicating the always-available actions (waiting, looking around, resting, talking to the party, using an item). The options are the PLAYER CHARACTER's impulses — phrase them in that character's voice, shaped by their Personality and Drive, and when the scene allows, let one speak to their drive.
-
-Example ending:
-{INLINE_OPTIONS_MARKER}["I follow the smoky trail.", "I wait for nightfall.", "I pocket the coin purse.", "I climb the watchtower."]
-
-The {INLINE_OPTIONS_MARKER} line is machine-read and never shown to the player. It must be the very last line of the reply — after it, write nothing."""
-
-
-def parse_inline_options(text: str) -> tuple[str, list[str]]:
-    """Strip a trailing ``<<<OPTIONS>>>[...]`` block from narration text.
-
-    Returns ``(clean_text, options)``. Tolerant of malformed JSON (salvages the
-    complete quoted strings) and of a missing block (returns the text as-is)."""
-    if not text or INLINE_OPTIONS_MARKER not in text:
-        return text, []
-    head, _, tail = text.rpartition(INLINE_OPTIONS_MARKER)
-    options: list[str] = []
-    try:
-        data = json.loads(tail.strip())
-        if isinstance(data, list):
-            options = [str(a) for a in data]
-    except json.JSONDecodeError:
-        options = [
-            s.replace('\\"', '"').replace("\\\\", "\\")
-            for s in re.findall(r'"((?:[^"\\]|\\.)*)"', tail)
-        ]
-    cleaned = [_to_first_person(str(a)) for a in options if str(a).strip()]
-    return head.rstrip(), cleaned[:_MAX_OPTION_RULES]
 
 
 def normalize_option_rules(raw) -> list[str]:

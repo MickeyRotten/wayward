@@ -83,15 +83,15 @@ def _run(monkeypatch, responses: list[list[dict]]):
 
 
 def test_substantial_preamble_with_safe_write_is_kept(client, monkeypatch):
-    # One response: full beat + set_scene. The loop should keep the beat and stop.
+    # One response: full beat + a safe state write. The loop keeps the beat and stops.
     events, calls = _run(monkeypatch, [
-        _tool_call_sse("set_scene", '{"location": "Torch-lit Hall"}', preamble=_LONG_BEAT),
+        _tool_call_sse("grant_item", '{"itemName": "Health Potion", "count": 1}', preamble=_LONG_BEAT),
     ])
     assert calls == 1, "should not make a second (re-narration) call"
     assert not any(e["type"] == "discard" for e in events), "beat must not be discarded"
     final = next(e for e in events if e["type"] == "final")
     assert final["content"] == _LONG_BEAT
-    assert final["scene"].get("location") == "Torch-lit Hall"
+    assert final["inv_deltas"], "the safe write ran"
 
 
 def test_short_preamble_is_discarded_and_regenerated(client, monkeypatch):

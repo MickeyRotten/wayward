@@ -223,6 +223,7 @@ async def _run_app_migrations() -> None:
         ("openrouter_settings", "custom_api_key", "ALTER TABLE openrouter_settings ADD COLUMN custom_api_key VARCHAR DEFAULT ''"),
         ("openrouter_settings", "custom_model_id", "ALTER TABLE openrouter_settings ADD COLUMN custom_model_id VARCHAR DEFAULT ''"),
         ("openrouter_settings", "reasoning_effort", "ALTER TABLE openrouter_settings ADD COLUMN reasoning_effort VARCHAR DEFAULT ''"),
+        ("openrouter_settings", "worldbuilding_interval", "ALTER TABLE openrouter_settings ADD COLUMN worldbuilding_interval INTEGER DEFAULT 2"),
     ]
     async with engine.begin() as conn:
         for table, column, ddl in migrations:
@@ -250,6 +251,7 @@ async def _run_scope_migrations() -> None:
     a no-op for them; kept for forward compatibility.)"""
     migrations: list[tuple[str, str, str]] = [
         ("adventure.chat_messages", "day", "ALTER TABLE adventure.chat_messages ADD COLUMN day INTEGER"),
+        ("adventure.chat_messages", "scene_minutes", "ALTER TABLE adventure.chat_messages ADD COLUMN scene_minutes INTEGER"),
         ("campaign.narrator_configs", "action_suggestions_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_enabled INTEGER DEFAULT 0"),
         ("campaign.narrator_configs", "action_suggestions_instructions", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_suggestions_instructions TEXT DEFAULT ''"),
         ("campaign.narrator_configs", "action_option_rules", "ALTER TABLE campaign.narrator_configs ADD COLUMN action_option_rules JSON"),

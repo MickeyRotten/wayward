@@ -79,7 +79,11 @@ def test_narrator_item_tools_and_reversal(client, boot_adventure_id):
     instance model must restore the exact prior state."""
     client.post(f"/api/adventures/{boot_adventure_id}/load")
     from server.ai.item_detection import reverse_inventory_deltas
-    from server.ai.narrator_actions import reverse_equipment_changes, tool_equip, tool_grant_item
+    from server.ai.narrator_actions import (
+        reverse_equipment_changes,
+        tool_equip,
+        tool_grant_item,
+    )
     from server.db import party as party_ops
     from server.db.database import new_session
 
@@ -113,9 +117,22 @@ def test_narrator_item_tools_and_reversal(client, boot_adventure_id):
             return pc.equipment.get("rightHand")
     prev_slot = run(read_slot())
 
-    async def equip():
+    # Re-equipping what is ALREADY worn is a no-op, not a second equip: it must
+    # record no equipment change, or reversal would replay a bogus one forever.
+    async def redundant_equip():
         async with new_session() as s:
             eff = await tool_equip({"characterName": "Hero", "slot": "rightHand", "itemName": "Sword"}, s)
+            await s.commit()
+            return eff
+    noop = run(redundant_equip())
+    assert noop.ok and not noop.equip_changes, "already-worn equip must change nothing"
+    assert "already" in noop.result.lower()
+
+    # A real equip: a DIFFERENT item into the occupied slot, so reversal has a
+    # prior occupant to restore.
+    async def equip():
+        async with new_session() as s:
+            eff = await tool_equip({"characterName": "Hero", "slot": "rightHand", "itemName": "Longbow"}, s)
             await s.commit()
             return eff
     eff = run(equip())
@@ -124,7 +141,7 @@ def test_narrator_item_tools_and_reversal(client, boot_adventure_id):
     assert new_slot, "slot holds an instance id"
     inv = client.get("/api/inventory").json()
     worn = next(s for s in inv if s["instanceId"] == new_slot)
-    assert worn["item"]["name"] == "Sword" and worn["equippedBy"]
+    assert worn["item"]["name"] == "Longbow" and worn["equippedBy"]
 
     async def undo_equip():
         async with new_session() as s:

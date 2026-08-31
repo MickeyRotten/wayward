@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 import { TABS } from '../IconRail/IconRail'
+import { useBackHandler } from '../../lib/useBackHandler'
 import { useUiStore } from '../../state/uiStore'
 import type { MobileView, TabId } from '../../state/uiStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
@@ -71,6 +72,9 @@ export function MobileNav() {
   const planningMode = useChatStore((s) => s.planningMode)
   const setPlanningMode = useChatStore((s) => s.setPlanningMode)
   const [moreOpen, setMoreOpen] = useState(false)
+  // Back closes the sheet before it closes anything else — it pushed last.
+  const closeMore = useCallback(() => setMoreOpen(false), [])
+  useBackHandler(moreOpen, closeMore)
 
   const go = (view: MobileView) => {
     setMobileView(view)

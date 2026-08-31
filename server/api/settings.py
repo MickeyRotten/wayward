@@ -41,6 +41,7 @@ def _or_response(s: OpenRouterSettings) -> OpenRouterSettingsResponse:
         useTools=bool(s.use_tools),
         toolMode=getattr(s, "tool_mode", "auto") or "auto",
         worldbuildingMode=s.worldbuilding_mode,
+        worldbuildingInterval=getattr(s, "worldbuilding_interval", 2) or 2,
         worldbuildingModelId=s.worldbuilding_model_id,
         actionSuggestionsModelId=getattr(s, "action_suggestions_model_id", "") or "",
         plannerModelId=getattr(s, "planner_model_id", "") or "",
@@ -104,6 +105,7 @@ async def update_openrouter_settings(
     # old reader — text/off imply the non-native path.
     s.use_tools = data.toolMode in ("auto", "native")
     s.worldbuilding_mode = data.worldbuildingMode
+    s.worldbuilding_interval = max(1, min(int(data.worldbuildingInterval or 2), 10))
     s.worldbuilding_model_id = data.worldbuildingModelId
     s.action_suggestions_model_id = data.actionSuggestionsModelId
     s.planner_model_id = data.plannerModelId

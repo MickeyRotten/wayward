@@ -1,6 +1,7 @@
 // The chat header — the Play/Edit mode toggle, the declared location + day on
 // the left, and time-of-day + weather on the right (Play mode only).
 
+import { sunShape } from '../../lib/clock'
 import type { SceneBanner as SceneBannerState } from '../../lib/location'
 
 export function SceneBanner({
@@ -78,16 +79,17 @@ export function SceneBanner({
 // ── Time-of-day icon ────────────────────────────────────────────────
 
 function TimeOfDayIcon({ timeOfDay }: { timeOfDay: string }) {
-  const key = timeOfDay.trim().toLowerCase()
+  // Eight phase words, four shapes — the fold lives once, in lib/clock.
+  const key = sunShape(timeOfDay)
   const common = {
     width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
     stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
   }
-  if (key === 'night') {
+  if (key === 'moon') {
     return <svg {...common}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
   }
-  if (key === 'morning') {
+  if (key === 'sunrise') {
     return (
       <svg {...common}>
         <path d="M3 18h18M7 18a5 5 0 0 1 10 0" />
@@ -95,7 +97,7 @@ function TimeOfDayIcon({ timeOfDay }: { timeOfDay: string }) {
       </svg>
     )
   }
-  if (key === 'evening') {
+  if (key === 'sunset') {
     return (
       <svg {...common}>
         <path d="M3 18h18M7 18a5 5 0 0 1 10 0" />
@@ -103,7 +105,7 @@ function TimeOfDayIcon({ timeOfDay }: { timeOfDay: string }) {
       </svg>
     )
   }
-  if (key === 'afternoon') {
+  if (key === 'high') {
     return (
       <svg {...common}>
         <circle cx="8" cy="8" r="3" />

@@ -66,7 +66,11 @@ class OpenRouterSettings(Base):
     max_party_size: Mapped[int] = mapped_column(Integer, default=3)
     # Agentic tool loop: cap on tool round-trips per turn, and a master toggle
     # for the agent loop vs. the legacy <<<ACTIONS>>> text-block path.
-    max_tool_rounds: Mapped[int] = mapped_column(Integer, default=6)
+    # Each round is a full round-trip that re-sends the ENTIRE prompt, so this
+    # is the most expensive dial in the app. Scene state left the tool surface
+    # for the trailing turn block, which removed the single most common round —
+    # 4 is now comfortably more than a turn needs.
+    max_tool_rounds: Mapped[int] = mapped_column(Integer, default=4)
     use_tools: Mapped[bool] = mapped_column(Integer, default=True)
     # Narrator state-mutation path (supersedes use_tools, which now only seeds
     # this on migration): 'auto' (native tool loop when the model supports tools,
@@ -86,6 +90,12 @@ class OpenRouterSettings(Base):
     # Chronicler (world-building agent): when/how it creates lore/quests/members.
     # 'disabled' | 'confirmation' | 'auto'. Optional separate model (blank => main).
     worldbuilding_mode: Mapped[str] = mapped_column(String, default="confirmation")
+    # How often the Chronicler runs, in player turns (1-10). It costs a whole
+    # second generation per run, and looking at one beat is also the worst
+    # vantage point for judging "is this genuinely new?" — which is how it ends
+    # up re-proposing the entry it wrote two turns ago. 2 halves the spend and
+    # gives it a wider window; 1 is the old every-turn behaviour.
+    worldbuilding_interval: Mapped[int] = mapped_column(Integer, default=2)
     worldbuilding_model_id: Mapped[str] = mapped_column(String, default="")
     # Action Suggestions (contextual quick-action buttons): optional separate
     # model (blank => main model). Enablement is per-campaign, on
@@ -151,7 +161,10 @@ class NarratorConfig(Base):
     # 'separate' (default): the options come from their own small LLM call after
     # the turn. 'inline': the narrator appends a machine-read <<<OPTIONS>>> line
     # to its narration — no extra call; reroll still uses the separate agent.
-    action_suggestions_mode: Mapped[str] = mapped_column(Text, default="separate")
+    # 'inline' by default: the options ride the narration call's trailing block
+    # instead of buying a second model call every single turn. 'separate' is
+    # still the reroll and self-heal path, which is what it is good at.
+    action_suggestions_mode: Mapped[str] = mapped_column(Text, default="inline")
     # Legacy per-slot option rules (one generated option per rule). Superseded by
     # a single shared instruction + action_suggestions_count; retained only so old
     # campaigns' counts can be seeded from len(rules) on migration. No longer read
@@ -337,8 +350,15 @@ class ChatMessage(Base):
     location: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     time_of_day: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     weather: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
-    # In-game day number, declared by the narrator (like location/time/weather).
+    # In-game day number. NOT narrator-written any more — the narrator emits a
+    # duration label off a fixed ladder and the server owns the calendar
+    # (server/ai/clock.py). Carried per message so swipe/regenerate/delete
+    # reversal restores the clock for free: dropping the message drops its time.
     day: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    # Minute of the in-game day (0-1439). Internal — the player and the model
+    # only ever see the phase word (`clock.phase_of`), so nothing can narrate
+    # "half past two" and contradict it two beats later.
+    scene_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     spotlight_reason: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     applied_inventory_deltas: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     applied_equipment_changes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)

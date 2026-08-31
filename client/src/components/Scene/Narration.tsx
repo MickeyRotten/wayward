@@ -3,6 +3,7 @@
 // scene headers, and the chat portrait. Used by MessageBubble, StreamingWindow,
 // and the ChatScene first-message block.
 
+import { phaseEmoji } from '../../lib/clock'
 import { useTtsStore } from '../../state/ttsStore'
 import type { Segment, MemberLite } from '../../lib/narration'
 
@@ -124,13 +125,9 @@ export function formatNarrationWithDropCap(text: string): string {
 
 // ── Segmented narration: JRPG dialogue blocks, inscriptions, dividers ──────
 
-const TIME_ICONS: Record<string, string> = {
-  morning: '🌅', day: '☀️', afternoon: '🌤️', evening: '🌇', night: '🌙',
-}
-
 // A small cinematic header shown above a narrator message when the scene changes.
 export function SceneHeader({ location, timeOfDay }: { location?: string | null; timeOfDay?: string | null }) {
-  const icon = timeOfDay ? TIME_ICONS[timeOfDay.toLowerCase()] : ''
+  const icon = phaseEmoji(timeOfDay)
   const parts = [location, timeOfDay].filter(Boolean) as string[]
   return (
     <div className="flex items-center gap-2 px-4 pt-2 pb-1">

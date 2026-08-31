@@ -230,6 +230,7 @@ class OpenRouterSettingsUpdate(BaseModel):
     useTools: bool = True
     toolMode: str = "auto"  # auto | native | text | off
     worldbuildingMode: str = "confirmation"
+    worldbuildingInterval: int = 2
     worldbuildingModelId: str = ""
     actionSuggestionsModelId: str = ""
     plannerModelId: str = ""
@@ -267,6 +268,7 @@ class OpenRouterSettingsResponse(BaseModel):
     useTools: bool
     toolMode: str
     worldbuildingMode: str
+    worldbuildingInterval: int
     worldbuildingModelId: str
     actionSuggestionsModelId: str
     plannerModelId: str
@@ -366,6 +368,8 @@ class PlannerDeletesApply(BaseModel):
 
 class WorldbuildRunRequest(BaseModel):
     turn: int | None = None
+    # Bypass the cadence — the player asked for it explicitly.
+    force: bool = False
 
 
 class WorldbuildProposalSchema(BaseModel):

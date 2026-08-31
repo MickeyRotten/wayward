@@ -140,6 +140,8 @@ export interface OpenRouterSettings {
   /** Narrator state-mutation path: 'auto' | 'native' | 'text' | 'off'. Supersedes useTools. */
   toolMode: string
   worldbuildingMode: WorldbuildingMode
+  /** How often the Chronicler runs, in player turns (1-10). */
+  worldbuildingInterval: number
   worldbuildingModelId: string
   actionSuggestionsModelId: string
   plannerModelId: string

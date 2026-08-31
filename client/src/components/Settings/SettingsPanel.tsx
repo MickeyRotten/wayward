@@ -139,7 +139,8 @@ export function SettingsPanel() {
     temperature, topP, minP, topK, frequencyPenalty: freqPen, presencePenalty: presPen,
     repetitionPenalty: repPen, maxTokensResponse: maxTokens, maxToolRounds,
     autoRetryCount, reasoningEffort, toolMode, worldbuildingMode: wbMode,
-    worldbuildingModelId: wbModelId, actionSuggestionsModelId, plannerModelId, summaryThreshold,
+    worldbuildingModelId: wbModelId, worldbuildingInterval: wbInterval,
+    actionSuggestionsModelId, plannerModelId, summaryThreshold,
     summaryModelId, visionModelId, visionUseSameKey, visionInstructions,
     ttsEnabled, ttsAutoplay } = settings
   const { spotlightRule, postHistoryInstructions: postHistory,
@@ -160,6 +161,7 @@ export function SettingsPanel() {
   const setToolMode = (v: string) => setS({ toolMode: v })
   const setWbMode = (v: OpenRouterSettings['worldbuildingMode']) => setS({ worldbuildingMode: v })
   const setWbModelId = (v: string) => setS({ worldbuildingModelId: v })
+  const setWbInterval = (v: number) => setS({ worldbuildingInterval: Math.max(1, Math.min(v, 10)) })
   const setActionSuggestionsModelId = (v: string) => setS({ actionSuggestionsModelId: v })
   const setPlannerModelId = (v: string) => setS({ plannerModelId: v })
   const setSummaryThreshold = (v: number) => setS({ summaryThreshold: v })
@@ -201,7 +203,7 @@ export function SettingsPanel() {
   // parameters" affordance in the Sampling subsection.
   const resetSampling = () => setS({ temperature: 0.7, topP: 1, minP: 0, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1 })
   const resetAgents = () => {
-    setS({ toolMode: 'auto', maxToolRounds: 6, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
+    setS({ toolMode: 'auto', maxToolRounds: 4, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingInterval: 2, worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
     setN({ actionSuggestionsEnabled: false })
   }
   const resetWorld = () => setN({ spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
@@ -570,6 +572,21 @@ export function SettingsPanel() {
               </span>
             </label>
             <label className="block">
+              <span className="text-[11px] text-textdim font-body">
+                Run every {wbInterval === 1 ? 'turn' : `${wbInterval} turns`}
+              </span>
+              <input
+                type="range" min={1} max={10} step={1} value={wbInterval}
+                onChange={(e) => setWbInterval(Number(e.target.value))}
+                className="w-full accent-gold"
+              />
+              <span className="text-[10px] text-textdim font-body">
+                Each run is a whole extra generation. Running less often is cheaper AND
+                usually better — reading several beats at once is a far better vantage
+                point for judging what is genuinely new than reading one.
+              </span>
+            </label>
+            <label className="block">
               <span className="text-[11px] text-textdim font-body">Chronicler Model</span>
               <ModelPicker
                 value={wbModelId}
@@ -645,8 +662,8 @@ export function SettingsPanel() {
               <span className="text-[11px] text-textdim font-body">Generation Mode</span>
               <div className="mt-1 grid grid-cols-2 gap-1">
                 {([
-                  { value: 'separate', label: 'Separate call' },
                   { value: 'inline', label: 'With the narration' },
+                  { value: 'separate', label: 'Separate call' },
                 ] as const).map((opt) => (
                   <button
                     key={opt.value}
@@ -663,7 +680,7 @@ export function SettingsPanel() {
                 ))}
               </div>
               <span className="mt-1 block text-[10px] text-textdim font-body">
-                Separate call: options come from their own small LLM call after the turn (can use a cheaper model below). With the narration: the narrator writes the options at the end of its own reply — faster and no extra call, but ties them to the main model. Reroll always uses the separate call.
+                With the narration (default): the options ride the same block the narrator already ends its reply with — no second call, no extra wait. Separate call: their own small request after the turn, on a cheaper model if you pick one below; that is a whole extra generation every turn. Reroll always uses the separate call.
               </span>
             </label>
             <label className="block">

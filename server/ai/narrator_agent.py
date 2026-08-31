@@ -58,7 +58,7 @@ FINAL_ROUND_NUDGE = (
 # skill_check and the read tools are deliberately excluded — their result must
 # be free to change what actually gets narrated.
 _SAFE_WRITE_TOOLS = frozenset({
-    "set_scene", "grant_item", "remove_item", "consume_item", "equip", "unequip",
+    "grant_item", "remove_item", "consume_item", "equip", "unequip",
 })
 # A streamed beat this long (chars) accompanying only safe writes is treated as
 # real narration, not throwaway tool preamble.
@@ -71,23 +71,15 @@ _SLOT_ENUM = [
     "waist", "legsOver", "legsUnder", "feet", "accessory1", "accessory2",
 ]
 
+# Scene state is NOT here. Declaring a location used to cost a whole model
+# round-trip: the model called set_scene with four strings, the loop executed it,
+# appended a tool result and called the model AGAIN to write the prose. A
+# round-trip is the most expensive thing a turn can spend and it was buying four
+# strings the model could append to the beat it had just written. Scene now rides
+# the trailing <<<TURN>>> block (server/ai/turn_block.py). The handler survives
+# for the legacy text protocol; withdrawing the SCHEMA is what matters, because a
+# named tool is an invitation.
 TOOL_SCHEMAS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "set_scene",
-            "description": "Declare the current location, time of day, weather, and/or in-game day. Include only the fields that are being established or changed.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string", "description": "Short place name, 2-4 words."},
-                    "timeOfDay": {"type": "string", "enum": ["Morning", "Day", "Afternoon", "Evening", "Night"]},
-                    "weather": {"type": "string", "description": "Short descriptor, e.g. 'Light rain'."},
-                    "day": {"type": "integer", "description": "In-game day number (starts at 1). Set when a new day begins, e.g. after sleeping or a time skip."},
-                },
-            },
-        },
-    },
     {
         "type": "function",
         "function": {
@@ -266,6 +258,7 @@ async def run_narrator_agent(
     settings,
     base_messages: list[dict],
     current_turn: int,
+    variant: int = 0,
     summarize_hint: bool = False,
     dice_enabled: bool = True,
 ) -> AsyncGenerator[dict, None]:
@@ -299,7 +292,14 @@ async def run_narrator_agent(
     usage_total: dict = {}
     reasoning_seen = False
 
-    max_rounds = max(1, settings.max_tool_rounds or 6)
+    # An op that has already run this turn is not an op. Models re-request a
+    # write they made two rounds ago — the same restatement reflex that turns one
+    # rusty key into seven — and a duplicate grant is a real second grant. Keyed
+    # on (name, canonical args), so "grant 1 torch" twice is once and "grant 2
+    # torches" is honoured.
+    executed: set[str] = set()
+
+    max_rounds = max(1, settings.max_tool_rounds or 4)
     full_max_tokens = settings.max_tokens_response
     base_url, api_key, main_model = provider_endpoint(settings)
 
@@ -449,7 +449,16 @@ async def run_narrator_agent(
                     log.info("AGENT TOOL turn=%s %s -> malformed args, requested resend", current_turn, name)
                     yield {"type": "tool", "name": name, "result": note, "ok": False}
                     continue
-                effect = await _execute_tool(name, args, agent_session, current_turn)
+                sig = name + "|" + json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+                if sig in executed and name in _SAFE_WRITE_TOOLS:
+                    note = (f"Already done this turn: {name} with those exact arguments "
+                            "has already been applied. Nothing changed. Do not repeat it.")
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": note})
+                    log.info("AGENT TOOL turn=%s %s -> duplicate suppressed", current_turn, name)
+                    yield {"type": "tool", "name": name, "result": note, "ok": True}
+                    continue
+                executed.add(sig)
+                effect = await _execute_tool(name, args, agent_session, current_turn, variant)
                 inv_deltas.extend(effect.inv_deltas)
                 equip_changes.extend(effect.equip_changes)
                 scene.update(effect.scene)
@@ -484,10 +493,10 @@ async def run_narrator_agent(
     }
 
 
-async def _execute_tool(name: str, args: dict, session, current_turn: int = 0) -> ToolEffect:
+async def _execute_tool(name: str, args: dict, session, current_turn: int = 0, variant: int = 0) -> ToolEffect:
     if name == "skill_check":
         # Needs the turn to tether its dice ChatEvent (removed on swipe/delete).
-        return await tool_skill_check(args, session, current_turn)
+        return await tool_skill_check(args, session, current_turn, variant)
     handler = _HANDLERS.get(name)
     if not handler:
         return ToolEffect(result=f"Unknown tool '{name}'.")

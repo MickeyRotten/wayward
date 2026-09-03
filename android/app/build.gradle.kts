@@ -44,14 +44,19 @@ android {
 
     // One persistent key signs every build (debug and release), so any build
     // installs over any other without uninstalling — updates keep user data.
-    // The keystore is committed (private personal repo); env vars can override
-    // if it's ever moved to a CI secret.
+    // The keystore itself is NOT committed (repo is public): CI decodes it from
+    // the WAYWARD_KEYSTORE_B64 secret; locally, set WAYWARD_KEYSTORE(_PASS)/
+    // WAYWARD_KEY_ALIAS/WAYWARD_KEY_PASS yourself and keep your own copy of the
+    // keystore file untracked at signing/wayward-release.keystore.
     signingConfigs {
         create("wayward") {
             storeFile = file(System.getenv("WAYWARD_KEYSTORE") ?: "${rootProject.projectDir}/signing/wayward-release.keystore")
-            storePassword = System.getenv("WAYWARD_KEYSTORE_PASS") ?: "wayward-release"
-            keyAlias = System.getenv("WAYWARD_KEY_ALIAS") ?: "wayward"
-            keyPassword = System.getenv("WAYWARD_KEY_PASS") ?: "wayward-release"
+            storePassword = System.getenv("WAYWARD_KEYSTORE_PASS")
+                ?: error("WAYWARD_KEYSTORE_PASS is not set")
+            keyAlias = System.getenv("WAYWARD_KEY_ALIAS")
+                ?: error("WAYWARD_KEY_ALIAS is not set")
+            keyPassword = System.getenv("WAYWARD_KEY_PASS")
+                ?: error("WAYWARD_KEY_PASS is not set")
         }
     }
     buildTypes {

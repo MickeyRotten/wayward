@@ -44,7 +44,16 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Restore signing keystore
+        run: |
+          mkdir -p android/signing
+          echo "${{ secrets.WAYWARD_KEYSTORE_B64 }}" | base64 -d > android/signing/wayward-release.keystore
+
       - name: Build signed release APK
+        env:
+          WAYWARD_KEYSTORE_PASS: ${{ secrets.WAYWARD_KEYSTORE_PASS }}
+          WAYWARD_KEY_ALIAS: ${{ secrets.WAYWARD_KEY_ALIAS }}
+          WAYWARD_KEY_PASS: ${{ secrets.WAYWARD_KEY_PASS }}
         run: gradle -p android :app:assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK

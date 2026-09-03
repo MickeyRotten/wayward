@@ -48,5 +48,9 @@ Thumbs.db
 # Env
 .env
 
+# Android signing keystore (sourced from a GitHub secret in CI; keep your own
+# local copy untracked for local builds)
+android/signing/
+
 # Debug
 .prompt_log.json

@@ -81,11 +81,11 @@ interface DragPos {
  * blocks, folders nesting one level deep (no roles/depth/merge-groups — see
  * CLAUDE.md's Character system rebuild section). Rows are reordered by
  * dragging (native HTML5 DnD, one drag context per list — root and each
- * folder's children reorder independently). Clicking a text block ("prompt")
- * opens it full-screen in the Inspector via `onOpenBlock` — content is no
- * longer edited inline. `onChange`'s `immediate` flag mirrors the rest of the
- * sheet's fields: everything here (toggle/reorder/add/delete/rename) flushes
- * right away.
+ * folder's children reorder independently). Nothing on a row is directly
+ * editable — clicking it opens the block full-screen in the Inspector via
+ * `onOpenBlock`, where its name, enabled state, and (for text blocks)
+ * content are all edited. `onChange`'s `immediate` flag mirrors the rest of
+ * the sheet's fields: toggle/reorder/add/delete flush right away.
  */
 export function BlockTreeEditor({
   blocks,
@@ -181,7 +181,6 @@ export function BlockTreeEditor({
           block={block}
           confirmingDelete={confirmDeleteId === block.id}
           onToggle={(enabled) => updateAt(i, { enabled })}
-          onRename={(name) => updateAt(i, { name })}
           onRequestDelete={() => setConfirmDeleteId(block.id)}
           onConfirmDelete={() => deleteRoot(i)}
           onCancelDelete={() => setConfirmDeleteId(null)}
@@ -194,7 +193,7 @@ export function BlockTreeEditor({
           onDragOverRow={(e) => dragOverRow({ scope: 'root', index: i }, e)}
           onDropRow={dropRow}
           onDragEndRow={dragEnd}
-          onOpen={block.type === 'text' ? () => onOpenBlock(block.id) : undefined}
+          onOpen={() => onOpenBlock(block.id)}
         >
           {block.type === 'folder' && (
             <div className="ml-5 mt-1.5 space-y-1.5 border-l border-line pl-3">
@@ -204,7 +203,6 @@ export function BlockTreeEditor({
                   block={child}
                   confirmingDelete={confirmDeleteId === child.id}
                   onToggle={(enabled) => updateChild(i, ci, { enabled })}
-                  onRename={(name) => updateChild(i, ci, { name })}
                   onRequestDelete={() => setConfirmDeleteId(child.id)}
                   onConfirmDelete={() => deleteChild(i, ci)}
                   onCancelDelete={() => setConfirmDeleteId(null)}
@@ -214,7 +212,7 @@ export function BlockTreeEditor({
                   onDragOverRow={(e) => dragOverRow({ scope: block.id, index: ci }, e)}
                   onDropRow={dropRow}
                   onDragEndRow={dragEnd}
-                  onOpen={child.type === 'text' ? () => onOpenBlock(child.id) : undefined}
+                  onOpen={() => onOpenBlock(child.id)}
                 />
               ))}
               {(block.children ?? []).length === 0 && (
@@ -262,7 +260,6 @@ function BlockRow({
   block,
   confirmingDelete,
   onToggle,
-  onRename,
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -281,7 +278,6 @@ function BlockRow({
   block: CharacterBlock
   confirmingDelete: boolean
   onToggle: (enabled: boolean) => void
-  onRename: (name: string) => void
   onRequestDelete: () => void
   onConfirmDelete: () => void
   onCancelDelete: () => void
@@ -294,22 +290,20 @@ function BlockRow({
   onDragOverRow: (e: React.DragEvent) => void
   onDropRow: (e: React.DragEvent) => void
   onDragEndRow: () => void
-  onOpen?: () => void
+  onOpen: () => void
   children?: React.ReactNode
 }) {
-  const isTag = block.name === TAG_OPEN_NAME || block.name === TAG_CLOSE_NAME
   const [expanded, setExpanded] = useState(true)
-  const openable = !!onOpen
 
   return (
     <div
-      className={`border bg-bg0/60 transition-colors ${!block.enabled ? 'opacity-50' : ''} ${
+      className={`border bg-bg0/60 cursor-pointer hover:bg-bg1/40 transition-colors ${!block.enabled ? 'opacity-50' : ''} ${
         isDragging ? 'opacity-30' : ''
-      } ${isDragOver ? 'border-gold' : 'border-line'} ${openable ? 'cursor-pointer hover:bg-bg1/40' : ''}`}
+      } ${isDragOver ? 'border-gold' : 'border-line'}`}
       onDragOver={onDragOverRow}
       onDrop={onDropRow}
-      onClick={openable ? onOpen : undefined}
-      title={openable ? 'Click to edit this prompt' : undefined}
+      onClick={onOpen}
+      title="Click to open"
     >
       <div className="flex items-center gap-1.5 px-2 py-1.5">
         <span
@@ -343,12 +337,9 @@ function BlockRow({
           </button>
         )}
 
-        <input
-          className="flex-1 min-w-0 bg-transparent text-sm font-body text-text outline-none border-b border-transparent focus:border-line2 px-1 py-0.5"
-          value={block.name}
-          onChange={(e) => onRename(e.target.value)}
-          onClick={(e) => e.stopPropagation()}
-        />
+        <span className="flex-1 min-w-0 truncate text-sm font-body text-text px-1 py-0.5">
+          {block.name}
+        </span>
 
         <span className="shrink-0 font-ui text-[9px] tracking-wider text-textdim uppercase border border-line px-1.5 py-0.5">
           {TYPE_LABELS[block.type]}
@@ -382,14 +373,6 @@ function BlockRow({
           </button>
         )}
       </div>
-
-      {block.type === 'text' && !isTag && (
-        <div className="px-2 pb-2 -mt-1">
-          <p className="text-[11px] text-textdim font-body truncate">
-            {(block.content ?? '').trim() || <span className="italic">Empty — click to write</span>}
-          </p>
-        </div>
-      )}
 
       {block.type === 'equipment' && (
         <div className="px-2 pb-2">

@@ -1553,11 +1553,15 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
 
   const flush = useCallback(() => {
     clearTimeout(timer.current)
-    const nextBlocks = updateBlockInTree(owner.blocks, block.id, draft.current)
+    // Only text blocks have meaningful content — don't write a stray `content`
+    // field onto folder/equipment/image blocks that never had one.
+    const patch: Partial<CharacterBlock> = { name: draft.current.name, enabled: draft.current.enabled }
+    if (block.type === 'text') patch.content = draft.current.content
+    const nextBlocks = updateBlockInTree(owner.blocks, block.id, patch)
     if (ownerType === 'player') void saveBlocksPC(nextBlocks, owner.basicInfo.name)
     else void saveBlocksMember(owner.id, nextBlocks, owner.basicInfo.name)
     setEditDirty(false)
-  }, [owner, ownerType, block.id, saveBlocksPC, saveBlocksMember, setEditDirty])
+  }, [owner, ownerType, block.id, block.type, saveBlocksPC, saveBlocksMember, setEditDirty])
 
   const scheduleFlush = useCallback(() => {
     clearTimeout(timer.current)
@@ -1572,6 +1576,12 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
 
   const d = draft.current
 
+  const nonTextNote = block.type === 'folder'
+    ? 'A folder groups other blocks — expand it in the Character Sheet list to manage its contents.'
+    : block.type === 'equipment'
+      ? 'Rendered live from equipped gear — see the Equipment section below.'
+      : `${block.file || 'Reference image'} — uploading new image blocks isn't supported yet.`
+
   if (mode === 'view') {
     return (
       <div className="space-y-6 p-6">
@@ -1582,13 +1592,17 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
             {block.enabled ? 'ENABLED' : 'DISABLED'}
           </span>
         </div>
-        <LoreSection title="Content">
-          {(block.content ?? '').trim() ? (
-            <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{block.content}</p>
-          ) : (
-            <p className="text-[12px] text-textdim font-body">(empty)</p>
-          )}
-        </LoreSection>
+        {block.type === 'text' ? (
+          <LoreSection title="Content">
+            {(block.content ?? '').trim() ? (
+              <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{block.content}</p>
+            ) : (
+              <p className="text-[12px] text-textdim font-body">(empty)</p>
+            )}
+          </LoreSection>
+        ) : (
+          <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>
+        )}
       </div>
     )
   }
@@ -1615,15 +1629,19 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
         </div>
       </LoreSection>
 
-      <LoreSection title="Content">
-        <textarea
-          className="w-full border border-line bg-bg0 px-3 py-2.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[50vh]"
-          defaultValue={d.content}
-          placeholder="Content the Narrator reads for this block…"
-          onChange={(e) => update({ content: e.target.value })}
-          onBlur={(e) => update({ content: e.target.value }, true)}
-        />
-      </LoreSection>
+      {block.type === 'text' ? (
+        <LoreSection title="Content">
+          <textarea
+            className="w-full border border-line bg-bg0 px-3 py-2.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[50vh]"
+            defaultValue={d.content}
+            placeholder="Content the Narrator reads for this block…"
+            onChange={(e) => update({ content: e.target.value })}
+            onBlur={(e) => update({ content: e.target.value }, true)}
+          />
+        </LoreSection>
+      ) : (
+        <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>
+      )}
     </div>
   )
 }

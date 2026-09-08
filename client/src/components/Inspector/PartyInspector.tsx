@@ -7,7 +7,6 @@ import { SPECIES_FIELD_DEFS } from '../../lib/speciesFields'
 import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
-import { useChatStore } from '../../state/chatStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
@@ -27,12 +26,8 @@ export function PartyInspector() {
   const editDirty = useUiStore((s) => s.editDirty)
   const back = useUiStore((s) => s.back)
   const goBack = useUiStore((s) => s.goBack)
-  // The Inspector's view/edit state is now driven by the chat's Edit Mode:
-  // Edit Mode → always editing; Narration → always viewing. (Game-engine style:
-  // Play vs Edit.) The current selection is preserved when you toggle modes.
-  const editMode = useChatStore((s) => s.planningMode)
-  const setPlanningMode = useChatStore((s) => s.setPlanningMode)
-  const mode: 'view' | 'edit' = editMode ? 'edit' : 'view'
+  // Full CRUD is always available now — no separate Edit Mode gates it.
+  const mode: 'view' | 'edit' = 'edit'
 
   if (!everSelected) return <EmptyState />
 
@@ -137,20 +132,6 @@ export function PartyInspector() {
                   title="Unsaved changes"
                 />
               )}
-              {/* Mode follows the chat's Edit Mode — tap to toggle it in place
-                  (the selection is preserved across mode flips). */}
-              <button
-                type="button"
-                className={`font-ui text-[9px] tracking-wider px-2.5 py-1 border transition-colors ${
-                  mode === 'edit'
-                    ? 'text-gold border-gold/40 hover:border-gold'
-                    : 'text-textdim border-line hover:text-textsec hover:border-line2'
-                }`}
-                title={mode === 'edit' ? 'Switch to Play mode (view)' : 'Switch to Edit Mode to edit'}
-                onClick={() => setPlanningMode(!editMode)}
-              >
-                {mode === 'edit' ? 'EDITING' : 'VIEW'}
-              </button>
             </div>
           </div>
         </div>

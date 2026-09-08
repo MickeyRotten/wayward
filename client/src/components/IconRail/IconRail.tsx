@@ -2,6 +2,15 @@ import type { ReactNode } from 'react'
 import type { TabId } from '../../state/uiStore'
 import { useWorldbuildStore } from '../../state/worldbuildStore'
 
+// The Editor's icon — exported so the mobile nav (MobileNav) reuses it for
+// visual parity. Editor is a chat-thread toggle, not a panel selector, so
+// it deliberately lives outside TABS/TabId — see IconRail() below.
+export const EDITOR_ICON = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+  </svg>
+)
+
 // Exported so the mobile bottom nav (MobileNav) reuses the same icons/labels.
 export const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   {
@@ -95,15 +104,35 @@ export const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
 export function IconRail({
   activeTab,
   onTabChange,
+  editorActive,
+  onEditorClick,
 }: {
   activeTab: TabId
   onTabChange: (tab: TabId) => void
+  editorActive: boolean
+  onEditorClick: () => void
 }) {
   const pendingCount = useWorldbuildStore((s) => s.pendingCount)
   return (
     <div className="flex flex-col pt-3">
+      {/* Editor — a chat-thread toggle, not a panel tab. Kept out of TABS/
+          TabId so it never touches which left panel is showing. */}
+      <button
+        type="button"
+        className={`relative flex flex-col items-center justify-center w-[66px] h-[52px] mb-2 pb-2 border-b border-line2 transition-colors ${
+          editorActive ? 'text-gold' : 'text-textdim hover:text-textsec'
+        }`}
+        onClick={onEditorClick}
+        title="Editor"
+      >
+        {editorActive && (
+          <div className="absolute left-0 top-2 bottom-4 w-[2px] bg-gold" />
+        )}
+        {EDITOR_ICON}
+        <span className="font-ui text-[8px] tracking-wider mt-1">EDITOR</span>
+      </button>
       {TABS.map((tab) => {
-        const isActive = activeTab === tab.id
+        const isActive = activeTab === tab.id && !editorActive
         const badge = tab.id === 'suggestions' && pendingCount > 0 ? pendingCount : 0
         return (
           <button

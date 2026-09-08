@@ -1,5 +1,8 @@
-// The chat header — the Play/Edit mode toggle, the declared location + day on
-// the left, and time-of-day + weather on the right (Play mode only).
+// The chat header — the declared location + day on the left, and
+// time-of-day + weather on the right (Narrator thread only). Shows "Edit
+// Mode" in place of the location when the Editor thread is active — the
+// Editor nav entry (IconRail/MobileNav) is what switches threads, not this
+// banner.
 
 import { sunShape } from '../../lib/clock'
 import type { SceneBanner as SceneBannerState } from '../../lib/location'
@@ -7,13 +10,9 @@ import type { SceneBanner as SceneBannerState } from '../../lib/location'
 export function SceneBanner({
   banner,
   planningMode,
-  inputLocked,
-  onToggleMode,
 }: {
   banner: SceneBannerState
   planningMode: boolean
-  inputLocked: boolean
-  onToggleMode: () => void
 }) {
   return (
     <div
@@ -25,26 +24,6 @@ export function SceneBanner({
       }}
     >
       <div className="flex items-start gap-2.5 min-w-0">
-        {/* Play / Edit mode toggle (Unity-style): lit while playing (Narration). */}
-        <button
-          type="button"
-          disabled={inputLocked}
-          title={planningMode ? 'Exit Edit Mode — back to play' : 'Edit Mode — work on the world'}
-          onClick={onToggleMode}
-          className={`shrink-0 mt-[1px] w-7 h-7 flex items-center justify-center border rounded-sm transition-colors disabled:opacity-40 ${
-            planningMode
-              ? 'border-line2 text-textsec hover:text-text'
-              : 'border-gold text-gold bg-gold/10'
-          }`}
-        >
-          {planningMode ? (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83a.996.996 0 0 0 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29z" />
-            </svg>
-          ) : (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-          )}
-        </button>
         <div className="min-w-0">
         <span className="font-ui text-[8px] tracking-[0.2em] uppercase text-textdim block">
           {planningMode ? 'Mode' : 'Location'}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { AppShell } from './components/Layout/AppShell'
 import { MobileShell } from './components/Layout/MobileShell'
 import { IconRail } from './components/IconRail/IconRail'
@@ -40,14 +40,8 @@ function App() {
   const mobileView = useUiStore((s) => s.mobileView)
   const select = useUiStore((s) => s.select)
   const isMobile = useIsMobile()
-  const editMode = useChatStore((s) => s.planningMode)
-  const prevTabRef = useRef<TabId>('home')
-
-  // Re-skin the whole app (edit-theme.css) while Edit Mode is active.
-  useEffect(() => {
-    document.body.classList.toggle('edit-mode', editMode)
-    return () => document.body.classList.remove('edit-mode')
-  }, [editMode])
+  const planningMode = useChatStore((s) => s.planningMode)
+  const setPlanningMode = useChatStore((s) => s.setPlanningMode)
 
   // Apply the stored chat font-size preference (CSS var) before the chat renders.
   useEffect(() => {
@@ -111,8 +105,8 @@ function App() {
   }, [fetchParty, fetchNarrator, fetchChat, fetchSettings, fetchCatalog, fetchInventory, fetchTasks, fetchObjectives, fetchWishes, fetchLoreEntries, fetchLoreConfig, fetchRules, fetchScenario, fetchStoryStyle, fetchProposals, fetchAdventures, fetchCampaigns, fetchTtsStatus, fetchJournal])
 
   const handleTabChange = (tab: TabId) => {
-    prevTabRef.current = tab
     setActiveTab(tab)
+    setPlanningMode(false)
   }
 
   const panelFor = (tab: TabId) => {
@@ -159,7 +153,14 @@ function App() {
     />
   ) : (
     <AppShell
-      iconRail={<IconRail activeTab={activeTab} onTabChange={handleTabChange} />}
+      iconRail={
+        <IconRail
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          editorActive={planningMode}
+          onEditorClick={() => setPlanningMode(true)}
+        />
+      }
       left={panelFor(activeTab)}
       middle={<ChatScene />}
       right={<PartyInspector />}

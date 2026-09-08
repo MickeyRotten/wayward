@@ -76,7 +76,6 @@ export function ChatScene() {
   const openingIndex = useChatStore((s) => s.openingIndex)
   const setOpeningIndex = useChatStore((s) => s.setOpeningIndex)
   const planningMode = useChatStore((s) => s.planningMode)
-  const setPlanningMode = useChatStore((s) => s.setPlanningMode)
   const pendingDeletes = useChatStore((s) => s.pendingDeletes)
   const applyPendingDeletes = useChatStore((s) => s.applyPendingDeletes)
   const dismissPendingDeletes = useChatStore((s) => s.dismissPendingDeletes)
@@ -392,12 +391,7 @@ export function ChatScene() {
   return (
     <div className="flex flex-col h-full">
       {/* Chat header — location banner, or a PLANNING banner in Planning mode */}
-      <SceneBanner
-        banner={banner}
-        planningMode={planningMode}
-        inputLocked={inputLocked}
-        onToggleMode={() => setPlanningMode(!planningMode)}
-      />
+      <SceneBanner banner={banner} planningMode={planningMode} />
 
       {/* Messages */}
       <div className="relative flex-1 min-h-0 flex flex-col">

@@ -1,8 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
-import { useChatStore } from '../../state/chatStore'
 import { ItemCard, RARITY_COLORS } from '../ItemCard'
 import { ItemTypeIcon } from '../ItemTypeIcon'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -14,7 +13,6 @@ import type { ItemCatalogEntry, Rarity } from '@shared/types/models'
 export function ItemsPanel() {
   const inventory = useItemsStore((s) => s.inventory)
   const removeInstance = useItemsStore((s) => s.removeInstance)
-  const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
@@ -60,12 +58,6 @@ export function ItemsPanel() {
   // that row, so two copies of the same item are independently selectable.
   const isSelected = (instanceId: string) =>
     selection?.kind === 'item' && selection.instanceId === instanceId
-
-  // Cancel remove-mode when leaving Edit Mode.
-  useEffect(() => {
-    setRemoveMode(false)
-    setSelectedIds(new Set())
-  }, [editMode])
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
@@ -178,9 +170,8 @@ export function ItemsPanel() {
         )}
       </div>
 
-      {/* Footer — removing inventory items is the domain of Edit Mode */}
-      {editMode && (
-        <div className="shrink-0 px-4 pb-4 space-y-1.5">
+      {/* Footer — removing inventory items */}
+      <div className="shrink-0 px-4 pb-4 space-y-1.5">
           {removeMode ? (
             <>
               <button
@@ -209,8 +200,7 @@ export function ItemsPanel() {
               REMOVE ITEMS
             </button>
           )}
-        </div>
-      )}
+      </div>
 
       {confirmRemove && (
         <ConfirmDialog

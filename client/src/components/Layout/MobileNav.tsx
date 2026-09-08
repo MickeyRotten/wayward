@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { TABS } from '../IconRail/IconRail'
+import { TABS, EDITOR_ICON } from '../IconRail/IconRail'
 import { useBackHandler } from '../../lib/useBackHandler'
 import { useUiStore } from '../../state/uiStore'
 import type { MobileView, TabId } from '../../state/uiStore'
@@ -80,12 +80,21 @@ export function MobileNav() {
     setMobileView(view)
     // Keep activeTab in sync so a rotate/resize to desktop lands on the same panel.
     if (view !== 'chat') setActiveTab(view)
+    // Any destination other than Editor returns the chat to the Narrator thread.
+    setPlanningMode(false)
     // Leaving for another view closes any drilled-in inspector overlay.
     select(null)
     setMoreOpen(false)
   }
 
-  const moreActive = MORE_TABS.includes(mobileView as TabId)
+  const goEditor = () => {
+    setMobileView('chat')
+    setPlanningMode(true)
+    select(null)
+    setMoreOpen(false)
+  }
+
+  const moreActive = MORE_TABS.includes(mobileView as TabId) || (mobileView === 'chat' && planningMode)
 
   return (
     <nav
@@ -97,6 +106,17 @@ export function MobileNav() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
           <div className="absolute bottom-full left-0 right-0 z-50 bg-bg1 border-t border-line2 shadow-[0_-8px_24px_rgba(0,0,0,0.5)]">
+            {/* Editor — a dedicated chat mode, reachable from every view. */}
+            <button
+              type="button"
+              className={`flex w-full items-center gap-3 px-5 min-h-[48px] border-b border-line transition-colors ${
+                mobileView === 'chat' && planningMode ? 'text-gold' : 'text-textsec'
+              }`}
+              onClick={goEditor}
+            >
+              {EDITOR_ICON}
+              <span className="font-ui text-[11px] tracking-wider">EDITOR</span>
+            </button>
             {MORE_TABS.map((id) => {
               const t = tabDef(id)
               const badge = id === 'suggestions' ? pendingCount : 0
@@ -120,31 +140,12 @@ export function MobileNav() {
                 </button>
               )
             })}
-            {/* Edit/Play mode toggle — reachable from every view, not just Chat
-                (the chat banner's Play button stays the desktop primary). */}
-            <button
-              type="button"
-              className={`flex w-full items-center gap-3 px-5 min-h-[48px] border-t border-line transition-colors ${
-                planningMode ? 'text-gold' : 'text-textsec'
-              }`}
-              onClick={() => { setPlanningMode(!planningMode); setMoreOpen(false) }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-              </svg>
-              <span className="font-ui text-[11px] tracking-wider">EDIT MODE</span>
-              <span className={`ml-auto font-ui text-[9px] tracking-wider px-2 py-0.5 border ${
-                planningMode ? 'text-gold border-gold/40' : 'text-textdim border-line'
-              }`}>
-                {planningMode ? 'ON' : 'OFF'}
-              </span>
-            </button>
           </div>
         </>
       )}
 
       <div className="flex">
-        <NavButton icon={CHAT_ICON} label="Chat" active={mobileView === 'chat'} onClick={() => go('chat')} />
+        <NavButton icon={CHAT_ICON} label="Chat" active={mobileView === 'chat' && !planningMode} onClick={() => go('chat')} />
         {BAR_TABS.map((id) => {
           const t = tabDef(id)
           return (

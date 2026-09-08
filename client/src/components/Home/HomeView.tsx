@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { usePartyStore } from '../../state/partyStore'
 import { useCampaignRulesStore } from '../../state/campaignRulesStore'
 import { useUiStore } from '../../state/uiStore'
-import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
 import { CharacterLibrary } from '../CharacterLibrary/CharacterLibrary'
 import type { PartyMember, PlayerCharacter } from '@shared/types/models'
@@ -10,7 +9,6 @@ import type { PartyMember, PlayerCharacter } from '@shared/types/models'
 export function HomeView() {
   const pc = usePartyStore((s) => s.playerCharacter)
   const members = usePartyStore((s) => s.partyMembers)
-  const editMode = useChatStore((s) => s.planningMode)
   const addMember = usePartyStore((s) => s.addPartyMember)
   const setMembership = usePartyStore((s) => s.setMembership)
   const maxPartySize = useCampaignRulesStore((s) => s.partySize)
@@ -87,26 +85,24 @@ export function HomeView() {
           <p className="text-[11px] text-textdim font-body px-3 py-1">No active party members.</p>
         )}
 
-        {editMode && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={full}
-              title={full ? 'Party is full — raise Max Party Size in Config' : undefined}
-              className="flex-1 font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-30 disabled:hover:border-line disabled:hover:text-textsec disabled:cursor-not-allowed"
-              onClick={handleAdd}
-            >
-              + ADD MEMBER
-            </button>
-            <button
-              type="button"
-              className="flex-1 font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors"
-              onClick={() => setLibraryOpen(true)}
-            >
-              FROM LIBRARY
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={full}
+            title={full ? 'Party is full — raise Max Party Size in Config' : undefined}
+            className="flex-1 font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors disabled:opacity-30 disabled:hover:border-line disabled:hover:text-textsec disabled:cursor-not-allowed"
+            onClick={handleAdd}
+          >
+            + ADD MEMBER
+          </button>
+          <button
+            type="button"
+            className="flex-1 font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-2.5 hover:border-line2 hover:text-text transition-colors"
+            onClick={() => setLibraryOpen(true)}
+          >
+            FROM LIBRARY
+          </button>
+        </div>
 
         {benched.length > 0 && (
           <>

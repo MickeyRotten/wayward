@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
-import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
 import { ItemCard } from '../ItemCard'
 import { CategoryIcon } from '../CategoryIcon'
@@ -34,7 +33,6 @@ export function LorePanel() {
   const deleteEntry = useLoreStore((s) => s.deleteEntry)
   const createItem = useItemsStore((s) => s.createItem)
   const deleteItem = useItemsStore((s) => s.deleteItem)
-  const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
@@ -50,11 +48,11 @@ export function LorePanel() {
   const isItems = activeCategory === 'items'
   const query = searchQuery.toLowerCase().trim()
 
-  // Cancel remove-mode when the view changes (category switch or leaving Edit).
+  // Cancel remove-mode when the category changes.
   useEffect(() => {
     setRemoveMode(false)
     setSelectedIds(new Set())
-  }, [activeCategory, editMode])
+  }, [activeCategory])
 
   // Items category draws from the catalog (full item data); other categories
   // from the lorebook entries. Both filtered, then sorted.
@@ -248,9 +246,8 @@ export function LorePanel() {
             </div>
           </div>
 
-          {/* Footer — managing entries is the domain of Edit Mode */}
-          {editMode && (
-            <div className="shrink-0 px-4 pb-4 space-y-1.5">
+          {/* Footer — creating/removing entries */}
+          <div className="shrink-0 px-4 pb-4 space-y-1.5">
               {removeMode ? (
                 <>
                   <button
@@ -290,8 +287,7 @@ export function LorePanel() {
                   )}
                 </>
               )}
-            </div>
-          )}
+          </div>
 
           {confirmRemove && (
             <ConfirmDialog

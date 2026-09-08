@@ -1,22 +1,20 @@
 import { useUiStore } from '../../state/uiStore'
 import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
-import { useChatStore } from '../../state/chatStore'
 import { SelectionBar } from '../SelectionBar'
 import { CategoryIcon } from '../CategoryIcon'
 import { SCENARIO_FIELD_DEFS, buildOpenings, openingSelId } from '../../lib/scenarioFields'
 
 /* The Scenario tab — the 6 structured fields rendered as lorebook-style cards,
    followed by the Opening Messages section. Clicking a card opens it in the
-   right-hand Inspector (view in Play, edit in Edit Mode). Scenario fields still
-   save via PUT /scenario; openings live on the NarratorConfig. */
+   right-hand Inspector for editing. Scenario fields still save via
+   PUT /scenario; openings live on the NarratorConfig. */
 export function ScenarioEditor() {
   const scenario = useScenarioStore((s) => s)
   const firstMessage = useNarratorStore((s) => s.firstMessage)
   const firstMessageOptions = useNarratorStore((s) => s.firstMessageOptions)
   const firstMessageAlternates = useNarratorStore((s) => s.firstMessageAlternates)
   const saveNarrator = useNarratorStore((s) => s.save)
-  const editMode = useChatStore((s) => s.planningMode)
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
 
@@ -52,15 +50,13 @@ export function ScenarioEditor() {
       <div className="pt-3 mt-3 border-t border-line space-y-1.5">
         <div className="flex items-center justify-between px-1 pb-0.5">
           <span className="font-ui text-[10px] tracking-wider text-textsec uppercase">Opening Messages</span>
-          {editMode && (
-            <button
-              type="button"
-              className="font-ui text-[9px] tracking-wider text-textsec border border-line rounded-sm px-1.5 py-0.5 hover:text-gold hover:border-gold/50 transition-colors"
-              onClick={() => void addOpening()}
-            >
-              + NEW
-            </button>
-          )}
+          <button
+            type="button"
+            className="font-ui text-[9px] tracking-wider text-textsec border border-line rounded-sm px-1.5 py-0.5 hover:text-gold hover:border-gold/50 transition-colors"
+            onClick={() => void addOpening()}
+          >
+            + NEW
+          </button>
         </div>
         {openings.map((o, i) => (
           <ScenarioCard

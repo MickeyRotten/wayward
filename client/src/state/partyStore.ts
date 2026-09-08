@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PartyMember, PlayerCharacter } from '@shared/types/models'
+import type { CharacterBlock, Equipment, PartyMember, PlayerCharacter } from '@shared/types/models'
 import { api } from '../lib/api'
 import { useItemsStore } from './itemsStore'
 import { useChatStore } from './chatStore'
@@ -9,9 +9,11 @@ interface PartyState {
   partyMembers: PartyMember[]
   lastSavedAt: number | null
   fetchAll: () => Promise<void>
-  savePlayerCharacter: (pc: PlayerCharacter) => Promise<void>
+  savePlayerCharacterBlocks: (blocks: CharacterBlock[], name?: string) => Promise<void>
+  savePlayerCharacterEquipment: (equipment: Equipment) => Promise<void>
   addPartyMember: () => Promise<PartyMember>
-  savePartyMember: (pm: PartyMember) => Promise<void>
+  savePartyMemberBlocks: (id: string, blocks: CharacterBlock[], name?: string) => Promise<void>
+  savePartyMemberEquipment: (id: string, equipment: Equipment) => Promise<void>
   removePartyMember: (id: string) => Promise<void>
   setMembership: (id: string, inParty: boolean) => Promise<void>
   equipItem: (characterId: string, itemId: string, slot: string, instanceId?: string) => Promise<void>
@@ -31,14 +33,19 @@ export const usePartyStore = create<PartyState>((set, get) => ({
     set({ playerCharacter: pc, partyMembers: members })
   },
 
-  savePlayerCharacter: async (pc) => {
-    const saved = await api.put<PlayerCharacter>('/player-character', {
-      basicInfo: pc.basicInfo,
-      equipment: pc.equipment,
-    })
+  // Identity edits go through the block tree directly (see
+  // CharacterBlockTree.tsx) — the legacy basicInfo/fieldSkill wire shape
+  // can't round-trip Strengths/Other/etc without clobbering them.
+  savePlayerCharacterBlocks: async (blocks, name) => {
+    const saved = await api.put<PlayerCharacter>('/player-character/blocks', { blocks, name })
     set({ playerCharacter: saved, lastSavedAt: Date.now() })
-    // Equipment may have changed → refresh inventory so equipped/stowed flags
-    // (derived from the equipment dicts) stay in sync.
+  },
+
+  savePlayerCharacterEquipment: async (equipment) => {
+    const saved = await api.put<PlayerCharacter>('/player-character/equipment', equipment)
+    set({ playerCharacter: saved, lastSavedAt: Date.now() })
+    // Equipment changed → refresh inventory so equipped/stowed flags (derived
+    // from the equipment dicts) stay in sync.
     void useItemsStore.getState().fetchInventory()
   },
 
@@ -48,16 +55,18 @@ export const usePartyStore = create<PartyState>((set, get) => ({
     return pm
   },
 
-  savePartyMember: async (pm) => {
-    const saved = await api.put<PartyMember>(`/party-members/${pm.id}`, {
-      basicInfo: pm.basicInfo,
-      equipment: pm.equipment,
-      fieldSkill: pm.fieldSkill,
-    })
+  savePartyMemberBlocks: async (id, blocks, name) => {
+    const saved = await api.put<PartyMember>(`/party-members/${id}/blocks`, { blocks, name })
     set({
-      partyMembers: get().partyMembers.map((m) =>
-        m.id === saved.id ? saved : m
-      ),
+      partyMembers: get().partyMembers.map((m) => (m.id === saved.id ? saved : m)),
+      lastSavedAt: Date.now(),
+    })
+  },
+
+  savePartyMemberEquipment: async (id, equipment) => {
+    const saved = await api.put<PartyMember>(`/party-members/${id}/equipment`, equipment)
+    set({
+      partyMembers: get().partyMembers.map((m) => (m.id === saved.id ? saved : m)),
       lastSavedAt: Date.now(),
     })
     void useItemsStore.getState().fetchInventory()

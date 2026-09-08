@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlayerCharacter, Equipment, BasicInfo, Rarity } from '@shared/types/models'
+import type { PlayerCharacter, Equipment, CharacterBlock, Rarity } from '@shared/types/models'
 import { usePartyStore } from '../../state/partyStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
 import { PortraitBlock } from '../PortraitBlock'
 import { VoiceBlock } from '../VoiceBlock'
-import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { itemFitsSlot } from '../../lib/equipSlots'
 import { ItemCard } from '../ItemCard'
+import { BlockTreeEditor, BlockTreeView } from './BlockTreeEditor'
 
 const RARITY_COLORS: Record<Rarity, string> = {
   c: 'bg-rarity-c',
@@ -42,44 +42,51 @@ const EQUIP_SLOTS: { key: keyof Equipment; label: string }[] = [
 
 export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const pc = usePartyStore((s) => s.playerCharacter)
-  const save = usePartyStore((s) => s.savePlayerCharacter)
+  const saveBlocks = usePartyStore((s) => s.savePlayerCharacterBlocks)
+  const saveEquipment = usePartyStore((s) => s.savePlayerCharacterEquipment)
   const fetchAll = usePartyStore((s) => s.fetchAll)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PlayerCharacter | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const identityTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     draft.current = pc ? structuredClone(pc) : null
   }, [pc])
 
-  const flush = useCallback(() => {
-    clearTimeout(timer.current)
+  const flushIdentity = useCallback(() => {
+    clearTimeout(identityTimer.current)
     if (draft.current) {
-      save(draft.current)
+      void saveBlocks(draft.current.blocks, draft.current.basicInfo.name)
       setEditDirty(false)
     }
-  }, [save, setEditDirty])
+  }, [saveBlocks, setEditDirty])
 
-  const scheduleFlush = useCallback(() => {
-    clearTimeout(timer.current)
-    timer.current = setTimeout(flush, 600)
-  }, [flush])
+  const scheduleFlushIdentity = useCallback(() => {
+    clearTimeout(identityTimer.current)
+    identityTimer.current = setTimeout(flushIdentity, 600)
+  }, [flushIdentity])
 
   if (!pc) return null
   const d = draft.current ?? pc
 
-  const updateBasic = (key: keyof BasicInfo, value: string | number, immediate?: boolean) => {
+  const updateName = (name: string, immediate?: boolean) => {
     if (!draft.current) return
-    Object.assign(draft.current.basicInfo, { [key]: value })
+    draft.current.basicInfo.name = name
     setEditDirty(true)
-    immediate ? flush() : scheduleFlush()
+    immediate ? flushIdentity() : scheduleFlushIdentity()
   }
 
-  const updateEquip = (key: keyof Equipment, value: string | null, immediate?: boolean) => {
+  const updateBlocks = (blocks: CharacterBlock[], immediate?: boolean) => {
+    if (!draft.current) return
+    draft.current.blocks = blocks
+    setEditDirty(true)
+    immediate ? flushIdentity() : scheduleFlushIdentity()
+  }
+
+  const updateEquip = (key: keyof Equipment, value: string | null) => {
     if (!draft.current) return
     draft.current.equipment[key] = value
-    setEditDirty(true)
-    immediate ? flush() : scheduleFlush()
+    void saveEquipment(draft.current.equipment)
   }
 
   if (mode === 'view') {
@@ -91,24 +98,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
 
         {/* Basic Info */}
         <Section title="Basic Info">
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <ViewField label="Gender" value={d.basicInfo.gender} />
-              <ViewField label="Species" value={d.basicInfo.species} />
-              <ViewField label="Age" value={d.basicInfo.age ? String(d.basicInfo.age) : ''} />
-              <ViewField label="Height" value={d.basicInfo.heightCm ? `${d.basicInfo.heightCm} cm` : ''} />
-              <ViewField label="Weight" value={d.basicInfo.weightKg ? `${d.basicInfo.weightKg} kg` : ''} />
-            </div>
-            {d.basicInfo.description && (
-              <p className="font-body text-sm text-text2 leading-relaxed mt-2">{d.basicInfo.description}</p>
-            )}
-            {d.basicInfo.personality && (
-              <ViewField label="Personality" value={d.basicInfo.personality} />
-            )}
-            {d.basicInfo.drive && (
-              <ViewField label="Drive" value={d.basicInfo.drive} />
-            )}
-          </div>
+          <BlockTreeView blocks={d.blocks} />
         </Section>
 
         {/* Equipment — editable even in View/Play mode (managing gear is a
@@ -121,7 +111,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
                 slotKey={key}
                 label={label}
                 value={d.equipment[key]}
-                onChange={(id) => updateEquip(key, id, true)}
+                onChange={(id) => updateEquip(key, id)}
               />
             ))}
           </div>
@@ -138,33 +128,15 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
 
       {/* Basic Info */}
       <Section title="Basic Info">
-        <div className="space-y-3">
-          <Field label="Name" value={d.basicInfo.name} onChange={(v) => updateBasic('name', v)} onBlur={(v) => updateBasic('name', v, true)} />
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Gender" value={d.basicInfo.gender} onChange={(v) => updateBasic('gender', v)} onBlur={(v) => updateBasic('gender', v, true)} />
-            <Field label="Species" value={d.basicInfo.species} onChange={(v) => updateBasic('species', v)} onBlur={(v) => updateBasic('species', v, true)} />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <NumField label="Age" value={d.basicInfo.age} onChange={(v) => updateBasic('age', v)} onBlur={(v) => updateBasic('age', v, true)} />
-            <NumField label="Height (cm)" value={d.basicInfo.heightCm} onChange={(v) => updateBasic('heightCm', v)} onBlur={(v) => updateBasic('heightCm', v, true)} />
-            <NumField label="Weight (kg)" value={d.basicInfo.weightKg} onChange={(v) => updateBasic('weightKg', v)} onBlur={(v) => updateBasic('weightKg', v, true)} />
-          </div>
-          <TextArea label="Description" value={d.basicInfo.description} onChange={(v) => updateBasic('description', v)} onBlur={(v) => updateBasic('description', v, true)} />
-          <TextArea
-            label="Personality"
-            value={d.basicInfo.personality ?? ''}
-            onChange={(v) => updateBasic('personality', v)}
-            onBlur={(v) => updateBasic('personality', v, true)}
-            placeholder="e.g. Curious to a fault, quick to joke, slow to trust"
-          />
-          <TextArea
-            label="Drive"
-            value={d.basicInfo.drive ?? ''}
-            onChange={(v) => updateBasic('drive', v)}
-            onBlur={(v) => updateBasic('drive', v, true)}
-            placeholder="What pushes them forward — e.g. Find my missing sister, whatever it costs"
-          />
-        </div>
+        <Field label="Name" value={d.basicInfo.name} onChange={(v) => updateName(v)} onBlur={(v) => updateName(v, true)} />
+      </Section>
+
+      {/* Character sheet — a toggleable/orderable block list (see
+          CLAUDE.md's Character system rebuild section). Species/Sex/Age,
+          Description, Personality, Instinct, Strengths, Other, and the
+          live-rendered Equipment note all live here as blocks. */}
+      <Section title="Character Sheet">
+        <BlockTreeEditor blocks={d.blocks} onChange={updateBlocks} />
       </Section>
 
       {/* Equipment */}
@@ -176,7 +148,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
               slotKey={key}
               label={label}
               value={d.equipment[key]}
-              onChange={(id) => updateEquip(key, id, true)}
+              onChange={(id) => updateEquip(key, id)}
             />
           ))}
         </div>
@@ -194,18 +166,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function ViewField({ label, value, emptyText }: { label: string; value: string; emptyText?: string }) {
-  return (
-    <div className="py-0.5">
-      <span className="text-[11px] text-textdim font-body">{label}</span>
-      <span className="text-[11px] text-textdim font-body mx-1">&middot;</span>
-      <span className={`text-sm font-body ${value ? 'text-text' : 'text-textdim italic'}`}>
-        {value || emptyText || '—'}
-      </span>
-    </div>
-  )
-}
-
 function Field({ label, value, onChange, onBlur, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
 }) {
@@ -218,42 +178,6 @@ function Field({ label, value, onChange, onBlur, placeholder }: {
         placeholder={placeholder}
         onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
         onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  )
-}
-
-function NumField({ label, value, onChange, onBlur }: {
-  label: string; value: number; onChange: (v: number) => void; onBlur?: (v: number) => void
-}) {
-  return (
-    <label className="block">
-      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
-      <input
-        type="number"
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-        defaultValue={value}
-        onBlur={(e) => (onBlur ?? onChange)(Number(e.target.value) || 0)}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
-      />
-    </label>
-  )
-}
-
-function TextArea({ label, value, onChange, onBlur, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
-}) {
-  return (
-    <label className="block">
-      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
-      <ExpandableTextarea
-        label={label}
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
-        rows={3}
-        value={value}
-        placeholder={placeholder}
-        onChange={onChange}
-        onBlur={onBlur ?? onChange}
       />
     </label>
   )

@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.api.common import (
@@ -143,17 +143,18 @@ async def remove_party_member(
 
 def _character_meta(data: dict) -> dict:
     cid = data.get("id", "")
+    has_full, has_crop, has_voice = char_files.has_full(cid), char_files.has_crop(cid), char_files.has_voice(cid)
     return {
         "id": cid,
         "type": data.get("type", "character"),
         "basicInfo": data.get("basicInfo", {}),
-        "fieldSkill": data.get("fieldSkill", {}),
-        "hasFull": char_files.full_path(cid) is not None,
-        "hasCrop": char_files.crop_path(cid) is not None,
-        "hasVoice": char_files.voice_path(cid) is not None,
-        "fullUrl": f"/api/characters/{cid}/portrait/full" if char_files.full_path(cid) else None,
-        "cropUrl": f"/api/characters/{cid}/portrait/crop" if char_files.crop_path(cid) else None,
-        "voiceUrl": f"/api/characters/{cid}/voice" if char_files.voice_path(cid) else None,
+        "blocks": data.get("blocks", []),
+        "hasFull": has_full,
+        "hasCrop": has_crop,
+        "hasVoice": has_voice,
+        "fullUrl": f"/api/characters/{cid}/portrait/full" if has_full else None,
+        "cropUrl": f"/api/characters/{cid}/portrait/crop" if has_crop else None,
+        "voiceUrl": f"/api/characters/{cid}/voice" if has_voice else None,
     }
 
 
@@ -164,10 +165,11 @@ async def list_characters():
 
 @router.get("/characters/{cid}/portrait/{which}")
 async def get_character_portrait(cid: str, which: str):
-    path = char_files.full_path(cid) if which == "full" else char_files.crop_path(cid)
-    if path is None:
+    data = char_files.portrait_bytes(cid) if which == "full" else char_files.crop_bytes(cid)
+    if data is None:
         raise HTTPException(404, "No portrait")
-    return FileResponse(str(path), headers=_MEDIA_CACHE)
+    mime = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
+    return Response(content=data, media_type=mime, headers=_MEDIA_CACHE)
 
 
 @router.post("/characters/{cid}/portrait")
@@ -189,10 +191,10 @@ async def upload_character_portrait(
 
 @router.get("/characters/{cid}/voice")
 async def get_character_voice(cid: str):
-    path = char_files.voice_path(cid)
-    if path is None:
+    data = char_files.voice_bytes(cid)
+    if data is None:
         raise HTTPException(404, "No voice sample")
-    return FileResponse(str(path))
+    return Response(content=data, media_type="audio/wav")
 
 
 @router.post("/characters/{cid}/voice")
@@ -258,7 +260,11 @@ async def export_character(cid: str):
 
 @router.post("/characters/import-file")
 async def import_character_file(file: UploadFile):
-    new = char_files.import_zip(await file.read())
+    """Accepts a Wayward .zip export, a bare Wayward/SillyTavern card .png, or
+    a .zip containing one — import_zip sniffs and dispatches either way."""
+    raw = await file.read()
+    name = (file.filename or "").lower()
+    new = char_files.import_png(raw) if name.endswith(".png") else char_files.import_zip(raw)
     if new is None:
-        raise HTTPException(400, "Not a valid character file")
+        raise HTTPException(400, "Not a valid character card")
     return _character_meta(new)

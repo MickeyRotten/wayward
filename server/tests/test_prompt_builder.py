@@ -1,12 +1,19 @@
 from types import SimpleNamespace as NS
 
+from server.ai.character_blocks import blocks_from_legacy_basic_info
 from server.ai.prompt_builder import build_prompt, estimate_prompt_tokens
 
 
 def _pc(**info):
-    base = {"name": "Hero", "species": "Human", "gender": "Male", "description": "A hero."}
+    base = {"name": "Hero", "species": "Human", "description": "A hero."}
     base.update(info)
-    return NS(basic_info=base, equipment={})
+    return NS(basic_info=base, blocks=blocks_from_legacy_basic_info(base), equipment={})
+
+
+def _pm(**info):
+    base = {"name": "Companion"}
+    base.update(info)
+    return NS(basic_info=base, blocks=blocks_from_legacy_basic_info(base), equipment={})
 
 
 def _cfg(**kw):
@@ -118,12 +125,8 @@ def test_trimming_drops_oldest_history_first():
 
 
 def test_party_roster_includes_personality_and_other():
-    pm = NS(
-        basic_info={"name": "Varena", "species": "Elf", "description": "An elf.",
-                    "personality": "Wry", "other": "Collects teeth"},
-        field_skill={"name": "Marksmanship", "description": "Shoots well."},
-        equipment={},
-    )
+    pm = _pm(name="Varena", species="Elf", description="An elf.",
+             personality="Wry", other="Collects teeth", strengths="Marksmanship — Shoots well.")
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[pm],
                         chat_history=[], player_message="Hi", include_action_protocol=False)
     roster = next(m["content"] for m in msgs if "PARTY SHEETS" in m["content"])
@@ -250,7 +253,7 @@ def test_the_roll_call_is_emitted_even_for_an_empty_party():
 
 
 def test_the_state_tier_carries_one_authority_line():
-    pm = NS(basic_info={"name": "Tifa"}, field_skill={}, equipment={})
+    pm = _pm(name="Tifa")
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(),
                         party_members=[pm], chat_history=_msgs(),
                         player_message="Hi", include_action_protocol=False,

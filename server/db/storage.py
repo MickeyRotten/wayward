@@ -126,11 +126,9 @@ def build_campaign_zip(cid: str, adventure_ids: set[str] | None = None) -> io.By
             z.writestr(f"{base}/adventure.json", json.dumps(a, ensure_ascii=False))
             z.write(adventure_db_path(cid, a["id"]), f"{base}/adventure.db")
         for ch_id in char_ids:
-            ch_dir = char_files.char_dir(ch_id)
-            if ch_dir.exists():
-                for p in ch_dir.iterdir():
-                    if p.is_file():
-                        z.write(p, f"characters/{ch_id}/{p.name}")
+            card = char_files.path(ch_id)
+            if card.exists():
+                z.write(card, f"characters/{ch_id}.png")
     buf.seek(0)
     return buf
 
@@ -295,7 +293,7 @@ async def refresh_active_adventure_meta() -> None:
     # (the Save/Load card resolves it to /api/characters/<id>/portrait/crop), and
     # only when that character actually has a crop image.
     def _portrait_token(c) -> str:
-        return c.id if c and char_files.crop_path(c.id) else ""
+        return c.id if c and char_files.has_crop(c.id) else ""
 
     meta = _read_json(adventure_json_path(cid, aid)) or {}
     pc_info = pc.basic_info if pc else {}

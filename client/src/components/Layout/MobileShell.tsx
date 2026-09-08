@@ -15,6 +15,8 @@ export function MobileShell({
 }) {
   const selection = useUiStore((s) => s.selection)
   const select = useUiStore((s) => s.select)
+  const back = useUiStore((s) => s.back)
+  const goBack = useUiStore((s) => s.goBack)
   const mobileView = useUiStore((s) => s.mobileView)
   const isChat = mobileView === 'chat'
 
@@ -23,6 +25,12 @@ export function MobileShell({
   // player spends most of their time on.
   const closeInspector = useCallback(() => select(null), [select])
   useBackHandler(selection !== null, closeInspector)
+
+  // The header's BACK button steps out one level at a time: from a drilled-in
+  // sub-view (e.g. a character-sheet block) it returns to the owning sheet
+  // first, same as the breadcrumb inside the Inspector; only closes the whole
+  // overlay once there's nowhere left to step back to.
+  const headerBack = () => (back ? goBack() : select(null))
 
   return (
     <div className="flex h-full flex-col">
@@ -41,7 +49,7 @@ export function MobileShell({
             <button
               type="button"
               className="flex items-center gap-2 px-4 min-h-[48px] text-textsec hover:text-text transition-colors"
-              onClick={() => select(null)}
+              onClick={headerBack}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M15 18l-6-6 6-6" />

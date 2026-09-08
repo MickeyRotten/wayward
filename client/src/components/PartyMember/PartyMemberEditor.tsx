@@ -47,6 +47,7 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
   const remove = usePartyStore((s) => s.removePartyMember)
   const fetchAll = usePartyStore((s) => s.fetchAll)
   const select = useUiStore((s) => s.select)
+  const selectInto = useUiStore((s) => s.selectInto)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
   const draft = useRef<PartyMember>(structuredClone(member))
   const identityTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -138,7 +139,11 @@ export function PartyMemberEditor({ member, mode }: { member: PartyMember; mode:
           Skill section — it's just a text block here now), Other, and the
           live-rendered Equipment note all live here as blocks. */}
       <Section title="Character Sheet">
-        <BlockTreeEditor blocks={d.blocks} onChange={updateBlocks} />
+        <BlockTreeEditor
+          blocks={d.blocks}
+          onChange={updateBlocks}
+          onOpenBlock={(blockId) => selectInto({ kind: 'block', ownerType: 'member', ownerId: member.id, blockId })}
+        />
       </Section>
 
       {/* Equipment */}

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { CharacterBlock, CharacterBlockType } from '@shared/types/models'
-import { ExpandableTextarea } from '../common/ExpandableTextarea'
 
 const TAG_OPEN_NAME = 'Open Tag'
 const TAG_CLOSE_NAME = 'Close Tag'
@@ -11,6 +10,17 @@ const TYPE_LABELS: Record<CharacterBlockType, string> = {
   equipment: 'Equipment',
   image: 'Image',
 }
+
+const GRIP_ICON = (
+  <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+    <circle cx="2" cy="2" r="1.3" />
+    <circle cx="8" cy="2" r="1.3" />
+    <circle cx="2" cy="7" r="1.3" />
+    <circle cx="8" cy="7" r="1.3" />
+    <circle cx="2" cy="12" r="1.3" />
+    <circle cx="8" cy="12" r="1.3" />
+  </svg>
+)
 
 function newId(): string {
   return (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).replace(/-/g, '').slice(0, 12)
@@ -23,30 +33,73 @@ function newBlock(type: 'text' | 'folder' | 'equipment', name: string): Characte
   return { ...base, type: 'equipment' }
 }
 
-function moveItem<T>(list: T[], index: number, dir: -1 | 1): T[] {
-  const target = index + dir
-  if (target < 0 || target >= list.length) return list
+/** Reorders `list` by moving the item at `from` to just before the item
+ * currently at `to` (splice-based, so it reads as "drop before this row"
+ * regardless of drag direction). */
+function moveItemTo<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list
   const next = list.slice()
-  ;[next[index], next[target]] = [next[target], next[index]]
+  const [item] = next.splice(from, 1)
+  next.splice(from < to ? to - 1 : to, 0, item)
   return next
+}
+
+/** Finds a block by id — root level or one level into a folder's children. */
+export function findBlock(blocks: CharacterBlock[], id: string): CharacterBlock | undefined {
+  for (const b of blocks) {
+    if (b.id === id) return b
+    if (b.type === 'folder') {
+      const child = (b.children ?? []).find((c) => c.id === id)
+      if (child) return child
+    }
+  }
+  return undefined
+}
+
+/** Patches a block by id (root level or one level into a folder), returning
+ * a new tree. Mirrors `findBlock`'s search depth. */
+export function updateBlockInTree(blocks: CharacterBlock[], id: string, patch: Partial<CharacterBlock>): CharacterBlock[] {
+  return blocks.map((b) => {
+    if (b.id === id) return { ...b, ...patch }
+    if (b.type === 'folder') {
+      const children = (b.children ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c))
+      return { ...b, children }
+    }
+    return b
+  })
+}
+
+// A drag position: which list it's in ('root', or the id of the containing
+// folder block) and its index within that list.
+interface DragPos {
+  scope: 'root' | string
+  index: number
 }
 
 /**
  * The TavernAI-style toggleable/orderable block-tree editor: a flat list of
  * blocks, folders nesting one level deep (no roles/depth/merge-groups — see
- * CLAUDE.md's Character system rebuild section). `onChange`'s `immediate`
- * flag mirrors the rest of the sheet's fields: text edits debounce upstream,
- * everything else (toggle/reorder/add/delete/rename) flushes right away.
+ * CLAUDE.md's Character system rebuild section). Rows are reordered by
+ * dragging (native HTML5 DnD, one drag context per list — root and each
+ * folder's children reorder independently). Clicking a text block ("prompt")
+ * opens it full-screen in the Inspector via `onOpenBlock` — content is no
+ * longer edited inline. `onChange`'s `immediate` flag mirrors the rest of the
+ * sheet's fields: everything here (toggle/reorder/add/delete/rename) flushes
+ * right away.
  */
 export function BlockTreeEditor({
   blocks,
   onChange,
+  onOpenBlock,
 }: {
   blocks: CharacterBlock[]
   onChange: (blocks: CharacterBlock[], immediate?: boolean) => void
+  onOpenBlock: (blockId: string) => void
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [addMenuFor, setAddMenuFor] = useState<'root' | string | null>(null)
+  const [dragPos, setDragPos] = useState<DragPos | null>(null)
+  const [overPos, setOverPos] = useState<DragPos | null>(null)
 
   const updateRoot = (next: CharacterBlock[], immediate = true) => {
     onChange(next, immediate)
@@ -63,13 +116,6 @@ export function BlockTreeEditor({
     const children = (parent.children ?? []).slice()
     children[childIndex] = { ...children[childIndex], ...patch }
     updateAt(parentIndex, { children }, immediate)
-  }
-
-  const moveRoot = (index: number, dir: -1 | 1) => updateRoot(moveItem(blocks, index, dir))
-
-  const moveChild = (parentIndex: number, childIndex: number, dir: -1 | 1) => {
-    const parent = blocks[parentIndex]
-    updateAt(parentIndex, { children: moveItem(parent.children ?? [], childIndex, dir) })
   }
 
   const deleteRoot = (index: number) => {
@@ -100,27 +146,55 @@ export function BlockTreeEditor({
     setAddMenuFor(null)
   }
 
+  const dragStart = (pos: DragPos) => setDragPos(pos)
+  const dragOverRow = (pos: DragPos, e: React.DragEvent) => {
+    e.preventDefault()
+    if (!dragPos || dragPos.scope !== pos.scope) return
+    if (overPos?.scope !== pos.scope || overPos.index !== pos.index) setOverPos(pos)
+  }
+  const dropRow = (e: React.DragEvent) => {
+    e.preventDefault()
+    if (dragPos && overPos && dragPos.scope === overPos.scope) {
+      if (dragPos.scope === 'root') {
+        updateRoot(moveItemTo(blocks, dragPos.index, overPos.index))
+      } else {
+        const parentIndex = blocks.findIndex((b) => b.id === dragPos.scope)
+        if (parentIndex !== -1) {
+          const parent = blocks[parentIndex]
+          updateAt(parentIndex, { children: moveItemTo(parent.children ?? [], dragPos.index, overPos.index) })
+        }
+      }
+    }
+    setDragPos(null)
+    setOverPos(null)
+  }
+  const dragEnd = () => {
+    setDragPos(null)
+    setOverPos(null)
+  }
+
   return (
     <div className="space-y-1.5">
       {blocks.map((block, i) => (
         <BlockRow
           key={block.id}
           block={block}
-          isFirst={i === 0}
-          isLast={i === blocks.length - 1}
           confirmingDelete={confirmDeleteId === block.id}
           onToggle={(enabled) => updateAt(i, { enabled })}
           onRename={(name) => updateAt(i, { name })}
-          onContentChange={(content) => updateAt(i, { content }, false)}
-          onContentBlur={(content) => updateAt(i, { content }, true)}
-          onMoveUp={() => moveRoot(i, -1)}
-          onMoveDown={() => moveRoot(i, 1)}
           onRequestDelete={() => setConfirmDeleteId(block.id)}
           onConfirmDelete={() => deleteRoot(i)}
           onCancelDelete={() => setConfirmDeleteId(null)}
           addMenuOpen={addMenuFor === block.id}
           onToggleAddMenu={() => setAddMenuFor(addMenuFor === block.id ? null : block.id)}
           onAddChild={(type) => addChildBlock(i, type)}
+          isDragging={dragPos?.scope === 'root' && dragPos.index === i}
+          isDragOver={overPos?.scope === 'root' && overPos.index === i && !(dragPos?.scope === 'root' && dragPos.index === i)}
+          onDragStart={() => dragStart({ scope: 'root', index: i })}
+          onDragOverRow={(e) => dragOverRow({ scope: 'root', index: i }, e)}
+          onDropRow={dropRow}
+          onDragEndRow={dragEnd}
+          onOpen={block.type === 'text' ? () => onOpenBlock(block.id) : undefined}
         >
           {block.type === 'folder' && (
             <div className="ml-5 mt-1.5 space-y-1.5 border-l border-line pl-3">
@@ -128,18 +202,19 @@ export function BlockTreeEditor({
                 <BlockRow
                   key={child.id}
                   block={child}
-                  isFirst={ci === 0}
-                  isLast={ci === (block.children?.length ?? 0) - 1}
                   confirmingDelete={confirmDeleteId === child.id}
                   onToggle={(enabled) => updateChild(i, ci, { enabled })}
                   onRename={(name) => updateChild(i, ci, { name })}
-                  onContentChange={(content) => updateChild(i, ci, { content }, false)}
-                  onContentBlur={(content) => updateChild(i, ci, { content }, true)}
-                  onMoveUp={() => moveChild(i, ci, -1)}
-                  onMoveDown={() => moveChild(i, ci, 1)}
                   onRequestDelete={() => setConfirmDeleteId(child.id)}
                   onConfirmDelete={() => deleteChild(i, ci)}
                   onCancelDelete={() => setConfirmDeleteId(null)}
+                  isDragging={dragPos?.scope === block.id && dragPos.index === ci}
+                  isDragOver={overPos?.scope === block.id && overPos.index === ci && !(dragPos?.scope === block.id && dragPos.index === ci)}
+                  onDragStart={() => dragStart({ scope: block.id, index: ci })}
+                  onDragOverRow={(e) => dragOverRow({ scope: block.id, index: ci }, e)}
+                  onDropRow={dropRow}
+                  onDragEndRow={dragEnd}
+                  onOpen={child.type === 'text' ? () => onOpenBlock(child.id) : undefined}
                 />
               ))}
               {(block.children ?? []).length === 0 && (
@@ -185,72 +260,74 @@ function AddMenuOption({ label, onClick }: { label: string; onClick: () => void 
 
 function BlockRow({
   block,
-  isFirst,
-  isLast,
   confirmingDelete,
   onToggle,
   onRename,
-  onContentChange,
-  onContentBlur,
-  onMoveUp,
-  onMoveDown,
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
   addMenuOpen,
   onToggleAddMenu,
   onAddChild,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragOverRow,
+  onDropRow,
+  onDragEndRow,
+  onOpen,
   children,
 }: {
   block: CharacterBlock
-  isFirst: boolean
-  isLast: boolean
   confirmingDelete: boolean
   onToggle: (enabled: boolean) => void
   onRename: (name: string) => void
-  onContentChange: (content: string) => void
-  onContentBlur: (content: string) => void
-  onMoveUp: () => void
-  onMoveDown: () => void
   onRequestDelete: () => void
   onConfirmDelete: () => void
   onCancelDelete: () => void
   addMenuOpen?: boolean
   onToggleAddMenu?: () => void
   onAddChild?: (type: 'text' | 'equipment') => void
+  isDragging: boolean
+  isDragOver: boolean
+  onDragStart: () => void
+  onDragOverRow: (e: React.DragEvent) => void
+  onDropRow: (e: React.DragEvent) => void
+  onDragEndRow: () => void
+  onOpen?: () => void
   children?: React.ReactNode
 }) {
   const isTag = block.name === TAG_OPEN_NAME || block.name === TAG_CLOSE_NAME
   const [expanded, setExpanded] = useState(true)
+  const openable = !!onOpen
 
   return (
-    <div className={`border border-line bg-bg0/60 ${!block.enabled ? 'opacity-50' : ''}`}>
+    <div
+      className={`border bg-bg0/60 transition-colors ${!block.enabled ? 'opacity-50' : ''} ${
+        isDragging ? 'opacity-30' : ''
+      } ${isDragOver ? 'border-gold' : 'border-line'} ${openable ? 'cursor-pointer hover:bg-bg1/40' : ''}`}
+      onDragOver={onDragOverRow}
+      onDrop={onDropRow}
+      onClick={openable ? onOpen : undefined}
+      title={openable ? 'Click to edit this prompt' : undefined}
+    >
       <div className="flex items-center gap-1.5 px-2 py-1.5">
-        <div className="flex flex-col shrink-0">
-          <button
-            type="button"
-            disabled={isFirst}
-            className="text-textdim hover:text-text disabled:opacity-20 disabled:hover:text-textdim leading-none px-0.5"
-            title="Move up"
-            onClick={onMoveUp}
-          >
-            <span className="text-[9px]">▲</span>
-          </button>
-          <button
-            type="button"
-            disabled={isLast}
-            className="text-textdim hover:text-text disabled:opacity-20 disabled:hover:text-textdim leading-none px-0.5"
-            title="Move down"
-            onClick={onMoveDown}
-          >
-            <span className="text-[9px]">▼</span>
-          </button>
-        </div>
+        <span
+          draggable
+          onDragStart={(e) => { e.stopPropagation(); onDragStart() }}
+          onDragEnd={(e) => { e.stopPropagation(); onDragEndRow() }}
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 text-textdim hover:text-text cursor-grab active:cursor-grabbing px-0.5"
+          title="Drag to reorder"
+        >
+          {GRIP_ICON}
+        </span>
 
         <input
           type="checkbox"
           checked={block.enabled}
           onChange={(e) => onToggle(e.target.checked)}
+          onClick={(e) => e.stopPropagation()}
           className="shrink-0 accent-gold"
           title={block.enabled ? 'Enabled — included in the prompt' : 'Disabled — skipped'}
         />
@@ -259,7 +336,7 @@ function BlockRow({
           <button
             type="button"
             className="text-textdim hover:text-text shrink-0 px-0.5"
-            onClick={() => setExpanded(!expanded)}
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
             title={expanded ? 'Collapse' : 'Expand'}
           >
             <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
@@ -270,6 +347,7 @@ function BlockRow({
           className="flex-1 min-w-0 bg-transparent text-sm font-body text-text outline-none border-b border-transparent focus:border-line2 px-1 py-0.5"
           value={block.name}
           onChange={(e) => onRename(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
         />
 
         <span className="shrink-0 font-ui text-[9px] tracking-wider text-textdim uppercase border border-line px-1.5 py-0.5">
@@ -277,7 +355,7 @@ function BlockRow({
         </span>
 
         {confirmingDelete ? (
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className="font-ui text-[9px] text-danger border border-danger-border px-1.5 py-0.5 hover:bg-danger-bg"
@@ -298,24 +376,18 @@ function BlockRow({
             type="button"
             className="shrink-0 text-textdim hover:text-danger text-base font-ui leading-none px-1"
             title="Remove block"
-            onClick={onRequestDelete}
+            onClick={(e) => { e.stopPropagation(); onRequestDelete() }}
           >
             &times;
           </button>
         )}
       </div>
 
-      {block.type === 'text' && expanded !== false && (
-        <div className="px-2 pb-2">
-          <ExpandableTextarea
-            label={block.name || 'Block'}
-            className="w-full border border-line bg-bg0 px-2 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[56px]"
-            rows={isTag ? 1 : 3}
-            value={block.content ?? ''}
-            placeholder={isTag ? undefined : 'Content the Narrator reads for this block…'}
-            onChange={onContentChange}
-            onBlur={onContentBlur}
-          />
+      {block.type === 'text' && !isTag && (
+        <div className="px-2 pb-2 -mt-1">
+          <p className="text-[11px] text-textdim font-body truncate">
+            {(block.content ?? '').trim() || <span className="italic">Empty — click to write</span>}
+          </p>
         </div>
       )}
 
@@ -336,7 +408,7 @@ function BlockRow({
       )}
 
       {block.type === 'folder' && expanded && (
-        <div className="px-2 pb-2">
+        <div className="px-2 pb-2" onClick={(e) => e.stopPropagation()}>
           {children}
           {onAddChild && (
             <div className="relative mt-1 ml-5">

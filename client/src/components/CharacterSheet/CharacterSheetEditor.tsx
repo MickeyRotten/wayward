@@ -46,6 +46,7 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
   const saveEquipment = usePartyStore((s) => s.savePlayerCharacterEquipment)
   const fetchAll = usePartyStore((s) => s.fetchAll)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
+  const selectInto = useUiStore((s) => s.selectInto)
   const draft = useRef<PlayerCharacter | null>(null)
   const identityTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -136,7 +137,11 @@ export function CharacterSheetEditor({ mode }: { mode: 'view' | 'edit' }) {
           Description, Personality, Instinct, Strengths, Other, and the
           live-rendered Equipment note all live here as blocks. */}
       <Section title="Character Sheet">
-        <BlockTreeEditor blocks={d.blocks} onChange={updateBlocks} />
+        <BlockTreeEditor
+          blocks={d.blocks}
+          onChange={updateBlocks}
+          onOpenBlock={(blockId) => selectInto({ kind: 'block', ownerType: 'player', ownerId: pc!.id, blockId })}
+        />
       </Section>
 
       {/* Equipment */}

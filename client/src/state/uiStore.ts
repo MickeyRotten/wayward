@@ -9,6 +9,7 @@ export type SelectionKind =
   | { kind: 'task'; id: string }
   | { kind: 'lore'; id: string }
   | { kind: 'scenario'; id: string }  // a Scenario field key (or 'firstMessage')
+  | { kind: 'block'; ownerType: 'player' | 'member'; ownerId: string; blockId: string }  // a character-sheet block, opened full-screen from BlockTreeEditor
   | null
 
 /** Mobile-only: which full-screen view the MobileShell shows. Desktop ignores it. */

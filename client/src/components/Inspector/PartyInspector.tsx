@@ -8,11 +8,12 @@ import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
+import { findBlock, updateBlockInTree } from '../CharacterSheet/BlockTreeEditor'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
 import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID, openingIndexOf } from '../../lib/scenarioFields'
-import type { ItemCatalogEntry, ItemType, Rarity, Task, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember } from '@shared/types/models'
+import type { ItemCatalogEntry, ItemType, Rarity, Task, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember, CharacterBlock } from '@shared/types/models'
 
 export function PartyInspector() {
   const pc = usePartyStore((s) => s.playerCharacter)
@@ -62,7 +63,15 @@ export function PartyInspector() {
   const selScenarioId = selection?.kind === 'scenario' ? selection.id : undefined
   const selIsScenario = !!selScenarioId
 
-  const hasSelection = selIsPC || selIsMember || selIsItem || selIsTask || selIsLore || selIsScenario
+  // Character-sheet "prompt" block selection — drilled into from BlockTreeEditor.
+  const selBlock = selection?.kind === 'block' ? selection : undefined
+  const selBlockOwner: PlayerCharacter | PartyMember | undefined = selBlock
+    ? (selBlock.ownerType === 'player' ? (pc ?? undefined) : members.find((m) => m.id === selBlock.ownerId))
+    : undefined
+  const selBlockData = selBlock && selBlockOwner ? findBlock(selBlockOwner.blocks, selBlock.blockId) : undefined
+  const selIsBlock = !!selBlock && !!selBlockOwner && !!selBlockData
+
+  const hasSelection = selIsPC || selIsMember || selIsItem || selIsTask || selIsLore || selIsScenario || selIsBlock
 
   // Derive entity name for the header
   const entityName = selIsPC
@@ -82,7 +91,9 @@ export function PartyInspector() {
                   if (oi !== null) return `Alternate ${oi}`
                   return SCENARIO_FIELD_DEFS.find((d) => d.key === selScenarioId)?.label ?? 'Scenario'
                 })()
-              : ''
+              : selIsBlock
+                ? (selBlockData!.name || 'Untitled Block')
+                : ''
 
   const entityLabel = selIsPC
     ? 'PLAYER CHARACTER'
@@ -96,7 +107,9 @@ export function PartyInspector() {
             ? 'LOREBOOK ENTRY'
             : selIsScenario
               ? (selScenarioId && openingIndexOf(selScenarioId) !== null ? 'OPENING NARRATION' : 'SCENARIO')
-              : ''
+              : selIsBlock
+                ? 'PROMPT'
+                : ''
 
   return (
     <div className="flex flex-col h-full">
@@ -157,6 +170,14 @@ export function PartyInspector() {
           <LoreInspector key={selLore!.id} entry={selLore!} mode={mode} />
         ) : selIsScenario ? (
           <ScenarioFieldInspector key={selScenarioId} fieldKey={selScenarioId!} mode={mode} />
+        ) : selIsBlock ? (
+          <BlockContentInspector
+            key={selBlockData!.id}
+            owner={selBlockOwner!}
+            ownerType={selBlock!.ownerType}
+            block={selBlockData!}
+            mode={mode}
+          />
         ) : (
           <EmptyState />
         )}
@@ -1502,6 +1523,107 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
         </button>
       )}
       <span className="block text-[10px] text-textdim font-body">{note}</span>
+    </div>
+  )
+}
+
+// ── Block Content Inspector ─────────────────────────────────────
+// A character-sheet "prompt" block, opened full-screen from the block list
+// (BlockTreeEditor) via selectInto — the header's ◀ BACK breadcrumb returns
+// to the owning sheet.
+
+function BlockContentInspector({ owner, ownerType, block, mode }: {
+  owner: PlayerCharacter | PartyMember
+  ownerType: 'player' | 'member'
+  block: CharacterBlock
+  mode: 'view' | 'edit'
+}) {
+  const saveBlocksPC = usePartyStore((s) => s.savePlayerCharacterBlocks)
+  const saveBlocksMember = usePartyStore((s) => s.savePartyMemberBlocks)
+  const setEditDirty = useUiStore((s) => s.setEditDirty)
+
+  const draft = useRef<Pick<CharacterBlock, 'name' | 'content' | 'enabled'>>(
+    { name: block.name, content: block.content ?? '', enabled: block.enabled }
+  )
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  useEffect(() => {
+    draft.current = { name: block.name, content: block.content ?? '', enabled: block.enabled }
+  }, [block])
+
+  const flush = useCallback(() => {
+    clearTimeout(timer.current)
+    const nextBlocks = updateBlockInTree(owner.blocks, block.id, draft.current)
+    if (ownerType === 'player') void saveBlocksPC(nextBlocks, owner.basicInfo.name)
+    else void saveBlocksMember(owner.id, nextBlocks, owner.basicInfo.name)
+    setEditDirty(false)
+  }, [owner, ownerType, block.id, saveBlocksPC, saveBlocksMember, setEditDirty])
+
+  const scheduleFlush = useCallback(() => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(flush, 600)
+  }, [flush])
+
+  const update = (patch: Partial<Pick<CharacterBlock, 'name' | 'content' | 'enabled'>>, immediate?: boolean) => {
+    Object.assign(draft.current, patch)
+    setEditDirty(true)
+    immediate ? flush() : scheduleFlush()
+  }
+
+  const d = draft.current
+
+  if (mode === 'view') {
+    return (
+      <div className="space-y-6 p-6">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line ${
+            block.enabled ? 'text-[#5a9e6f]' : 'text-textdim'
+          }`}>
+            {block.enabled ? 'ENABLED' : 'DISABLED'}
+          </span>
+        </div>
+        <LoreSection title="Content">
+          {(block.content ?? '').trim() ? (
+            <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{block.content}</p>
+          ) : (
+            <p className="text-[12px] text-textdim font-body">(empty)</p>
+          )}
+        </LoreSection>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <LoreSection title="Basic Info">
+        <div className="space-y-3">
+          <LoreField
+            label="Name"
+            value={d.name}
+            onChange={(v) => update({ name: v })}
+            onBlur={(v) => update({ name: v }, true)}
+          />
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              defaultChecked={d.enabled}
+              onChange={(e) => update({ enabled: e.target.checked }, true)}
+              className="accent-gold"
+            />
+            <span className="font-body text-sm text-text">Enabled — included in the prompt</span>
+          </label>
+        </div>
+      </LoreSection>
+
+      <LoreSection title="Content">
+        <textarea
+          className="w-full border border-line bg-bg0 px-3 py-2.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[50vh]"
+          defaultValue={d.content}
+          placeholder="Content the Narrator reads for this block…"
+          onChange={(e) => update({ content: e.target.value })}
+          onBlur={(e) => update({ content: e.target.value }, true)}
+        />
+      </LoreSection>
     </div>
   )
 }

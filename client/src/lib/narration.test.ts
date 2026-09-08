@@ -6,9 +6,10 @@ function member(name: string, inParty = true): PartyMember {
   return {
     id: `id-${name.toLowerCase().replace(/\s+/g, '-')}`,
     schemaVersion: 1,
-    basicInfo: { name, gender: '', species: '', age: 0, heightCm: 0, weightKg: 0, description: '' },
+    basicInfo: { name, species: '', sex: '', apparentAge: '', description: '', personality: '', instinct: '', strengths: '', other: '' },
     fieldSkill: { name: '', description: '' },
     equipment: {} as PartyMember['equipment'],
+    blocks: [],
     lastSpokeTurn: 0,
     inParty,
   } as PartyMember

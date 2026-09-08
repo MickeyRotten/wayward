@@ -7,20 +7,21 @@ if not hasattr(BaseModel, "model_dump"):  # pydantic v1
 
 
 class BasicInfoSchema(BaseModel):
+    """Mirrors the unified character-file schema (server/db/characters.py
+    _BASIC_KEYS) — the legacy compatibility projection of the block tree.
+    Editing now goes through CharacterBlocksUpdate; this remains the wire
+    shape for the read-only projection and the older combined PUT routes."""
     name: str = ""
-    gender: str = ""
     species: str = ""
-    age: int = 0
-    heightCm: int = 0
-    weightKg: int = 0
+    sex: str = ""
+    apparentAge: str = ""  # freeform, e.g. "looks mid-20s", "ageless"
     description: str = ""
-    portrait: str = ""
-    likes: str = ""
-    dislikes: str = ""
     personality: str = ""
-    # What pushes the character forward — their goal, want, or need. Shown on
-    # the PC sheet and a major signal for the action suggester.
-    drive: str = ""
+    # What the character tends to do — their behavioural bent.
+    instinct: str = ""
+    # 1-3 short GM-facing moves/abilities, as freeform text.
+    strengths: str = ""
+    other: str = ""
 
 
 class EquipmentSchema(BaseModel):
@@ -55,10 +56,15 @@ class PlayerCharacterResponse(BaseModel):
     schemaVersion: int
     basicInfo: BasicInfoSchema
     equipment: EquipmentSchema
+    # The real data — the toggleable/orderable block tree (see
+    # server/ai/character_blocks.py). basicInfo above is a read-only
+    # projection of this for legacy consumers.
+    blocks: list[dict] = []
     # Character-file portrait URLs (full → Inspector, crop → chat/avatars); null
     # when that image doesn't exist yet.
     portraitFull: str | None = None
     portraitCrop: str | None = None
+    hasVoice: bool = False
 
 
 # --- Party Member ---
@@ -81,14 +87,26 @@ class PartyMemberResponse(BaseModel):
     basicInfo: BasicInfoSchema
     equipment: EquipmentSchema
     fieldSkill: FieldSkillSchema
+    blocks: list[dict] = []
     lastSpokeTurn: int
     inParty: bool = True
     portraitFull: str | None = None
     portraitCrop: str | None = None
+    hasVoice: bool = False
 
 
 class PartyMembershipUpdate(BaseModel):
     inParty: bool
+
+
+# --- Character block tree (toggleable/orderable prompt blocks) ---
+
+class CharacterBlocksUpdate(BaseModel):
+    """Persists the whole block tree in one write (see
+    server/ai/character_blocks.py for block shape). `name` is optional —
+    omit it to leave the character's name untouched."""
+    blocks: list[dict]
+    name: str | None = None
 
 
 # --- Narrator ---

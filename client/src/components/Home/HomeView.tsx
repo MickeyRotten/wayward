@@ -59,7 +59,7 @@ export function HomeView() {
         {pc && (
           <CharacterCard
             name={pc.basicInfo.name || 'Unnamed'}
-            subtitle={`${pc.basicInfo.species}${pc.basicInfo.gender ? ` · ${pc.basicInfo.gender}` : ''}`}
+            subtitle={`${pc.basicInfo.species}${pc.basicInfo.sex ? ` · ${pc.basicInfo.sex}` : ''}`}
             portrait={pc.portraitCrop ?? undefined}
             fallback="PC"
             selected={selection?.kind === 'player'}

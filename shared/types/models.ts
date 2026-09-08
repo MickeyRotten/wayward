@@ -44,22 +44,23 @@ export interface InventoryStack {
   slot?: string | null
 }
 
+// Mirrors the unified character-file schema (server/db/characters.py
+// _BASIC_KEYS) — a read-only projection of the block tree for legacy call
+// sites. Real editing goes through `blocks` (see CharacterBlock below).
 export interface BasicInfo {
   name: string
-  gender: string
   species: string
-  age: number
-  heightCm: number
-  weightKg: number
+  sex: string
+  /** Freeform, e.g. "looks mid-20s", "ageless" — not a number. */
+  apparentAge: string
   description: string
-  portrait?: string
-  likes?: string
-  dislikes?: string
-  personality?: string
-  /** What pushes the character forward — goal, want, or need. */
-  drive?: string
+  personality: string
+  /** What the character tends to do — their behavioural bent. */
+  instinct: string
+  /** 1-3 short GM-facing moves/abilities, as freeform text. */
+  strengths: string
   /** Anything that doesn't fit the structured fields — quirks, history, relationships. */
-  other?: string
+  other: string
 }
 
 export interface FieldSkill {
@@ -67,11 +68,30 @@ export interface FieldSkill {
   description: string
 }
 
+// The TavernAI-style toggleable/orderable block tree — the real data behind
+// a character's sheet (see server/ai/character_blocks.py). Folders nest one
+// level deep by convention (no roles/depth/merge-groups).
+export type CharacterBlockType = 'text' | 'folder' | 'equipment' | 'image'
+
+export interface CharacterBlock {
+  id: string
+  type: CharacterBlockType
+  name: string
+  enabled: boolean
+  /** text blocks only — `{{name}}` resolves to the character's own name. */
+  content?: string
+  /** folder blocks only. */
+  children?: CharacterBlock[]
+  /** image blocks only — the embedded asset's path. */
+  file?: string
+}
+
 export interface PlayerCharacter {
   id: string
   schemaVersion: number
   basicInfo: BasicInfo
   equipment: Equipment
+  blocks: CharacterBlock[]
   // Character-file portrait URLs (full → Inspector, crop → chat/avatars).
   portraitFull?: string | null
   portraitCrop?: string | null
@@ -84,6 +104,7 @@ export interface PartyMember {
   basicInfo: BasicInfo
   equipment: Equipment
   fieldSkill: FieldSkill
+  blocks: CharacterBlock[]
   lastSpokeTurn: number
   inParty: boolean
   portraitFull?: string | null

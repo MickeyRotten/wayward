@@ -19,6 +19,8 @@ from server.api.common import (
     _pm_to_response,
 )
 from server.api.schemas import (
+    CharacterBlocksUpdate,
+    EquipmentSchema,
     PartyMemberCreate,
     PartyMemberResponse,
     PartyMembershipUpdate,
@@ -51,6 +53,35 @@ async def upsert_player_character(
     # Identity → the persona's character file; equipment → the pc binding.
     pc = await party_ops.set_pc_identity(session, data.basicInfo.model_dump())
     await party_ops.set_equipment(session, pc.id, data.equipment.model_dump())
+    await session.commit()
+    reloaded = await party_ops.load_pc(session)
+    return _pc_to_response(reloaded)
+
+
+@router.put("/player-character/blocks", response_model=PlayerCharacterResponse)
+async def update_player_character_blocks(
+    data: CharacterBlocksUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Persist the PC's block tree directly — the editing path the block-tree
+    UI uses, instead of the legacy basicInfo projection above."""
+    pc = await party_ops.load_pc(session)
+    if pc is None:
+        raise HTTPException(404, "No player character")
+    char_files.update_blocks(pc.id, data.blocks, name=data.name)
+    reloaded = await party_ops.load_pc(session)
+    return _pc_to_response(reloaded)
+
+
+@router.put("/player-character/equipment", response_model=PlayerCharacterResponse)
+async def update_player_character_equipment(
+    data: EquipmentSchema,
+    session: AsyncSession = Depends(get_session),
+):
+    pc = await party_ops.load_pc(session)
+    if pc is None:
+        raise HTTPException(404, "No player character")
+    await party_ops.set_equipment(session, pc.id, data.model_dump())
     await session.commit()
     reloaded = await party_ops.load_pc(session)
     return _pc_to_response(reloaded)
@@ -125,6 +156,38 @@ async def update_party_member(
     await party_ops.set_equipment(session, member_id, data.equipment.model_dump())
     await session.commit()
     return _pm_to_response(await party_ops.load_character(session, member_id))
+
+
+@router.put("/party-members/{member_id}/blocks", response_model=PartyMemberResponse)
+async def update_party_member_blocks(
+    member_id: str,
+    data: CharacterBlocksUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Persist a party member's block tree directly — the editing path the
+    block-tree UI uses, instead of the legacy basicInfo/fieldSkill projection
+    the routes above still accept."""
+    m = await party_ops.load_character(session, member_id)
+    if m is None or m.role != "member":
+        raise HTTPException(404, "Party member not found")
+    char_files.update_blocks(member_id, data.blocks, name=data.name)
+    reloaded = await party_ops.load_character(session, member_id)
+    return _pm_to_response(reloaded)
+
+
+@router.put("/party-members/{member_id}/equipment", response_model=PartyMemberResponse)
+async def update_party_member_equipment(
+    member_id: str,
+    data: EquipmentSchema,
+    session: AsyncSession = Depends(get_session),
+):
+    m = await party_ops.load_character(session, member_id)
+    if m is None or m.role != "member":
+        raise HTTPException(404, "Party member not found")
+    await party_ops.set_equipment(session, member_id, data.model_dump())
+    await session.commit()
+    reloaded = await party_ops.load_character(session, member_id)
+    return _pm_to_response(reloaded)
 
 
 @router.delete("/party-members/{member_id}", status_code=204)

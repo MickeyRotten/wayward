@@ -1,3 +1,4 @@
+from server.ai.character_blocks import compose_blocks
 from server.ai.clock import phase_of
 from server.ai.lore_injector import format_lore_block, group_by_position, match_entries
 from server.ai.narrator_actions import ACTION_INSTRUCTION
@@ -193,42 +194,28 @@ def build_prompt(
         if rules_block:
             messages.append({"role": "system", "content": rules_block})
 
-    # Player character sheet. Equipment is stated HERE and nowhere else.
-    pc_info = player_character.basic_info
-    equip_str = _format_equipment(player_character.equipment, catalog_lookup)
-    pc_lines = [
-        f"PLAYER CHARACTER: {pc_info.get('name', 'Unknown')}, "
-        f"a {pc_info.get('species', 'unknown')} {pc_info.get('gender', '').lower()}. "
-        f"{pc_info.get('description', '')}"
-    ]
-    if pc_info.get("personality"):
-        pc_lines.append(f"Personality: {pc_info['personality']}")
-    if pc_info.get("drive"):
-        pc_lines.append(f"Drive (what pushes them forward): {pc_info['drive']}")
-    pc_lines.append(f"Wearing/carrying: {equip_str}")
-    messages.append({"role": "system", "content": "\n".join(pc_lines)})
+    # Player character sheet — composed from the character's own toggleable
+    # block tree (see server/ai/character_blocks.py), open/close-tagged by
+    # <Name>...</Name> blocks so a model can't blur it into the party sheets
+    # that follow. Equipment is stated HERE and nowhere else — it's a virtual
+    # block rendered live from the current binding, never stored.
+    pc_name = getattr(player_character, "name", None) or player_character.basic_info.get("name", "Unknown")
+    pc_equip = _format_equipment(player_character.equipment, catalog_lookup)
+    pc_sheet = compose_blocks(player_character.blocks, pc_name, equipment_text=pc_equip)
+    if pc_sheet:
+        messages.append({"role": "system", "content": f"PLAYER CHARACTER:\n{pc_sheet}"})
 
     # Party sheets — the slow half of a companion (who they are). Who is
     # actually present is re-stated in tier 4, after the history.
     if party_members:
-        roster_lines = ["PARTY SHEETS — who these companions are:"]
+        roster_parts = ["PARTY SHEETS — who these companions are:"]
         for pm in party_members:
-            info = pm.basic_info
-            skill = pm.field_skill
-            lines = [
-                f"  {info.get('name', 'Unknown')} — {info.get('species', 'unknown')}. "
-                f"{info.get('description', '')}",
-            ]
-            for label, key in (("Personality", "personality"), ("Likes", "likes"),
-                               ("Dislikes", "dislikes"), ("Other", "other")):
-                if info.get(key):
-                    lines.append(f"    {label}: {info[key]}")
-            lines.append(
-                f"    Field Skill: {skill.get('name', 'None')} — {skill.get('description', '')}"
-            )
-            lines.append(f"    Wearing/carrying: {_format_equipment(pm.equipment, catalog_lookup)}")
-            roster_lines.append("\n".join(lines))
-        messages.append({"role": "system", "content": "\n".join(roster_lines)})
+            pm_name = pm.basic_info.get("name", "Unknown")
+            pm_equip = _format_equipment(pm.equipment, catalog_lookup)
+            sheet = compose_blocks(pm.blocks, pm_name, equipment_text=pm_equip)
+            if sheet:
+                roster_parts.append(sheet)
+        messages.append({"role": "system", "content": "\n\n".join(roster_parts)})
 
     # ── TIER 2 · TURN CONTEXT ──────────────────────────────────────────────
     # The keyword-gated material THIS action pulled in, as one message, skipped

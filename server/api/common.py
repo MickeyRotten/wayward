@@ -36,11 +36,11 @@ _MEDIA_CACHE = {"Cache-Control": "private, max-age=300"}
 
 
 def _portrait_full_url(cid: str) -> str | None:
-    return f"/api/characters/{cid}/portrait/full" if char_files.full_path(cid) else None
+    return f"/api/characters/{cid}/portrait/full" if char_files.has_full(cid) else None
 
 
 def _portrait_crop_url(cid: str) -> str | None:
-    return f"/api/characters/{cid}/portrait/crop" if char_files.crop_path(cid) else None
+    return f"/api/characters/{cid}/portrait/crop" if char_files.has_crop(cid) else None
 
 
 def _pc_to_response(pc) -> PlayerCharacterResponse:
@@ -53,7 +53,7 @@ def _pc_to_response(pc) -> PlayerCharacterResponse:
         equipment=pc.equipment,
         portraitFull=_portrait_full_url(pc.id),
         portraitCrop=_portrait_crop_url(pc.id),
-        hasVoice=char_files.voice_path(pc.id) is not None,
+        hasVoice=char_files.has_voice(pc.id),
     )
 
 
@@ -68,7 +68,7 @@ def _pm_to_response(pm) -> PartyMemberResponse:
         inParty=bool(pm.in_party),
         portraitFull=_portrait_full_url(pm.id),
         portraitCrop=_portrait_crop_url(pm.id),
-        hasVoice=char_files.voice_path(pm.id) is not None,
+        hasVoice=char_files.has_voice(pm.id),
     )
 
 

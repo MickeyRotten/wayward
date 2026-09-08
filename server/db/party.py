@@ -24,10 +24,19 @@ class RuntimeCharacter:
     binding_id: str         # PartyBinding row id (internal)
     type: str               # persona | character
     role: str               # pc | member
-    basic_info: dict        # unified schema incl. `strengths` (see characters.py)
+    basic_info: dict        # LEGACY compatibility projection (see characters.py)
+    blocks: list            # the real data — toggleable block tree
     equipment: dict
     in_party: bool
     last_spoke_turn: int
+
+    @property
+    def field_skill(self) -> dict:
+        """Legacy shape for call sites not yet block-aware — the Strengths
+        block's content, split back into {name, description} best-effort."""
+        strengths = (self.basic_info or {}).get("strengths", "")
+        name, _, desc = strengths.partition(" — ")
+        return {"name": name, "description": desc or strengths}
 
 
 def _compose(binding: PartyBinding, identity: dict | None) -> RuntimeCharacter:
@@ -38,6 +47,7 @@ def _compose(binding: PartyBinding, identity: dict | None) -> RuntimeCharacter:
         type=identity.get("type", "persona" if binding.role == "pc" else "character"),
         role=binding.role,
         basic_info=dict(identity.get("basicInfo") or {}),
+        blocks=list(identity.get("blocks") or []),
         equipment=dict(binding.equipment or {}),
         in_party=bool(binding.in_party),
         last_spoke_turn=binding.last_spoke_turn or 0,
@@ -138,11 +148,25 @@ async def active_count(session: AsyncSession) -> int:
 
 # ── Identity writers (write the file) + create/bind orchestration ─
 
+def _fold_field_skill(basic_info: dict | None, field_skill: dict | None) -> dict | None:
+    """Legacy wire shape {fieldSkillName, fieldSkillDescription-ish object}
+    folds into basicInfo.strengths, same rule the old migrate_basic_info used."""
+    if not field_skill or (basic_info or {}).get("strengths"):
+        return basic_info
+    n, d = str(field_skill.get("name") or "").strip(), str(field_skill.get("description") or "").strip()
+    if not (n or d):
+        return basic_info
+    out = dict(basic_info or {})
+    out["strengths"] = f"{n} — {d}" if n and d else (d or n)
+    return out
+
+
 async def set_pc_identity(
-    session: AsyncSession, basic_info: dict | None
+    session: AsyncSession, basic_info: dict | None, field_skill: dict | None = None
 ) -> RuntimeCharacter:
     """Upsert the player character: create the persona file + pc binding on first
     call; otherwise patch the identity file. Equipment is set separately."""
+    basic_info = _fold_field_skill(basic_info, field_skill)
     b = await pc_binding(session)
     if b is None:
         identity = char_files.create_character("persona", basic_info)
@@ -168,8 +192,10 @@ async def add_member(
     basic_info: dict | None = None,
     in_party: bool = True,
     character_id: str | None = None,
+    field_skill: dict | None = None,
 ) -> RuntimeCharacter:
     """Create a new character file + a member binding for this adventure."""
+    basic_info = _fold_field_skill(basic_info, field_skill)
     identity = char_files.create_character("character", basic_info, cid=character_id)
     b = PartyBinding(
         character_id=identity["id"], role="member",
@@ -197,11 +223,13 @@ async def bind_existing(
 
 
 async def update_member_identity(
-    session: AsyncSession, character_id: str, basic_info: dict | None
+    session: AsyncSession, character_id: str, basic_info: dict | None,
+    field_skill: dict | None = None,
 ) -> RuntimeCharacter | None:
     b = await binding_for(session, character_id)
     if b is None or b.role != "member":
         return None
+    basic_info = _fold_field_skill(basic_info, field_skill)
     identity = char_files.update_identity(character_id, basic_info)
     if identity is None:
         return None

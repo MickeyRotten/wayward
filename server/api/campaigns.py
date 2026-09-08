@@ -385,8 +385,16 @@ async def _import_campaign_bytes(raw: bytes) -> dict:
             dest = PORTRAITS_DIR / fn
             if fn and not dest.exists():
                 dest.write_bytes(z.read(n))
-        # New exports carry character folders (identity + portraits). Restore
-        # them into the global library, keeping any character id we already have.
+        # New exports carry one PNG per character (identity + assets all
+        # embedded — see server/db/characters.py). Restore into the global
+        # library, keeping the character id it already has.
+        elif n.startswith("characters/") and n.endswith(".png"):
+            ch_id = n.split("/", 1)[1][:-len(".png")]
+            dest = char_files.path(ch_id)
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(z.read(n))
+        # Legacy exports carried a folder per character (pre single-PNG format).
         elif n.startswith("characters/") and not n.endswith("/"):
             parts = n.split("/", 2)
             if len(parts) == 3:

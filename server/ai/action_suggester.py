@@ -226,8 +226,8 @@ async def _build_context(session, turn_number: int) -> str:
         pc_lines = [f"PLAYER CHARACTER: {info.get('name') or 'Unknown'}"]
         if info.get("personality"):
             pc_lines.append(f"  Personality: {info['personality']}")
-        if info.get("drive"):
-            pc_lines.append(f"  Drive (what pushes them forward): {info['drive']}")
+        if info.get("instinct"):
+            pc_lines.append(f"  Instinct (what pushes them forward): {info['instinct']}")
         if len(pc_lines) > 1:
             lines.extend(pc_lines)
             lines.append("")

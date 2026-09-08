@@ -53,7 +53,7 @@ async def tts_speak(
         cid, _ = await _active_ids(session)
         voice_path = storage.narrator_voice_path(cid) if cid else None
     else:
-        voice_path = char_files.voice_path(data.voice)
+        voice_path = char_files.voice_path_for_tts(data.voice)
 
     try:
         filename, cached = await tts.synthesize(text_in, voice_path)

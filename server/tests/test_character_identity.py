@@ -70,24 +70,31 @@ def test_create_and_read_uses_new_schema():
     assert read["basicInfo"]["apparentAge"] == "ageless"
     assert read["basicInfo"]["strengths"] == "Phasewalk — slips through walls."
     assert "fieldSkill" not in read
-    assert read["schemaVersion"] == 2
+    assert read["schemaVersion"] == 3
     char_files.delete_character(ch["id"])
 
 
-def test_legacy_file_is_migrated_on_read():
+def test_legacy_folder_is_migrated_to_single_png_on_read():
+    """Pre-rebuild characters were a folder (character.json + full/crop files),
+    not a single PNG — read_character() must convert one on first read."""
     import json
-    ch = char_files.create_character("character", {"name": "Legacy"})
-    # Hand-write a legacy-shaped file (old keys + top-level fieldSkill).
-    char_files.write_character(ch["id"], {
-        "id": ch["id"], "type": "character", "schemaVersion": 1,
+    import uuid
+
+    cid = str(uuid.uuid4())
+    old_dir = char_files.char_dir(cid)
+    old_dir.mkdir(parents=True, exist_ok=True)
+    (old_dir / "character.json").write_text(json.dumps({
+        "id": cid, "type": "character", "schemaVersion": 1,
         "basicInfo": {"name": "Legacy", "gender": "male", "age": 40, "drive": "Revenge."},
         "fieldSkill": {"name": "Duelist", "description": "Deadly with a blade."},
-    })
-    read = char_files.read_character(ch["id"])
+    }), encoding="utf-8")
+
+    read = char_files.read_character(cid)
+    assert read["name"] == "Legacy"
     assert read["basicInfo"]["sex"] == "male"
     assert read["basicInfo"]["apparentAge"] == "40"
     assert read["basicInfo"]["instinct"] == "Revenge."
     assert read["basicInfo"]["strengths"] == "Duelist — Deadly with a blade."
-    assert "fieldSkill" not in read
-    assert "gender" not in read["basicInfo"]
-    char_files.delete_character(ch["id"])
+    assert char_files.exists(cid)          # the single PNG now exists...
+    assert not old_dir.exists()            # ...and the old folder is gone.
+    char_files.delete_character(cid)

@@ -5,15 +5,14 @@
   "createdAt": "2024-01-01T00:00:00+00:00",
   "basicInfo": {
     "name": "Varena",
-    "gender": "Female",
     "species": "Elf",
-    "age": 120,
-    "heightCm": 172,
-    "weightKg": 54,
+    "sex": "Female",
+    "apparentAge": "Looks no older than thirty, though she is well past a century",
     "description": "A breathtakingly beautiful elven ranger with flowing silver hair, luminous violet eyes, and the ageless grace of someone born a century before you drew breath. Aloof and effortlessly capable, she carries herself as though the mortal world is a charming inconvenience — though her aim with a bow is anything but.",
-    "likes": "Moonlight, fine wine, poetry, being right",
-    "dislikes": "Cities, mud, human impatience",
-    "personality": ""
+    "personality": "Dry, exacting, and quietly amused by everyone younger than her — which is everyone. She says little, but what she says is precise and usually correct, which she will not let you forget. Warmth comes out sideways: a blunt correction that keeps you alive, a rare unguarded laugh at something genuinely clever.",
+    "instinct": "Trusts her own eyes and her own aim over anyone else's plan. Would rather solve a problem alone and be right than share the risk of being wrong — a hundred years of outliving other people's mistakes taught her that lesson early and hard.",
+    "strengths": "Elven Marksmanship — Looses arrows with uncanny precision — able to thread a shot through branches to strike a distant eye. Still a bow: no help at grappling range, against heavy armor, or with nothing to shoot at.",
+    "other": "Loves moonlight, good wine, and old poetry — the kind mortals have mostly forgotten how to scan properly. Can't stand cities, mud, or being rushed. Left her wood a lifetime ago, for reasons she has never once explained, and reacts to any question about it with a very long silence."
   },
   "fieldSkill": {
     "name": "Elven Marksmanship",

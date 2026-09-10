@@ -5,7 +5,7 @@ export type TabId = 'home' | 'items' | 'tasks' | 'lore' | 'journal' | 'suggestio
 export type SelectionKind =
   | { kind: 'player' }
   | { kind: 'member'; id: string }
-  | { kind: 'item'; id: string; instanceId?: string }  // instanceId: a specific owned copy
+  | { kind: 'item'; id: string; instanceId?: string; lockTypeSlot?: boolean; openInEdit?: boolean }  // instanceId: a specific owned copy; lockTypeSlot/openInEdit: transient, set when navigating straight from "Create an Item"
   | { kind: 'task'; id: string }
   | { kind: 'lore'; id: string }
   | { kind: 'scenario'; id: string }  // a Scenario field key (or 'firstMessage')

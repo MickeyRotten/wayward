@@ -28,6 +28,20 @@ export const EQUIP_SLOT_LABELS: Record<keyof Equipment, string> = {
   accessory1: 'Accessory I', accessory2: 'Accessory II',
 }
 
+/** The one coarse item-slot string (matching ItemInspector's SLOT_OPTIONS)
+ * that fits each fine equipment slot — used to prefill/lock an item created
+ * directly into a slot from the Equipment tab. Must keep matching
+ * SLOT_CATEGORIES above. */
+export const EQUIP_SLOT_TO_ITEM_SLOT: Record<keyof Equipment, string> = {
+  head: 'Head', neck: 'Neck',
+  torsoOver: 'Torso', torsoUnder: 'Torso',
+  leftHand: 'Hands', rightHand: 'Hands',
+  waist: 'Waist',
+  legsOver: 'Legs', legsUnder: 'Legs',
+  feet: 'Feet',
+  accessory1: 'Accessory', accessory2: 'Accessory',
+}
+
 /**
  * Whether an item's free-text slot fits the given equipment slot. An item with
  * no slot is allowed everywhere (we can't know where it goes), so user-created

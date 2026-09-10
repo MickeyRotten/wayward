@@ -8,12 +8,12 @@ import { useScenarioStore } from '../../state/scenarioStore'
 import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
-import { findBlock, updateBlockInTree } from '../CharacterSheet/BlockTreeEditor'
+import { ItemInspector } from '../CharacterSheet/ItemInspector'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
-import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
+import { LoreSection, LoreField } from '../common/LoreFormFields'
 import { SCENARIO_FIELD_DEFS, FIRST_MESSAGE_ID, openingIndexOf } from '../../lib/scenarioFields'
-import type { ItemCatalogEntry, ItemType, Rarity, Task, LorebookEntry, LoreCategory, Equipment, PlayerCharacter, PartyMember, CharacterBlock } from '@shared/types/models'
+import type { Task, LorebookEntry, LoreCategory, PlayerCharacter, PartyMember } from '@shared/types/models'
 
 export function PartyInspector() {
   const pc = usePartyStore((s) => s.playerCharacter)
@@ -27,6 +27,7 @@ export function PartyInspector() {
   const editDirty = useUiStore((s) => s.editDirty)
   const back = useUiStore((s) => s.back)
   const goBack = useUiStore((s) => s.goBack)
+  const select = useUiStore((s) => s.select)
   // Full CRUD is always available now — no separate Edit Mode gates it.
   const mode: 'view' | 'edit' = 'edit'
 
@@ -68,55 +69,74 @@ export function PartyInspector() {
   const selBlockOwner: PlayerCharacter | PartyMember | undefined = selBlock
     ? (selBlock.ownerType === 'player' ? (pc ?? undefined) : members.find((m) => m.id === selBlock.ownerId))
     : undefined
-  const selBlockData = selBlock && selBlockOwner ? findBlock(selBlockOwner.blocks, selBlock.blockId) : undefined
-  const selIsBlock = !!selBlock && !!selBlockOwner && !!selBlockData
+  const selIsBlock = !!selBlock && !!selBlockOwner
+
+  // Does the current selection belong to a character sheet — either the
+  // character itself, or an item/block drilled into from it (EquipmentGrid /
+  // BlockTreeEditor, both via selectInto)? A block selection already carries
+  // its owner directly; an item only belongs to a character when `back`
+  // points at one (the only two selectInto callers for items/blocks always
+  // fire from the owning character's own selection, so this is unambiguous —
+  // a standalone item opened from the Items/Lore panel always has back===null).
+  // Resolving this once here lets the PC/member/drilled-item/drilled-block
+  // cases all render the same character panel, keeping its header mounted.
+  type PanelOwner = { kind: 'player' } | { kind: 'member'; member: PartyMember }
+  let panelOwner: PanelOwner | null = null
+  if (selIsPC) {
+    panelOwner = { kind: 'player' }
+  } else if (selIsMember) {
+    panelOwner = { kind: 'member', member: selMember! }
+  } else if (selIsBlock) {
+    panelOwner = selBlock!.ownerType === 'player'
+      ? { kind: 'player' }
+      : { kind: 'member', member: selBlockOwner as PartyMember }
+  } else if (selIsItem && back) {
+    if (back.kind === 'player' && pc) {
+      panelOwner = { kind: 'player' }
+    } else if (back.kind === 'member') {
+      const backMember = members.find((m) => m.id === back.id)
+      if (backMember) panelOwner = { kind: 'member', member: backMember }
+    }
+  }
+  const showCharacterPanel = panelOwner !== null
 
   const hasSelection = selIsPC || selIsMember || selIsItem || selIsTask || selIsLore || selIsScenario || selIsBlock
 
-  // Derive entity name for the header
-  const entityName = selIsPC
-    ? (pc!.basicInfo.name || 'New Character')
-    : selIsMember
-      ? (selMember!.basicInfo.name || 'New Member')
-      : selIsItem
-        ? (selItem!.name || 'Unknown Item')
-        : selIsTask
-          ? (selTask!.text || 'Untitled Task')
-          : selIsLore
-            ? (selLore!.title || 'Untitled Entry')
-            : selIsScenario
-              ? (() => {
-                  const oi = selScenarioId ? openingIndexOf(selScenarioId) : null
-                  if (oi === 0) return 'First Message'
-                  if (oi !== null) return `Alternate ${oi}`
-                  return SCENARIO_FIELD_DEFS.find((d) => d.key === selScenarioId)?.label ?? 'Scenario'
-                })()
-              : selIsBlock
-                ? (selBlockData!.name || 'Untitled Block')
-                : ''
+  // Derive entity name for the header — only reached for the standalone
+  // (non-character-panel) selections, since a block selection always implies
+  // showCharacterPanel.
+  const entityName = selIsItem
+    ? (selItem!.name || 'Unknown Item')
+    : selIsTask
+      ? (selTask!.text || 'Untitled Task')
+      : selIsLore
+        ? (selLore!.title || 'Untitled Entry')
+        : selIsScenario
+          ? (() => {
+              const oi = selScenarioId ? openingIndexOf(selScenarioId) : null
+              if (oi === 0) return 'First Message'
+              if (oi !== null) return `Alternate ${oi}`
+              return SCENARIO_FIELD_DEFS.find((d) => d.key === selScenarioId)?.label ?? 'Scenario'
+            })()
+          : ''
 
-  const entityLabel = selIsPC
-    ? 'PLAYER CHARACTER'
-    : selIsMember
-      ? 'PARTY MEMBER'
-      : selIsItem
-        ? 'ITEM'
-        : selIsTask
-          ? 'TASK'
-          : selIsLore
-            ? 'LOREBOOK ENTRY'
-            : selIsScenario
-              ? (selScenarioId && openingIndexOf(selScenarioId) !== null ? 'OPENING NARRATION' : 'SCENARIO')
-              : selIsBlock
-                ? 'PROMPT'
-                : ''
+  const entityLabel = selIsItem
+    ? 'ITEM'
+    : selIsTask
+      ? 'TASK'
+      : selIsLore
+        ? 'LOREBOOK ENTRY'
+        : selIsScenario
+          ? (selScenarioId && openingIndexOf(selScenarioId) !== null ? 'OPENING NARRATION' : 'SCENARIO')
+          : ''
 
   return (
     <div className="flex flex-col h-full">
-      {/* Inspector Header — PC/member sheets render their own full header
-          (portrait, name, i/Export/Delete), so skip this generic one for
-          them rather than showing the name twice. */}
-      {hasSelection && !selIsPC && !selIsMember && (
+      {/* Inspector Header — the character panel (PC/member sheet, or an item/
+          block drilled into from one) renders its own full header (portrait,
+          name, i/Export/Delete), so skip this generic one for it rather than
+          showing the name twice. */}
+      {hasSelection && !showCharacterPanel && (
         <div className="shrink-0 border-b border-line px-6 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -152,19 +172,24 @@ export function PartyInspector() {
         </div>
       )}
 
-      {/* Inspector Body — single scrollable child */}
-      <div className="flex-1 overflow-y-auto relative">
+      {/* Inspector Body — single scrollable child. The character panel owns
+          its own internal scroll region (a fixed header over a scrolling
+          body) so this wrapper must not also scroll, or the header would
+          double-scroll away — see CharacterSheetPanel.tsx. */}
+      <div className={`flex-1 relative ${showCharacterPanel ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {hasSelection && <SaveIndicator />}
-        {selIsPC ? (
+        {panelOwner?.kind === 'player' ? (
           <CharacterSheetEditor />
-        ) : selIsMember ? (
-          <PartyMemberEditor key={selMember!.id} member={selMember!} />
+        ) : panelOwner?.kind === 'member' ? (
+          <PartyMemberEditor key={panelOwner.member.id} member={panelOwner.member} />
         ) : selIsItem ? (
           <ItemInspector
             key={(selection?.kind === 'item' ? selection.instanceId : '') || selItem!.id}
             item={selItem!}
             instanceId={selection?.kind === 'item' ? selection.instanceId : undefined}
-            mode={mode}
+            lockTypeSlot={selection?.kind === 'item' ? selection.lockTypeSlot : undefined}
+            openInEdit={selection?.kind === 'item' ? selection.openInEdit : undefined}
+            onClose={() => select(null)}
           />
         ) : selIsTask ? (
           <TaskInspector key={selTask!.id} task={selTask!} mode={mode} />
@@ -172,14 +197,6 @@ export function PartyInspector() {
           <LoreInspector key={selLore!.id} entry={selLore!} mode={mode} />
         ) : selIsScenario ? (
           <ScenarioFieldInspector key={selScenarioId} fieldKey={selScenarioId!} mode={mode} />
-        ) : selIsBlock ? (
-          <BlockContentInspector
-            key={selBlockData!.id}
-            owner={selBlockOwner!}
-            ownerType={selBlock!.ownerType}
-            block={selBlockData!}
-            mode={mode}
-          />
         ) : (
           <EmptyState />
         )}
@@ -209,603 +226,6 @@ function SaveIndicator() {
     >
       SAVED
     </div>
-  )
-}
-
-// ── Item Inspector ──────────────────────────────────────────────
-
-const RARITY_LABELS: Record<Rarity, string> = {
-  c: 'Common',
-  u: 'Uncommon',
-  r: 'Rare',
-  e: 'Epic',
-  l: 'Legendary',
-}
-
-const RARITY_TEXT_COLORS: Record<Rarity, string> = {
-  c: 'text-rarity-c',
-  u: 'text-rarity-u',
-  r: 'text-rarity-r',
-  e: 'text-rarity-e',
-  l: 'text-rarity-l',
-}
-
-const ITEM_TYPES: ItemType[] = ['Equipment', 'Tool', 'Consumable', 'Key Item', 'Artifact', 'Currency', 'Other']
-// Coarse body-slot categories (match the server's slot compatibility map).
-const SLOT_OPTIONS = ['Head', 'Neck', 'Torso', 'Hands', 'Waist', 'Legs', 'Feet', 'Accessory']
-const RARITY_OPTIONS: { value: Rarity; label: string }[] = [
-  { value: 'c', label: 'Common' },
-  { value: 'u', label: 'Uncommon' },
-  { value: 'r', label: 'Rare' },
-  { value: 'e', label: 'Epic' },
-  { value: 'l', label: 'Legendary' },
-]
-
-function ItemInspector({ item, instanceId, mode }: { item: ItemCatalogEntry; instanceId?: string; mode: 'view' | 'edit' }) {
-  const updateItem = useItemsStore((s) => s.updateItem)
-  const deleteItem = useItemsStore((s) => s.deleteItem)
-  const removeInstance = useItemsStore((s) => s.removeInstance)
-  const inventory = useItemsStore((s) => s.inventory)
-  const pc = usePartyStore((s) => s.playerCharacter)
-  const members = usePartyStore((s) => s.partyMembers)
-  const equipItem = usePartyStore((s) => s.equipItem)
-  const unequipSlot = usePartyStore((s) => s.unequipSlot)
-  const select = useUiStore((s) => s.select)
-  const setEditDirty = useUiStore((s) => s.setEditDirty)
-
-  const draft = useRef<Partial<ItemCatalogEntry>>(structuredClone(item))
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [removeError, setRemoveError] = useState('')
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [newKeyword, setNewKeyword] = useState('')
-
-  // The specific copy inspected (when opened from an inventory row), plus the
-  // aggregate view: every character wearing a copy, and the stowed count.
-  const thisInstance = instanceId ? inventory.find((s) => s.instanceId === instanceId) : undefined
-  const stowedCount = inventory.filter((s) => s.itemId === item.id && !s.equippedBy).length
-  const wornBy = inventory
-    .filter((s) => s.itemId === item.id && s.equippedBy)
-    .map((s) => ({ charId: s.equippedBy as string, name: s.equippedByName || 'Someone', slot: s.slot as string }))
-  const firstStowed = () => inventory.find((s) => s.itemId === item.id && !s.equippedBy)
-
-  const charEquipment = (charId: string): Equipment | undefined =>
-    pc && charId === pc.id ? pc.equipment : members.find((m) => m.id === charId)?.equipment
-
-  // Equip a stowed copy onto a character (best-fitting slot; any prior occupant
-  // is auto-unequipped by pickEquipSlot + the server). When a specific copy is
-  // inspected, equip THAT instance; otherwise pick any stowed copy.
-  const equipOnto = async (charId: string) => {
-    setPickerOpen(false)
-    const equipment = charEquipment(charId)
-    if (!equipment) return
-    const slot = pickEquipSlot(item.slot, equipment)
-    const copyId = thisInstance ? thisInstance.instanceId : firstStowed()?.instanceId
-    await equipItem(charId, item.id, slot, copyId)
-  }
-
-  const unequipFrom = async (charId: string, slot: string) => {
-    await unequipSlot(charId, slot)
-  }
-
-  const dropItem = async () => {
-    setRemoveError('')
-    // Prefer the inspected copy; never drop a worn copy.
-    const target = thisInstance ?? firstStowed()
-    if (!target || target.equippedBy) return
-    try { await removeInstance(target.instanceId) } catch (e: unknown) {
-      setRemoveError(e instanceof Error ? e.message : 'Failed')
-    }
-  }
-
-  useEffect(() => {
-    draft.current = structuredClone(item)
-  }, [item])
-
-  const flush = useCallback(() => {
-    clearTimeout(timer.current)
-    updateItem(item.id, draft.current)
-    setEditDirty(false)
-  }, [item.id, updateItem, setEditDirty])
-
-  const scheduleFlush = useCallback(() => {
-    clearTimeout(timer.current)
-    timer.current = setTimeout(flush, 600)
-  }, [flush])
-
-  const update = (key: string, value: unknown, immediate?: boolean) => {
-    Object.assign(draft.current, { [key]: value })
-    setEditDirty(true)
-    immediate ? flush() : scheduleFlush()
-  }
-
-  if (mode === 'view') {
-    return (
-      <div className="space-y-6 p-6">
-        {/* Badges row */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Type badge */}
-          <span className="font-ui text-[9px] tracking-wider uppercase text-textsec border border-line px-2 py-0.5">
-            {item.type}
-          </span>
-          {/* Rarity badge */}
-          <span className={`font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line ${RARITY_TEXT_COLORS[item.rarity]}`}>
-            {RARITY_LABELS[item.rarity]}
-          </span>
-        </div>
-
-        {/* Details */}
-        <ItemSection title="Details">
-          <div className="space-y-1.5">
-            {item.type === 'Equipment' && item.slot && (
-              <ItemViewField label="Slot" value={item.slot} />
-            )}
-            {(item.maxStack ?? 1) > 1 && (
-              <ItemViewField label="Max Stack" value={String(item.maxStack)} />
-            )}
-            {item.uses != null && (
-              <ItemViewField label="Uses" value={String(item.uses)} />
-            )}
-          </div>
-        </ItemSection>
-
-        {/* Description */}
-        {item.desc && (
-          <ItemSection title="Description">
-            <p className="font-body text-sm text-text2 leading-relaxed">{item.desc}</p>
-          </ItemSection>
-        )}
-
-        {/* Lorebook-entry rules — shown for the catalog item (not a single copy),
-            since items are lorebook entries with keyword injection. */}
-        {!thisInstance && (
-          <ItemSection title="Lorebook">
-            <div className="flex items-center gap-2 flex-wrap mb-2">
-              <span className={`font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line ${item.enabled ? 'text-[#5a9e6f]' : 'text-textdim'}`}>
-                {item.enabled ? 'ENABLED' : 'DISABLED'}
-              </span>
-              {item.permanent && (
-                <span className="font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line text-gold">
-                  PERMANENT
-                </span>
-              )}
-            </div>
-            {(item.keywords?.length ?? 0) === 0 ? (
-              <p className="text-[12px] text-textdim font-body">No keywords</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {item.keywords.map((kw, i) => (
-                  <span key={i} className="font-ui text-[10px] text-gold border border-gold/30 bg-gold/5 px-2 py-0.5 tracking-wider">
-                    {kw}
-                  </span>
-                ))}
-              </div>
-            )}
-          </ItemSection>
-        )}
-
-        {thisInstance ? (
-          /* Per-instance view: a specific copy was selected in the Inventory —
-             show only THAT copy's state and act on it alone. */
-          <>
-            <ItemSection title="This Copy">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-body text-sm text-text">
-                  {thisInstance.equippedBy ? (
-                    <>
-                      Equipped by <span className="text-gold2">{thisInstance.equippedByName || 'Someone'}</span>
-                      {thisInstance.slot && (
-                        <span className="text-textdim"> · {EQUIP_SLOT_LABELS[thisInstance.slot as keyof Equipment] ?? thisInstance.slot}</span>
-                      )}
-                    </>
-                  ) : (
-                    'Stowed in the pack'
-                  )}
-                </span>
-                {!thisInstance.equippedBy && (
-                  <button
-                    type="button"
-                    className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                    onClick={dropItem}
-                  >
-                    DROP ITEM
-                  </button>
-                )}
-              </div>
-              {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
-            </ItemSection>
-
-            {item.type === 'Equipment' && (
-              <ItemSection title="Equip">
-                <div className="space-y-2">
-                  {thisInstance.equippedBy ? (
-                    <button
-                      type="button"
-                      className="w-full font-ui text-[10px] tracking-wider text-textsec border border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
-                      onClick={() => unequipFrom(thisInstance.equippedBy as string, thisInstance.slot as string)}
-                    >
-                      Unequip
-                    </button>
-                  ) : (pickerOpen ? (
-                    <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
-                  ) : (
-                    <button
-                      type="button"
-                      className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
-                      onClick={() => setPickerOpen(true)}
-                    >
-                      Equip
-                    </button>
-                  ))}
-                </div>
-              </ItemSection>
-            )}
-          </>
-        ) : (
-          /* Aggregate view: opened from Lore → Items (no specific copy). */
-          <>
-            {stowedCount > 0 && (
-              <ItemSection title="Inventory">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-body text-sm text-text">
-                    Stowed: <span className="text-gold">{stowedCount}</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="font-ui text-[9px] text-textdim hover:text-danger border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                    onClick={dropItem}
-                  >
-                    DROP ITEM
-                  </button>
-                </div>
-                {removeError && <p className="text-[11px] text-danger font-body mt-1">{removeError}</p>}
-              </ItemSection>
-            )}
-
-            {item.type === 'Equipment' && (
-              <ItemSection title="Equip">
-                <div className="space-y-2">
-                  {wornBy.length > 0 ? (
-                    wornBy.map((w, i) => (
-                      <div key={`${w.charId}-${w.slot}-${i}`} className="flex items-center justify-between gap-2">
-                        <span className="font-body text-sm text-text">
-                          <span className="text-gold2">{w.name}</span>
-                          <span className="text-textdim"> · {EQUIP_SLOT_LABELS[w.slot as keyof Equipment] ?? w.slot}</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="font-ui text-[9px] text-textdim hover:text-text border border-line hover:border-line2 px-2 py-1 transition-colors shrink-0"
-                          onClick={() => unequipFrom(w.charId, w.slot)}
-                        >
-                          UNEQUIP
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="font-body text-[12px] text-textdim">Not equipped by anyone.</p>
-                  )}
-
-                  {stowedCount > 0 && (pickerOpen ? (
-                    <EquipPicker pc={pc} members={members} onPick={equipOnto} onCancel={() => setPickerOpen(false)} />
-                  ) : (
-                    <button
-                      type="button"
-                      className="w-full font-ui text-[10px] tracking-wider text-textsec border border-dashed border-line px-3 py-2 hover:border-line2 hover:text-text transition-colors"
-                      onClick={() => setPickerOpen(true)}
-                    >
-                      + EQUIP TO…
-                    </button>
-                  ))}
-                </div>
-              </ItemSection>
-            )}
-          </>
-        )}
-      </div>
-    )
-  }
-
-  // Edit mode
-  const d = draft.current
-  return (
-    <div className="space-y-6 p-6">
-      {/* Delete button */}
-      <div className="flex items-start justify-end">
-        <button
-          type="button"
-          className="font-ui text-[9px] text-textdim hover:text-text border border-line px-2 py-1 hover:border-line2 transition-colors shrink-0"
-          onClick={() => setShowDeleteConfirm(true)}
-        >
-          DELETE ITEM
-        </button>
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="bg-bg2 border border-line rounded-lg p-5 max-w-xs space-y-4">
-              <p className="font-body text-sm text-text">
-                Delete <strong>{item.name || 'this item'}</strong> from the catalog? This also removes it from inventory.
-              </p>
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  className="font-ui text-[9px] text-textdim border border-line px-3 py-1 hover:border-line2 hover:text-text transition-colors"
-                  onClick={() => setShowDeleteConfirm(false)}
-                >
-                  CANCEL
-                </button>
-                <button
-                  type="button"
-                  className="font-ui text-[9px] text-bg0 bg-gold hover:bg-gold2 px-3 py-1 transition-colors"
-                  onClick={async () => {
-                    await deleteItem(item.id)
-                    select(null)
-                  }}
-                >
-                  DELETE
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Name */}
-      <ItemSection title="Basic Info">
-        <div className="space-y-3">
-          <ItemField
-            label="Name"
-            value={d.name ?? ''}
-            onChange={(v) => update('name', v)}
-            onBlur={(v) => update('name', v, true)}
-          />
-
-          {/* Type select */}
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body block mb-0.5">Type</span>
-            <select
-              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-              defaultValue={d.type ?? 'Other'}
-              onChange={(e) => update('type', e.target.value, true)}
-            >
-              {ITEM_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Rarity select */}
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body block mb-0.5">Rarity</span>
-            <select
-              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-              defaultValue={d.rarity ?? 'c'}
-              onChange={(e) => update('rarity', e.target.value, true)}
-            >
-              {RARITY_OPTIONS.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Slot (only meaningful for Equipment) — a dropdown of body slots. */}
-          <label className="block">
-            <span className="text-[11px] text-textdim font-body block mb-0.5">Slot (equipment only)</span>
-            <select
-              className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-              value={d.slot ?? ''}
-              onChange={(e) => update('slot', e.target.value || null, true)}
-            >
-              <option value="">— None —</option>
-              {SLOT_OPTIONS.map((sl) => (
-                <option key={sl} value={sl}>{sl}</option>
-              ))}
-            </select>
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <ItemNumField
-              label="Max Stack"
-              value={d.maxStack ?? 1}
-              onChange={(v) => update('maxStack', v)}
-              onBlur={(v) => update('maxStack', v, true)}
-            />
-            <ItemNumField
-              label="Uses"
-              value={d.uses ?? 0}
-              onChange={(v) => update('uses', v || null)}
-              onBlur={(v) => update('uses', v || null, true)}
-            />
-          </div>
-        </div>
-      </ItemSection>
-
-      {/* Description */}
-      <ItemSection title="Description">
-        <ItemTextArea
-          label=""
-          value={d.desc ?? ''}
-          onChange={(v) => update('desc', v)}
-          onBlur={(v) => update('desc', v, true)}
-          placeholder="Item description..."
-        />
-      </ItemSection>
-
-      {/* Lorebook entry rules — items are lorebook entries, so they share the
-          same enabled / permanent / keyword-injection controls as other lore. */}
-      <ItemSection title="Lorebook">
-        <div className="space-y-3">
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked={d.enabled ?? true}
-              onChange={(e) => update('enabled', e.target.checked, true)}
-              className="accent-gold"
-            />
-            <span className="font-body text-sm text-text">Enabled</span>
-          </label>
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked={d.permanent ?? false}
-              onChange={(e) => update('permanent', e.target.checked, true)}
-              className="accent-gold"
-            />
-            <span className="font-body text-sm text-text">Permanent</span>
-            <span className="font-ui text-[9px] text-textdim tracking-wider">(always inject)</span>
-          </label>
-        </div>
-      </ItemSection>
-
-      {/* Keywords */}
-      <ItemSection title="Keywords">
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            {(d.keywords ?? []).map((kw, i) => (
-              <span
-                key={i}
-                className="font-ui text-[10px] text-gold border border-gold/30 bg-gold/5 px-2 py-0.5 tracking-wider flex items-center gap-1.5"
-              >
-                {kw}
-                <button
-                  type="button"
-                  className="text-textdim hover:text-text transition-colors text-[11px] leading-none"
-                  onClick={() => {
-                    const updated = (d.keywords ?? []).filter((_, idx) => idx !== i)
-                    update('keywords', updated, true)
-                  }}
-                  title="Remove keyword"
-                >
-                  &times;
-                </button>
-              </span>
-            ))}
-          </div>
-          <input
-            className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-            placeholder="Type keyword + Enter"
-            value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                const trimmed = newKeyword.trim()
-                if (!trimmed) return
-                const current = d.keywords ?? []
-                if (!current.includes(trimmed)) {
-                  update('keywords', [...current, trimmed], true)
-                }
-                setNewKeyword('')
-              }
-            }}
-          />
-        </div>
-      </ItemSection>
-    </div>
-  )
-}
-
-function ItemSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-/** Picker: choose a character (PC or any member, incl. benched) to equip onto. */
-function EquipPicker({ pc, members, onPick, onCancel }: {
-  pc: PlayerCharacter | null
-  members: PartyMember[]
-  onPick: (charId: string) => void
-  onCancel: () => void
-}) {
-  const chars = [
-    ...(pc ? [{ id: pc.id, name: pc.basicInfo?.name || 'You', benched: false }] : []),
-    ...members.map((m) => ({ id: m.id, name: m.basicInfo?.name || 'Unnamed', benched: !m.inParty })),
-  ]
-  return (
-    <div className="border border-line2 rounded-md bg-bg1 p-1.5 space-y-0.5">
-      <div className="flex items-center justify-between px-1 pb-0.5">
-        <span className="font-ui text-[8px] tracking-wider text-textdim uppercase">Equip to…</span>
-        <button type="button" className="font-ui text-[10px] text-textdim hover:text-text" onClick={onCancel} aria-label="Cancel">✕</button>
-      </div>
-      {chars.length === 0 ? (
-        <p className="font-body text-[11px] text-textdim px-1 py-1">No characters.</p>
-      ) : chars.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          className="w-full text-left font-body text-[13px] text-text px-2 py-1.5 rounded-sm hover:bg-bg3 transition-colors flex items-center gap-2"
-          onClick={() => onPick(c.id)}
-        >
-          <span className="truncate flex-1">{c.name}</span>
-          {c.benched && <span className="font-ui text-[8px] tracking-wider text-textdim uppercase shrink-0">benched</span>}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function ItemViewField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="py-0.5">
-      <span className="text-[11px] text-textdim font-body">{label}</span>
-      <span className="text-[11px] text-textdim font-body mx-1">&middot;</span>
-      <span className="text-sm font-body text-text">{value}</span>
-    </div>
-  )
-}
-
-function ItemField({ label, value, onChange, onBlur, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
-}) {
-  return (
-    <label className="block">
-      {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
-      <input
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-        defaultValue={value}
-        placeholder={placeholder}
-        onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  )
-}
-
-function ItemNumField({ label, value, onChange, onBlur }: {
-  label: string; value: number; onChange: (v: number) => void; onBlur?: (v: number) => void
-}) {
-  return (
-    <label className="block">
-      <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>
-      <input
-        type="number"
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-        defaultValue={value}
-        onBlur={(e) => (onBlur ?? onChange)(Number(e.target.value) || 0)}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
-      />
-    </label>
-  )
-}
-
-function ItemTextArea({ label, value, onChange, onBlur, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
-}) {
-  return (
-    <label className="block">
-      {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
-      <ExpandableTextarea
-        label={label || 'Edit'}
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[72px]"
-        rows={3}
-        value={value}
-        placeholder={placeholder}
-        onChange={onChange}
-        onBlur={onBlur ?? onChange}
-      />
-    </label>
   )
 }
 
@@ -1306,32 +726,6 @@ function LoreInspector({ entry, mode }: { entry: LorebookEntry; mode: 'view' | '
   )
 }
 
-function LoreSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="font-ui text-[10px] tracking-wider text-textsec uppercase mb-3">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function LoreField({ label, value, onChange, onBlur, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
-}) {
-  return (
-    <label className="block">
-      {label && <span className="text-[11px] text-textdim font-body block mb-0.5">{label}</span>}
-      <input
-        className="w-full border border-line bg-bg0 px-2.5 py-1.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors"
-        defaultValue={value}
-        placeholder={placeholder}
-        onBlur={(e) => (onBlur ?? onChange)(e.target.value)}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  )
-}
-
 function LoreTextArea({ value, onChange, onBlur, placeholder }: {
   value: string; onChange: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string
 }) {
@@ -1525,130 +919,6 @@ function ScenarioFieldInspector({ fieldKey, mode }: { fieldKey: string; mode: 'v
         </button>
       )}
       <span className="block text-[10px] text-textdim font-body">{note}</span>
-    </div>
-  )
-}
-
-// ── Block Content Inspector ─────────────────────────────────────
-// A character-sheet "prompt" block, opened full-screen from the block list
-// (BlockTreeEditor) via selectInto — the header's ◀ BACK breadcrumb returns
-// to the owning sheet.
-
-function BlockContentInspector({ owner, ownerType, block, mode }: {
-  owner: PlayerCharacter | PartyMember
-  ownerType: 'player' | 'member'
-  block: CharacterBlock
-  mode: 'view' | 'edit'
-}) {
-  const saveBlocksPC = usePartyStore((s) => s.savePlayerCharacterBlocks)
-  const saveBlocksMember = usePartyStore((s) => s.savePartyMemberBlocks)
-  const setEditDirty = useUiStore((s) => s.setEditDirty)
-
-  const draft = useRef<Pick<CharacterBlock, 'name' | 'content' | 'enabled'>>(
-    { name: block.name, content: block.content ?? '', enabled: block.enabled }
-  )
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  useEffect(() => {
-    draft.current = { name: block.name, content: block.content ?? '', enabled: block.enabled }
-  }, [block])
-
-  const flush = useCallback(() => {
-    clearTimeout(timer.current)
-    // Only text blocks have meaningful content — don't write a stray `content`
-    // field onto folder/equipment/image blocks that never had one.
-    const patch: Partial<CharacterBlock> = { name: draft.current.name, enabled: draft.current.enabled }
-    if (block.type === 'text') patch.content = draft.current.content
-    const nextBlocks = updateBlockInTree(owner.blocks, block.id, patch)
-    if (ownerType === 'player') void saveBlocksPC(nextBlocks, owner.basicInfo.name)
-    else void saveBlocksMember(owner.id, nextBlocks, owner.basicInfo.name)
-    setEditDirty(false)
-  }, [owner, ownerType, block.id, block.type, saveBlocksPC, saveBlocksMember, setEditDirty])
-
-  const scheduleFlush = useCallback(() => {
-    clearTimeout(timer.current)
-    timer.current = setTimeout(flush, 600)
-  }, [flush])
-
-  const update = (patch: Partial<Pick<CharacterBlock, 'name' | 'content' | 'enabled'>>, immediate?: boolean) => {
-    Object.assign(draft.current, patch)
-    setEditDirty(true)
-    immediate ? flush() : scheduleFlush()
-  }
-
-  const d = draft.current
-
-  const nonTextNote = block.type === 'folder'
-    ? 'A folder groups other blocks — expand it in the Character Sheet list to manage its contents.'
-    : `${block.file || 'Reference image'} — uploading new image blocks isn't supported yet.`
-
-  if (mode === 'view') {
-    return (
-      <div className="space-y-6 p-6">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`font-ui text-[9px] tracking-wider uppercase px-2 py-0.5 border border-line ${
-            block.enabled ? 'text-[#5a9e6f]' : 'text-textdim'
-          }`}>
-            {block.enabled ? 'ENABLED' : 'DISABLED'}
-          </span>
-        </div>
-        {block.type === 'text' ? (
-          <LoreSection title="Content">
-            {(block.content ?? '').trim() ? (
-              <p className="font-body text-sm text-text2 leading-relaxed whitespace-pre-wrap">{block.content}</p>
-            ) : (
-              <p className="text-[12px] text-textdim font-body">(empty)</p>
-            )}
-          </LoreSection>
-        ) : (
-          <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-6 p-6">
-      <LoreSection title="Basic Info">
-        <div className="space-y-3">
-          <LoreField
-            label="Name"
-            value={d.name}
-            onChange={(v) => update({ name: v })}
-            onBlur={(v) => update({ name: v }, true)}
-          />
-          {block.locked ? (
-            <div className="flex items-center gap-2">
-              <span className="font-ui text-[9px] text-gold2" title="Locked">&#128274;</span>
-              <span className="font-body text-sm text-textdim">Mandatory — always enabled, can't be removed or moved</span>
-            </div>
-          ) : (
-            <label className="flex items-center gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                defaultChecked={d.enabled}
-                onChange={(e) => update({ enabled: e.target.checked }, true)}
-                className="accent-gold"
-              />
-              <span className="font-body text-sm text-text">Enabled — included in the prompt</span>
-            </label>
-          )}
-        </div>
-      </LoreSection>
-
-      {block.type === 'text' ? (
-        <LoreSection title="Content">
-          <textarea
-            className="w-full border border-line bg-bg0 px-3 py-2.5 text-sm font-body text-text outline-none focus:border-line2 focus:bg-bg2 transition-colors resize-y min-h-[50vh]"
-            defaultValue={d.content}
-            placeholder="Content the Narrator reads for this block…"
-            onChange={(e) => update({ content: e.target.value })}
-            onBlur={(e) => update({ content: e.target.value }, true)}
-          />
-        </LoreSection>
-      ) : (
-        <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>
-      )}
     </div>
   )
 }

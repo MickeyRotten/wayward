@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { CharacterBlock, CharacterBlockType } from '@shared/types/models'
 import { SelectionBar, LockGlyph } from '../SelectionBar'
+import { ThreeDotMenu } from '../common/ThreeDotMenu'
 
 const TAG_OPEN_NAME = 'Open Tag'
 const TAG_CLOSE_NAME = 'Close Tag'
@@ -138,13 +139,14 @@ function appendToFolder(blocks: CharacterBlock[], folderId: string, block: Chara
  * never be dropped into another folder, since nesting is one level deep).
  * A `locked` block (Open Tag/Close Tag/Equipment) can't be dragged, renamed,
  * duplicated, deleted, or disabled — its content can still be edited
- * full-screen (text blocks only).
+ * (text blocks only).
  *
  * Nothing else on a row is directly editable except via the row's •••
  * menu (Rename/Duplicate/Remove) and the enabled toggle — clicking the row
- * itself opens it full-screen in the Inspector via `onOpenBlock`, where a
- * text block's content is edited. Clicking the Equipment row instead calls
- * `onOpenEquipment` — Equipment now lives in its own tab, not inline here.
+ * itself opens it via `onOpenBlock`, which drills into the block's content in
+ * place (the character's header stays visible; clicking a tab backs back out),
+ * where a text block's content is edited. Clicking the Equipment row instead
+ * calls `onOpenEquipment` — Equipment now lives in its own tab, not inline here.
  */
 export function BlockTreeEditor({
   blocks,
@@ -460,50 +462,6 @@ function RenameInput({ initial, onCommit, onCancel }: {
   )
 }
 
-function BlockMenu({ open, onToggle, onRename, onDuplicate, onDelete }: {
-  open: boolean
-  onToggle: () => void
-  onRename: () => void
-  onDuplicate: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div className="relative shrink-0 mt-1">
-      <button
-        type="button"
-        className="w-6 h-7 flex items-center justify-center text-textdim hover:text-text transition-colors"
-        onClick={(e) => { e.stopPropagation(); onToggle() }}
-        title="Block actions"
-      >
-        <span className="text-sm leading-none tracking-widest">&bull;&bull;&bull;</span>
-      </button>
-      {open && (
-        <div
-          className="absolute z-20 left-0 top-full mt-0.5 border border-line bg-bg1 shadow-lg w-32"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MenuItem label="Rename" onClick={onRename} />
-          <MenuItem label="Duplicate" onClick={onDuplicate} />
-          <MenuItem label="Remove" danger onClick={onDelete} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
-  return (
-    <button
-      type="button"
-      className={`block w-full text-left px-3 py-1.5 text-xs font-body transition-colors hover:bg-bg2 ${danger ? 'text-danger' : 'text-text'}`}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  )
-}
-
 function BlockRow({
   block,
   isOpen,
@@ -575,7 +533,15 @@ function BlockRow({
   return (
     <div className="flex items-start gap-1">
       {!locked && (
-        <BlockMenu open={menuOpen} onToggle={onToggleMenu} onRename={onRename} onDuplicate={onDuplicate} onDelete={onRequestDelete} />
+        <ThreeDotMenu
+          open={menuOpen}
+          onToggle={onToggleMenu}
+          items={[
+            { label: 'Rename', onClick: onRename },
+            { label: 'Duplicate', onClick: onDuplicate },
+            { label: 'Remove', danger: true, onClick: onRequestDelete },
+          ]}
+        />
       )}
       <div
         className={`flex-1 min-w-0 ${base}`}

@@ -152,6 +152,29 @@ def compose_blocks(
     return "\n".join(parts)
 
 
+def backfill_locked(blocks: list[dict]) -> bool:
+    """One-time migration helper (see characters.py SCHEMA_VERSION): marks
+    pre-existing Open Tag/Close Tag/equipment blocks `locked` if they predate
+    the field. Mutates `blocks` in place (root + one level into folders,
+    matching the rest of this module's depth convention); never overrides an
+    already-present `locked` key. Returns True if anything changed."""
+    changed = False
+
+    def walk(items: list[dict]) -> None:
+        nonlocal changed
+        for b in items or []:
+            if "locked" not in b and (
+                b.get("type") == "equipment" or b.get("name") in (TAG_OPEN_NAME, TAG_CLOSE_NAME)
+            ):
+                b["locked"] = True
+                changed = True
+            if b.get("type") == "folder":
+                walk(b.get("children") or [])
+
+    walk(blocks)
+    return changed
+
+
 def image_block_paths(blocks: list[dict]) -> list[str]:
     """Enabled image blocks' asset paths (folders honored), in order."""
     out: list[str] = []

@@ -34,7 +34,7 @@ from server.ai import character_blocks as blocks_ai
 from server.db import database as db
 from server.db import png_card
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4  # 4: backfills `locked` onto pre-existing Open/Close Tag + Equipment blocks
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
 _BASIC_KEYS = (
@@ -316,6 +316,17 @@ def read_character(cid: str) -> dict | None:
         wayward = fields.get("extensions", {}).get("wayward", {})
         name = wayward.get("name") or fields.get("name") or ""
         blist = wayward.get("blocks") or []
+        # One-time upgrade for characters written before a SCHEMA_VERSION
+        # bump — e.g. v3→v4 backfills `locked` onto pre-existing mandatory
+        # blocks (Open/Close Tag, Equipment) so cards seeded before that
+        # field existed (bundled starter cards like Varena included) pick up
+        # the same lock behavior as freshly-created ones.
+        if wayward.get("schemaVersion", 0) < SCHEMA_VERSION:
+            blocks_ai.backfill_locked(blist)
+            write_character(cid, name=name, char_type=wayward.get("type", "character"),
+                             blocks=blist, created_at=wayward.get("createdAt"))
+            p = path(cid)
+            mtime = p.stat().st_mtime
         data = {
             "id": cid,
             "type": wayward.get("type", "character"),

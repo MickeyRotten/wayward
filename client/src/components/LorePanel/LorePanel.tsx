@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useLoreStore } from '../../state/loreStore'
 import { useItemsStore } from '../../state/itemsStore'
 import { useUiStore } from '../../state/uiStore'
-import { SelectionBar } from '../SelectionBar'
+import { SelectionBar, LockGlyph } from '../SelectionBar'
 import { ItemCard } from '../ItemCard'
 import { CategoryIcon } from '../CategoryIcon'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -329,10 +329,6 @@ function SelectableRow({
       <div className={`flex-1 min-w-0 ${removable ? '' : 'opacity-40'}`}>{children}</div>
     </div>
   )
-}
-
-function LockGlyph() {
-  return <span className="font-ui text-[10px] text-gold2 shrink-0" title="Locked">&#128274;</span>
 }
 
 /* Lorebook card. Characters use a PC-style edge-to-edge initial avatar; other

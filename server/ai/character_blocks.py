@@ -4,14 +4,19 @@ list lives inside the card PNG's ``extensions.wayward`` (see
 server/db/characters.py). Same pattern as scenario.py/species.py: fields are
 the source of truth, composed into plain text for the prompt.
 
-Block shape: {id, type, name, enabled, content?, children?}
+Block shape: {id, type, name, enabled, locked?, content?, children?}
   - text      — content is prose, `{{name}}` resolves to the character's name.
-  - folder    — groups children; folder OFF disables every descendant too.
+  - folder    — groups children (one level deep only); folder OFF disables
+                every descendant too.
   - equipment — virtual: rendered from LIVE PartyBinding/catalog state, never
                 stored — see `render_equipment_block` in prompt_builder.py.
   - image     — content is unused; points at an embedded asset (see
                 characters.py `assets`). Composition here just skips it (the
                 caller pulls enabled image blocks separately for vision).
+
+`locked` (default False) marks a block as mandatory — editable, but the
+client won't let it be moved, deleted, or disabled (Open Tag/Close Tag/
+Equipment). Purely a UI-level convention; not enforced server-side.
 """
 
 import re
@@ -27,8 +32,8 @@ def _uid() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _block(type_: str, name: str, content: str = "", enabled: bool = True) -> dict:
-    b = {"id": _uid(), "type": type_, "name": name, "enabled": enabled}
+def _block(type_: str, name: str, content: str = "", enabled: bool = True, locked: bool = False) -> dict:
+    b = {"id": _uid(), "type": type_, "name": name, "enabled": enabled, "locked": locked}
     if type_ == "text":
         b["content"] = content
     elif type_ == "folder":
@@ -36,18 +41,23 @@ def _block(type_: str, name: str, content: str = "", enabled: bool = True) -> di
     return b
 
 
+def _mandatory_locked(type_: str, name: str, content: str = "") -> dict:
+    """Open Tag / Close Tag / Equipment are always seeded locked."""
+    return _block(type_, name, content, locked=True)
+
+
 def default_blocks(name: str = "") -> list[dict]:
     """Seed set for a brand-new character — open/close tags always present,
     a handful of starter text blocks, the equipment slot pre-placed."""
     return [
-        _block("text", TAG_OPEN_NAME, "<{{name}}>"),
+        _mandatory_locked("text", TAG_OPEN_NAME, "<{{name}}>"),
         _block("text", "Description", ""),
         _block("text", "Personality", ""),
         _block("text", "Instinct", ""),
         _block("text", "Strengths", ""),
-        _block("equipment", "Equipment"),
+        _mandatory_locked("equipment", "Equipment"),
         _block("text", "Other", ""),
-        _block("text", TAG_CLOSE_NAME, "</{{name}}>"),
+        _mandatory_locked("text", TAG_CLOSE_NAME, "</{{name}}>"),
     ]
 
 
@@ -63,13 +73,13 @@ _LEGACY_LABELS = (
 def blocks_from_legacy_basic_info(basic_info: dict) -> list[dict]:
     """Old flat {species, sex, apparentAge, description, ...} → a block per
     non-empty field, wrapped in the same open/close tags new characters get."""
-    out = [_block("text", TAG_OPEN_NAME, "<{{name}}>")]
+    out = [_mandatory_locked("text", TAG_OPEN_NAME, "<{{name}}>")]
     for key, label in _LEGACY_LABELS:
         val = str((basic_info or {}).get(key) or "").strip()
         if val:
             out.append(_block("text", label, val))
-    out.append(_block("equipment", "Equipment"))
-    out.append(_block("text", TAG_CLOSE_NAME, "</{{name}}>"))
+    out.append(_mandatory_locked("equipment", "Equipment"))
+    out.append(_mandatory_locked("text", TAG_CLOSE_NAME, "</{{name}}>"))
     return out
 
 
@@ -88,13 +98,13 @@ def blocks_from_sillytavern(card_data: dict) -> list[dict]:
     """Every non-empty standard V2/V3 field becomes its own block, between the
     open/close tags — per spec, `character_book` (an embedded lorebook) is
     NOT mapped here (would need real Lorebook entries — future work)."""
-    out = [_block("text", TAG_OPEN_NAME, "<{{name}}>")]
+    out = [_mandatory_locked("text", TAG_OPEN_NAME, "<{{name}}>")]
     for key, label in _ST_FIELD_LABELS:
         val = str(card_data.get(key) or "").strip()
         if val:
             out.append(_block("text", label, val))
-    out.append(_block("equipment", "Equipment"))
-    out.append(_block("text", TAG_CLOSE_NAME, "</{{name}}>"))
+    out.append(_mandatory_locked("equipment", "Equipment"))
+    out.append(_mandatory_locked("text", TAG_CLOSE_NAME, "</{{name}}>"))
     return out
 
 
@@ -107,16 +117,19 @@ def compose_blocks(
 ) -> str:
     """Flatten enabled blocks (folders recursed, disabled folders skip their
     whole subtree) into one text blob, `{{name}}` resolved. `equipment_text`
-    is pre-rendered by the caller (live game state — see prompt_builder.py)."""
+    is pre-rendered by the caller (live game state — see prompt_builder.py).
+    Labeled text blocks are prefixed with a markdown header — `##` at root,
+    `###` one level into a folder — so nesting is legible in the prompt too."""
     parts: list[str] = []
 
-    def walk(items: list[dict]) -> None:
+    def walk(items: list[dict], depth: int = 0) -> None:
+        heading = "#" * (2 + depth)
         for b in items or []:
             if not b.get("enabled", True):
                 continue
             btype = b.get("type")
             if btype == "folder":
-                walk(b.get("children") or [])
+                walk(b.get("children") or [], depth + 1)
             elif btype == "text":
                 content = (b.get("content") or "").strip()
                 if not content:
@@ -125,10 +138,10 @@ def compose_blocks(
                 label = (b.get("name") or "").strip()
                 # Description and the tag blocks read as bare prose (a tag's
                 # whole point IS to be an unlabeled delimiter); everything
-                # else gets its block name as a label, same as the old fixed
-                # PC/party sheet did ("Personality: ...", "Other: ...").
+                # else gets its block name as a heading, same info the old
+                # fixed PC/party sheet gave as "Personality: ...", "Other: ...".
                 if label and label not in ("Description", TAG_OPEN_NAME, TAG_CLOSE_NAME):
-                    content = f"{label}: {content}"
+                    content = f"{heading} {label}\n{content}"
                 parts.append(content)
             elif btype == "equipment":
                 if equipment_text:

@@ -130,7 +130,7 @@ def test_party_roster_includes_personality_and_other():
     msgs = build_prompt(narrator_config=_cfg(), player_character=_pc(), party_members=[pm],
                         chat_history=[], player_message="Hi", include_action_protocol=False)
     roster = next(m["content"] for m in msgs if "PARTY SHEETS" in m["content"])
-    assert "Personality: Wry" in roster and "Other: Collects teeth" in roster
+    assert "## Personality\nWry" in roster and "## Other\nCollects teeth" in roster
 
 
 def test_lore_scan_window_reaches_recent_history():

@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import type { CharacterBlock, CharacterBlockType } from '@shared/types/models'
+import type { CharacterBlock, CharacterBlockType, Equipment } from '@shared/types/models'
+import { SelectionBar, LockGlyph } from '../SelectionBar'
+import { EquipmentGrid } from './EquipmentGrid'
 
 const TAG_OPEN_NAME = 'Open Tag'
 const TAG_CLOSE_NAME = 'Close Tag'
@@ -69,37 +71,82 @@ export function updateBlockInTree(blocks: CharacterBlock[], id: string, patch: P
   })
 }
 
-// A drag position: which list it's in ('root', or the id of the containing
-// folder block) and its index within that list.
+// A drag/drop position: which list it's in ('root', or the id of the
+// containing folder block) and its index within that list.
 interface DragPos {
   scope: 'root' | string
   index: number
+}
+
+/** Removes the block at `pos` from the tree, returning it plus the tree
+ * without it (source list re-indexed). */
+function removeBlockAt(blocks: CharacterBlock[], pos: DragPos): { block: CharacterBlock; next: CharacterBlock[] } {
+  if (pos.scope === 'root') {
+    const block = blocks[pos.index]
+    return { block, next: blocks.filter((_, i) => i !== pos.index) }
+  }
+  const parentIndex = blocks.findIndex((b) => b.id === pos.scope)
+  const parent = blocks[parentIndex]
+  const children = parent.children ?? []
+  const block = children[pos.index]
+  const nextChildren = children.filter((_, i) => i !== pos.index)
+  return { block, next: blocks.map((b, i) => (i === parentIndex ? { ...b, children: nextChildren } : b)) }
+}
+
+/** Inserts `block` into the tree at `pos` (a list already NOT containing it —
+ * see removeBlockAt), before the item currently at that index. */
+function insertBlockAt(blocks: CharacterBlock[], pos: DragPos, block: CharacterBlock): CharacterBlock[] {
+  if (pos.scope === 'root') {
+    const next = blocks.slice()
+    next.splice(pos.index, 0, block)
+    return next
+  }
+  const parentIndex = blocks.findIndex((b) => b.id === pos.scope)
+  if (parentIndex === -1) return blocks
+  const parent = blocks[parentIndex]
+  const children = (parent.children ?? []).slice()
+  children.splice(pos.index, 0, block)
+  return blocks.map((b, i) => (i === parentIndex ? { ...b, children } : b))
+}
+
+function appendToFolder(blocks: CharacterBlock[], folderId: string, block: CharacterBlock): CharacterBlock[] {
+  return blocks.map((b) => (b.id === folderId ? { ...b, children: [...(b.children ?? []), block] } : b))
 }
 
 /**
  * The TavernAI-style toggleable/orderable block-tree editor: a flat list of
  * blocks, folders nesting one level deep (no roles/depth/merge-groups — see
  * CLAUDE.md's Character system rebuild section). Rows are reordered by
- * dragging (native HTML5 DnD, one drag context per list — root and each
- * folder's children reorder independently). Nothing on a row is directly
- * editable — clicking it opens the block full-screen in the Inspector via
- * `onOpenBlock`, where its name, enabled state, and (for text blocks)
- * content are all edited. `onChange`'s `immediate` flag mirrors the rest of
- * the sheet's fields: toggle/reorder/add/delete flush right away.
+ * dragging (native HTML5 DnD, no library). Dropping a row BETWEEN others
+ * reorders at that layer; dropping it ON TOP of a root Folder row nests it
+ * inside that folder (only folders accept nest-drops — a folder itself can
+ * never be dropped into another folder, since nesting is one level deep).
+ * A `locked` block (Open Tag/Close Tag/Equipment) can't be dragged, deleted,
+ * or disabled — its content can still be edited full-screen.
+ *
+ * Nothing else on a row is directly editable — clicking it opens the block
+ * full-screen in the Inspector via `onOpenBlock`, where its name, enabled
+ * state, and (for text/equipment blocks) content are all edited. `onChange`'s
+ * `immediate` flag mirrors the rest of the sheet's fields: toggle/reorder/
+ * add/delete flush right away.
  */
 export function BlockTreeEditor({
   blocks,
   onChange,
   onOpenBlock,
+  openBlockId,
 }: {
   blocks: CharacterBlock[]
   onChange: (blocks: CharacterBlock[], immediate?: boolean) => void
   onOpenBlock: (blockId: string) => void
+  openBlockId?: string
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [addMenuFor, setAddMenuFor] = useState<'root' | string | null>(null)
   const [dragPos, setDragPos] = useState<DragPos | null>(null)
+  const [draggingBlock, setDraggingBlock] = useState<CharacterBlock | null>(null)
   const [overPos, setOverPos] = useState<DragPos | null>(null)
+  const [overNestFolderId, setOverNestFolderId] = useState<string | null>(null)
 
   const updateRoot = (next: CharacterBlock[], immediate = true) => {
     onChange(next, immediate)
@@ -146,31 +193,82 @@ export function BlockTreeEditor({
     setAddMenuFor(null)
   }
 
-  const dragStart = (pos: DragPos) => setDragPos(pos)
-  const dragOverRow = (pos: DragPos, e: React.DragEvent) => {
-    e.preventDefault()
-    if (!dragPos || dragPos.scope !== pos.scope) return
-    if (overPos?.scope !== pos.scope || overPos.index !== pos.index) setOverPos(pos)
+  const clearDragState = () => {
+    setDragPos(null)
+    setDraggingBlock(null)
+    setOverPos(null)
+    setOverNestFolderId(null)
   }
-  const dropRow = (e: React.DragEvent) => {
+
+  const dragStart = (pos: DragPos, block: CharacterBlock) => {
+    if (block.locked) return
+    setDragPos(pos)
+    setDraggingBlock(block)
+  }
+
+  // Root rows: a Folder row splits into a nest-band (middle) vs reorder
+  // (edges); any other root row is a plain reorder target.
+  const rootDragOver = (block: CharacterBlock, index: number, e: React.DragEvent) => {
     e.preventDefault()
-    if (dragPos && overPos && dragPos.scope === overPos.scope) {
-      if (dragPos.scope === 'root') {
-        updateRoot(moveItemTo(blocks, dragPos.index, overPos.index))
-      } else {
-        const parentIndex = blocks.findIndex((b) => b.id === dragPos.scope)
-        if (parentIndex !== -1) {
-          const parent = blocks[parentIndex]
-          updateAt(parentIndex, { children: moveItemTo(parent.children ?? [], dragPos.index, overPos.index) })
-        }
+    if (!dragPos || !draggingBlock || block.id === draggingBlock.id) return
+    if (block.type === 'folder' && draggingBlock.type !== 'folder') {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const frac = (e.clientY - rect.top) / rect.height
+      if (frac > 0.25 && frac < 0.75) {
+        if (overNestFolderId !== block.id) setOverNestFolderId(block.id)
+        if (overPos) setOverPos(null)
+        return
       }
     }
-    setDragPos(null)
-    setOverPos(null)
+    if (overNestFolderId) setOverNestFolderId(null)
+    if (overPos?.scope !== 'root' || overPos.index !== index) setOverPos({ scope: 'root', index })
   }
-  const dragEnd = () => {
-    setDragPos(null)
-    setOverPos(null)
+
+  // A folder's children are always plain (non-folder) blocks, so child rows
+  // are always reorder targets — but a dragged Folder can never land inside
+  // one (folders nest one level deep, never within each other).
+  const childDragOver = (folderId: string, index: number, e: React.DragEvent) => {
+    e.preventDefault()
+    if (!dragPos || !draggingBlock || draggingBlock.type === 'folder') return
+    if (overNestFolderId) setOverNestFolderId(null)
+    if (overPos?.scope !== folderId || overPos.index !== index) setOverPos({ scope: folderId, index })
+  }
+
+  const moveBlockToPosition = (from: DragPos, to: DragPos) => {
+    if (from.scope === to.scope) {
+      if (to.scope === 'root') {
+        updateRoot(moveItemTo(blocks, from.index, to.index))
+      } else {
+        const parentIndex = blocks.findIndex((b) => b.id === to.scope)
+        if (parentIndex !== -1) {
+          const parent = blocks[parentIndex]
+          updateAt(parentIndex, { children: moveItemTo(parent.children ?? [], from.index, to.index) })
+        }
+      }
+      return
+    }
+    // Cross-scope move (e.g. root ↔ a folder's children, or folder ↔ folder).
+    const { block, next } = removeBlockAt(blocks, from)
+    if (block.locked || block.type === 'folder') return
+    updateRoot(insertBlockAt(next, to, block))
+  }
+
+  const moveBlockToFolder = (from: DragPos, folderId: string) => {
+    const { block, next } = removeBlockAt(blocks, from)
+    if (block.locked || block.type === 'folder') return
+    updateRoot(appendToFolder(next, folderId, block))
+  }
+
+  const dropRow = (e: React.DragEvent) => {
+    e.preventDefault()
+    if (dragPos) {
+      if (overNestFolderId) {
+        moveBlockToFolder(dragPos, overNestFolderId)
+      } else if (overPos) {
+        moveBlockToPosition(dragPos, overPos)
+      }
+    }
+    clearDragState()
   }
 
   return (
@@ -179,6 +277,7 @@ export function BlockTreeEditor({
         <BlockRow
           key={block.id}
           block={block}
+          isOpen={openBlockId === block.id}
           confirmingDelete={confirmDeleteId === block.id}
           onToggle={(enabled) => updateAt(i, { enabled })}
           onRequestDelete={() => setConfirmDeleteId(block.id)}
@@ -188,11 +287,12 @@ export function BlockTreeEditor({
           onToggleAddMenu={() => setAddMenuFor(addMenuFor === block.id ? null : block.id)}
           onAddChild={(type) => addChildBlock(i, type)}
           isDragging={dragPos?.scope === 'root' && dragPos.index === i}
-          isDragOver={overPos?.scope === 'root' && overPos.index === i && !(dragPos?.scope === 'root' && dragPos.index === i)}
-          onDragStart={() => dragStart({ scope: 'root', index: i })}
-          onDragOverRow={(e) => dragOverRow({ scope: 'root', index: i }, e)}
+          isDragOver={overPos?.scope === 'root' && overPos.index === i}
+          isNestTarget={overNestFolderId === block.id}
+          onDragStart={() => dragStart({ scope: 'root', index: i }, block)}
+          onDragOverRow={(e) => rootDragOver(block, i, e)}
           onDropRow={dropRow}
-          onDragEndRow={dragEnd}
+          onDragEndRow={clearDragState}
           onOpen={() => onOpenBlock(block.id)}
         >
           {block.type === 'folder' && (
@@ -201,17 +301,19 @@ export function BlockTreeEditor({
                 <BlockRow
                   key={child.id}
                   block={child}
+                  isOpen={openBlockId === child.id}
                   confirmingDelete={confirmDeleteId === child.id}
                   onToggle={(enabled) => updateChild(i, ci, { enabled })}
                   onRequestDelete={() => setConfirmDeleteId(child.id)}
                   onConfirmDelete={() => deleteChild(i, ci)}
                   onCancelDelete={() => setConfirmDeleteId(null)}
                   isDragging={dragPos?.scope === block.id && dragPos.index === ci}
-                  isDragOver={overPos?.scope === block.id && overPos.index === ci && !(dragPos?.scope === block.id && dragPos.index === ci)}
-                  onDragStart={() => dragStart({ scope: block.id, index: ci })}
-                  onDragOverRow={(e) => dragOverRow({ scope: block.id, index: ci }, e)}
+                  isDragOver={overPos?.scope === block.id && overPos.index === ci}
+                  isNestTarget={false}
+                  onDragStart={() => dragStart({ scope: block.id, index: ci }, child)}
+                  onDragOverRow={(e) => childDragOver(block.id, ci, e)}
                   onDropRow={dropRow}
-                  onDragEndRow={dragEnd}
+                  onDragEndRow={clearDragState}
                   onOpen={() => onOpenBlock(child.id)}
                 />
               ))}
@@ -258,6 +360,7 @@ function AddMenuOption({ label, onClick }: { label: string; onClick: () => void 
 
 function BlockRow({
   block,
+  isOpen,
   confirmingDelete,
   onToggle,
   onRequestDelete,
@@ -268,6 +371,7 @@ function BlockRow({
   onAddChild,
   isDragging,
   isDragOver,
+  isNestTarget,
   onDragStart,
   onDragOverRow,
   onDropRow,
@@ -276,6 +380,7 @@ function BlockRow({
   children,
 }: {
   block: CharacterBlock
+  isOpen: boolean
   confirmingDelete: boolean
   onToggle: (enabled: boolean) => void
   onRequestDelete: () => void
@@ -286,6 +391,7 @@ function BlockRow({
   onAddChild?: (type: 'text' | 'equipment') => void
   isDragging: boolean
   isDragOver: boolean
+  isNestTarget: boolean
   onDragStart: () => void
   onDragOverRow: (e: React.DragEvent) => void
   onDropRow: (e: React.DragEvent) => void
@@ -294,37 +400,57 @@ function BlockRow({
   children?: React.ReactNode
 }) {
   const [expanded, setExpanded] = useState(true)
+  const locked = !!block.locked
+
+  const base = `group relative border rounded-md overflow-hidden transition-colors cursor-pointer ${
+    isOpen ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
+  } ${locked ? 'border-gold/30 bg-gold/5' : ''} ${!block.enabled ? 'opacity-60' : ''} ${
+    isDragging ? 'opacity-30' : ''
+  } ${isDragOver ? 'ring-1 ring-inset ring-gold' : ''} ${isNestTarget ? 'ring-2 ring-inset ring-gold bg-gold/10' : ''}`
 
   return (
     <div
-      className={`border bg-bg0/60 cursor-pointer hover:bg-bg1/40 transition-colors ${!block.enabled ? 'opacity-50' : ''} ${
-        isDragging ? 'opacity-30' : ''
-      } ${isDragOver ? 'border-gold' : 'border-line'}`}
-      onDragOver={onDragOverRow}
-      onDrop={onDropRow}
+      className={base}
       onClick={onOpen}
       title="Click to open"
     >
-      <div className="flex items-center gap-1.5 px-2 py-1.5">
+      <SelectionBar show={isOpen} />
+      <div
+        className="flex items-center gap-1.5 pl-3 pr-2 py-1.5"
+        // Drag/drop lives on the header strip specifically, not the whole
+        // card — an expanded folder's body (children, "+ ADD INSIDE") is
+        // much taller than its header, and the nest-vs-reorder Y-band in
+        // rootDragOver() needs the header's own height to mean anything.
+        // stopPropagation keeps a nested child row's drag events from
+        // bubbling up into its parent Folder row's handlers.
+        onDragOver={(e) => { e.stopPropagation(); onDragOverRow(e) }}
+        onDrop={(e) => { e.stopPropagation(); onDropRow(e) }}
+      >
         <span
-          draggable
+          draggable={!locked}
           onDragStart={(e) => { e.stopPropagation(); onDragStart() }}
           onDragEnd={(e) => { e.stopPropagation(); onDragEndRow() }}
           onClick={(e) => e.stopPropagation()}
-          className="shrink-0 text-textdim hover:text-text cursor-grab active:cursor-grabbing px-0.5"
-          title="Drag to reorder"
+          className={`shrink-0 px-0.5 ${
+            locked ? 'text-textdim/40 cursor-not-allowed' : 'text-textdim hover:text-text cursor-grab active:cursor-grabbing'
+          }`}
+          title={locked ? 'Locked — cannot be moved' : 'Drag to reorder'}
         >
           {GRIP_ICON}
         </span>
 
-        <input
-          type="checkbox"
-          checked={block.enabled}
-          onChange={(e) => onToggle(e.target.checked)}
-          onClick={(e) => e.stopPropagation()}
-          className="shrink-0 accent-gold"
-          title={block.enabled ? 'Enabled — included in the prompt' : 'Disabled — skipped'}
-        />
+        {locked ? (
+          <LockGlyph />
+        ) : (
+          <input
+            type="checkbox"
+            checked={block.enabled}
+            onChange={(e) => onToggle(e.target.checked)}
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 accent-gold"
+            title={block.enabled ? 'Enabled — included in the prompt' : 'Disabled — skipped'}
+          />
+        )}
 
         {block.type === 'folder' && (
           <button
@@ -345,45 +471,47 @@ function BlockRow({
           {TYPE_LABELS[block.type]}
         </span>
 
-        {confirmingDelete ? (
-          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {!locked && (
+          confirmingDelete ? (
+            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="font-ui text-[9px] text-danger border border-danger-border px-1.5 py-0.5 hover:bg-danger-bg"
+                onClick={onConfirmDelete}
+              >
+                REMOVE
+              </button>
+              <button
+                type="button"
+                className="font-ui text-[9px] text-textdim border border-line px-1.5 py-0.5 hover:border-line2"
+                onClick={onCancelDelete}
+              >
+                CANCEL
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
-              className="font-ui text-[9px] text-danger border border-danger-border px-1.5 py-0.5 hover:bg-danger-bg"
-              onClick={onConfirmDelete}
+              className="shrink-0 text-textdim hover:text-danger text-base font-ui leading-none px-1"
+              title="Remove block"
+              onClick={(e) => { e.stopPropagation(); onRequestDelete() }}
             >
-              REMOVE
+              &times;
             </button>
-            <button
-              type="button"
-              className="font-ui text-[9px] text-textdim border border-line px-1.5 py-0.5 hover:border-line2"
-              onClick={onCancelDelete}
-            >
-              CANCEL
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="shrink-0 text-textdim hover:text-danger text-base font-ui leading-none px-1"
-            title="Remove block"
-            onClick={(e) => { e.stopPropagation(); onRequestDelete() }}
-          >
-            &times;
-          </button>
+          )
         )}
       </div>
 
       {block.type === 'equipment' && (
-        <div className="px-2 pb-2">
+        <div className="px-3 pb-2">
           <p className="text-[11px] text-textdim italic font-body">
-            Rendered live from equipped gear — see the Equipment section below.
+            Rendered live from equipped gear — open to manage what's worn.
           </p>
         </div>
       )}
 
       {block.type === 'image' && (
-        <div className="px-2 pb-2">
+        <div className="px-3 pb-2">
           <p className="text-[11px] text-textdim italic font-body">
             {block.file || 'Reference image'} — uploading new image blocks isn't supported yet.
           </p>
@@ -391,7 +519,7 @@ function BlockRow({
       )}
 
       {block.type === 'folder' && expanded && (
-        <div className="px-2 pb-2" onClick={(e) => e.stopPropagation()}>
+        <div className="px-3 pb-2" onClick={(e) => e.stopPropagation()}>
           {children}
           {onAddChild && (
             <div className="relative mt-1 ml-5">
@@ -416,10 +544,17 @@ function BlockRow({
   )
 }
 
-/** Read-only rendering for Play mode — enabled blocks only, folders recursed,
- * tags/equipment/image skipped (Equipment already has its own sheet section). */
-export function BlockTreeView({ blocks }: { blocks: CharacterBlock[] }) {
-  const rows: { label: string; content: string }[] = []
+/** Read-only rendering for Play mode — enabled blocks only, folders recursed
+ * (flattened, not visually nested), tags skipped. The Equipment block is the
+ * one thing that stays interactive here (equipment is a play action, not
+ * world-editing) — it renders the real slot grid in place. */
+export function BlockTreeView({ blocks, equipment, onEquipChange }: {
+  blocks: CharacterBlock[]
+  equipment: Equipment
+  onEquipChange: (slotKey: keyof Equipment, instanceId: string | null) => void
+}) {
+  type Row = { kind: 'text'; label: string; content: string } | { kind: 'equipment' }
+  const rows: Row[] = []
   const walk = (items: CharacterBlock[]) => {
     for (const b of items) {
       if (!b.enabled) continue
@@ -428,7 +563,9 @@ export function BlockTreeView({ blocks }: { blocks: CharacterBlock[] }) {
       } else if (b.type === 'text') {
         const content = (b.content ?? '').trim()
         if (!content || b.name === TAG_OPEN_NAME || b.name === TAG_CLOSE_NAME) continue
-        rows.push({ label: b.name, content })
+        rows.push({ kind: 'text', label: b.name, content })
+      } else if (b.type === 'equipment') {
+        rows.push({ kind: 'equipment' })
       }
     }
   }
@@ -440,8 +577,16 @@ export function BlockTreeView({ blocks }: { blocks: CharacterBlock[] }) {
 
   return (
     <div className="space-y-3">
-      {rows.map((r, i) =>
-        r.label === 'Description' ? (
+      {rows.map((r, i) => {
+        if (r.kind === 'equipment') {
+          return (
+            <div key={i}>
+              <span className="text-[11px] text-textdim font-body block mb-1.5">Equipment</span>
+              <EquipmentGrid equipment={equipment} onChange={onEquipChange} />
+            </div>
+          )
+        }
+        return r.label === 'Description' ? (
           <p key={i} className="font-body text-sm text-text2 leading-relaxed">{r.content}</p>
         ) : (
           <div key={i}>
@@ -449,7 +594,7 @@ export function BlockTreeView({ blocks }: { blocks: CharacterBlock[] }) {
             <p className="font-body text-sm text-text2 leading-relaxed">{r.content}</p>
           </div>
         )
-      )}
+      })}
     </div>
   )
 }

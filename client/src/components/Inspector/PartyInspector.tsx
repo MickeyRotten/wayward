@@ -9,6 +9,7 @@ import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { findBlock, updateBlockInTree } from '../CharacterSheet/BlockTreeEditor'
+import { EquipmentGrid } from '../CharacterSheet/EquipmentGrid'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
@@ -1540,6 +1541,8 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
 }) {
   const saveBlocksPC = usePartyStore((s) => s.savePlayerCharacterBlocks)
   const saveBlocksMember = usePartyStore((s) => s.savePartyMemberBlocks)
+  const saveEquipmentPC = usePartyStore((s) => s.savePlayerCharacterEquipment)
+  const saveEquipmentMember = usePartyStore((s) => s.savePartyMemberEquipment)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
 
   const draft = useRef<Pick<CharacterBlock, 'name' | 'content' | 'enabled'>>(
@@ -1574,13 +1577,17 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
     immediate ? flush() : scheduleFlush()
   }
 
+  const handleEquipChange = (slotKey: keyof Equipment, instanceId: string | null) => {
+    const nextEquipment = { ...owner.equipment, [slotKey]: instanceId }
+    if (ownerType === 'player') void saveEquipmentPC(nextEquipment)
+    else void saveEquipmentMember(owner.id, nextEquipment)
+  }
+
   const d = draft.current
 
   const nonTextNote = block.type === 'folder'
     ? 'A folder groups other blocks — expand it in the Character Sheet list to manage its contents.'
-    : block.type === 'equipment'
-      ? 'Rendered live from equipped gear — see the Equipment section below.'
-      : `${block.file || 'Reference image'} — uploading new image blocks isn't supported yet.`
+    : `${block.file || 'Reference image'} — uploading new image blocks isn't supported yet.`
 
   if (mode === 'view') {
     return (
@@ -1600,6 +1607,10 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
               <p className="text-[12px] text-textdim font-body">(empty)</p>
             )}
           </LoreSection>
+        ) : block.type === 'equipment' ? (
+          <LoreSection title="Equipment">
+            <EquipmentGrid equipment={owner.equipment} onChange={handleEquipChange} />
+          </LoreSection>
         ) : (
           <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>
         )}
@@ -1617,15 +1628,22 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
             onChange={(v) => update({ name: v })}
             onBlur={(v) => update({ name: v }, true)}
           />
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked={d.enabled}
-              onChange={(e) => update({ enabled: e.target.checked }, true)}
-              className="accent-gold"
-            />
-            <span className="font-body text-sm text-text">Enabled — included in the prompt</span>
-          </label>
+          {block.locked ? (
+            <div className="flex items-center gap-2">
+              <span className="font-ui text-[9px] text-gold2" title="Locked">&#128274;</span>
+              <span className="font-body text-sm text-textdim">Mandatory — always enabled, can't be removed or moved</span>
+            </div>
+          ) : (
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                defaultChecked={d.enabled}
+                onChange={(e) => update({ enabled: e.target.checked }, true)}
+                className="accent-gold"
+              />
+              <span className="font-body text-sm text-text">Enabled — included in the prompt</span>
+            </label>
+          )}
         </div>
       </LoreSection>
 
@@ -1638,6 +1656,10 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
             onChange={(e) => update({ content: e.target.value })}
             onBlur={(e) => update({ content: e.target.value }, true)}
           />
+        </LoreSection>
+      ) : block.type === 'equipment' ? (
+        <LoreSection title="Equipment">
+          <EquipmentGrid equipment={owner.equipment} onChange={handleEquipChange} />
         </LoreSection>
       ) : (
         <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>

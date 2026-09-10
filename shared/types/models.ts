@@ -78,6 +78,9 @@ export interface CharacterBlock {
   type: CharacterBlockType
   name: string
   enabled: boolean
+  /** Mandatory block (Open Tag/Close Tag/Equipment) — editable, but the UI
+   *  won't let it be moved, deleted, or disabled. */
+  locked?: boolean
   /** text blocks only — `{{name}}` resolves to the character's own name. */
   content?: string
   /** folder blocks only. */

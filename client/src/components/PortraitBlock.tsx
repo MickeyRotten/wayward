@@ -13,17 +13,61 @@ export function PortraitBlock({
   fullUrl,
   cropUrl,
   onUpdated,
+  compact,
 }: {
   characterId: string
   fullUrl?: string | null
   cropUrl?: string | null
   onUpdated?: () => void
+  /** Small clickable thumbnail (for the sheet header) instead of the big
+   * 3:4 display + separate "EDIT PORTRAIT" button. */
+  compact?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [version, setVersion] = useState(0)  // cache-buster after a save
 
   const display = fullUrl || cropUrl
   const bust = (u: string) => `${u}${u.includes('?') ? '&' : '?'}v=${version}`
+
+  const editor = open && (
+    <PortraitEditor
+      initialSrc={fullUrl ? bust(fullUrl) : (cropUrl ? bust(cropUrl) : undefined)}
+      onSave={async (crop, full) => {
+        const ok = await uploadCharacterPortrait(characterId, crop, full)
+        if (ok) {
+          setVersion((v) => v + 1)
+          onUpdated?.()
+        }
+        setOpen(false)
+      }}
+      onCancel={() => setOpen(false)}
+    />
+  )
+
+  if (compact) {
+    // Taller-than-wide rectangle that stretches to fill whatever height its
+    // sibling (name + buttons) column ends up being — min-h keeps it a tall
+    // rectangle even when that column is short.
+    return (
+      <>
+        <button
+          type="button"
+          className="w-24 min-h-32 self-stretch shrink-0 rounded-md border border-line bg-bg2 overflow-hidden hover:border-line2 transition-colors"
+          onClick={() => setOpen(true)}
+          title={display ? 'Change portrait' : 'Add portrait'}
+        >
+          {display ? (
+            <img src={bust(display)} alt="Portrait" className="w-full h-full object-cover" />
+          ) : (
+            <div className="flex items-center justify-center h-full font-ui text-[8px] text-textdim tracking-wider">
+              ADD
+            </div>
+          )}
+        </button>
+        {editor}
+      </>
+    )
+  }
 
   return (
     <div>
@@ -43,20 +87,7 @@ export function PortraitBlock({
       >
         {display ? 'EDIT PORTRAIT' : 'ADD PORTRAIT'}
       </button>
-      {open && (
-        <PortraitEditor
-          initialSrc={fullUrl ? bust(fullUrl) : (cropUrl ? bust(cropUrl) : undefined)}
-          onSave={async (crop, full) => {
-            const ok = await uploadCharacterPortrait(characterId, crop, full)
-            if (ok) {
-              setVersion((v) => v + 1)
-              onUpdated?.()
-            }
-            setOpen(false)
-          }}
-          onCancel={() => setOpen(false)}
-        />
-      )}
+      {editor}
     </div>
   )
 }

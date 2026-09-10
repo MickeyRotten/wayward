@@ -1,7 +1,6 @@
-import { useState } from 'react'
-import type { CharacterBlock, CharacterBlockType, Equipment } from '@shared/types/models'
+import { useRef, useState } from 'react'
+import type { CharacterBlock, CharacterBlockType } from '@shared/types/models'
 import { SelectionBar, LockGlyph } from '../SelectionBar'
-import { EquipmentGrid } from './EquipmentGrid'
 
 const TAG_OPEN_NAME = 'Open Tag'
 const TAG_CLOSE_NAME = 'Close Tag'
@@ -28,11 +27,27 @@ function newId(): string {
   return (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).replace(/-/g, '').slice(0, 12)
 }
 
-function newBlock(type: 'text' | 'folder' | 'equipment', name: string): CharacterBlock {
+function newBlock(type: 'text' | 'folder', name: string): CharacterBlock {
   const base = { id: newId(), name, enabled: true }
   if (type === 'text') return { ...base, type, content: '' }
-  if (type === 'folder') return { ...base, type, children: [] }
-  return { ...base, type: 'equipment' }
+  return { ...base, type, children: [] }
+}
+
+/** Deep-clones a block for "Duplicate" — a fresh id (and fresh ids for a
+ * folder's children, one level deep), name suffixed " (Copy)". */
+function cloneBlock(block: CharacterBlock): CharacterBlock {
+  const clone: CharacterBlock = { ...block, id: newId(), name: `${block.name} (Copy)` }
+  if (block.type === 'folder') clone.children = (block.children ?? []).map((c) => ({ ...c, id: newId() }))
+  return clone
+}
+
+/** Char/4 heuristic — mirrors the server's estimate_prompt_tokens
+ * (prompt_builder.py). Text blocks count their own content; a folder sums
+ * its children. Equipment/Image have no static content to estimate. */
+function estimateBlockTokens(block: CharacterBlock): number {
+  if (block.type === 'text') return Math.ceil((block.content ?? '').length / 4)
+  if (block.type === 'folder') return (block.children ?? []).reduce((sum, c) => sum + estimateBlockTokens(c), 0)
+  return 0
 }
 
 /** Reorders `list` by moving the item at `from` to just before the item
@@ -121,14 +136,15 @@ function appendToFolder(blocks: CharacterBlock[], folderId: string, block: Chara
  * reorders at that layer; dropping it ON TOP of a root Folder row nests it
  * inside that folder (only folders accept nest-drops — a folder itself can
  * never be dropped into another folder, since nesting is one level deep).
- * A `locked` block (Open Tag/Close Tag/Equipment) can't be dragged, deleted,
- * or disabled — its content can still be edited full-screen.
+ * A `locked` block (Open Tag/Close Tag/Equipment) can't be dragged, renamed,
+ * duplicated, deleted, or disabled — its content can still be edited
+ * full-screen (text blocks only).
  *
- * Nothing else on a row is directly editable — clicking it opens the block
- * full-screen in the Inspector via `onOpenBlock`, where its name, enabled
- * state, and (for text/equipment blocks) content are all edited. `onChange`'s
- * `immediate` flag mirrors the rest of the sheet's fields: toggle/reorder/
- * add/delete flush right away.
+ * Nothing else on a row is directly editable except via the row's •••
+ * menu (Rename/Duplicate/Remove) and the enabled toggle — clicking the row
+ * itself opens it full-screen in the Inspector via `onOpenBlock`, where a
+ * text block's content is edited. Clicking the Equipment row instead calls
+ * `onOpenEquipment` — Equipment now lives in its own tab, not inline here.
  */
 export function BlockTreeEditor({
   blocks,
@@ -142,7 +158,8 @@ export function BlockTreeEditor({
   openBlockId?: string
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [addMenuFor, setAddMenuFor] = useState<'root' | string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
   const [dragPos, setDragPos] = useState<DragPos | null>(null)
   const [draggingBlock, setDraggingBlock] = useState<CharacterBlock | null>(null)
   const [overPos, setOverPos] = useState<DragPos | null>(null)
@@ -176,21 +193,48 @@ export function BlockTreeEditor({
     setConfirmDeleteId(null)
   }
 
-  const addRootBlock = (type: 'text' | 'folder' | 'equipment') => {
-    const block = newBlock(type, type === 'folder' ? 'New Folder' : type === 'equipment' ? 'Equipment' : 'New Block')
+  const renameRoot = (index: number, name: string) => {
+    const trimmed = name.trim()
+    if (trimmed) updateAt(index, { name: trimmed })
+    setRenamingId(null)
+  }
+
+  const renameChild = (parentIndex: number, childIndex: number, name: string) => {
+    const trimmed = name.trim()
+    if (trimmed) updateChild(parentIndex, childIndex, { name: trimmed })
+    setRenamingId(null)
+  }
+
+  const duplicateRoot = (index: number) => {
+    const copy = cloneBlock(blocks[index])
+    const next = blocks.slice()
+    next.splice(index + 1, 0, copy)
+    updateRoot(next)
+    setMenuOpenId(null)
+  }
+
+  const duplicateChild = (parentIndex: number, childIndex: number) => {
+    const parent = blocks[parentIndex]
+    const children = (parent.children ?? []).slice()
+    const copy = cloneBlock(children[childIndex])
+    children.splice(childIndex + 1, 0, copy)
+    updateAt(parentIndex, { children })
+    setMenuOpenId(null)
+  }
+
+  const addRootBlock = (type: 'text' | 'folder') => {
+    const block = newBlock(type, type === 'folder' ? 'New Folder' : 'New Block')
     // Insert before a trailing Close Tag (if any) so new content stays wrapped
     // by the tags, same convention the server's upsert_legacy_field uses.
     const closeIndex = blocks.findIndex((b) => b.name === TAG_CLOSE_NAME)
     const next = closeIndex === -1 ? [...blocks, block] : [...blocks.slice(0, closeIndex), block, ...blocks.slice(closeIndex)]
     updateRoot(next)
-    setAddMenuFor(null)
   }
 
-  const addChildBlock = (parentIndex: number, type: 'text' | 'equipment') => {
+  const addChildBlock = (parentIndex: number) => {
     const parent = blocks[parentIndex]
-    const children = [...(parent.children ?? []), newBlock(type, type === 'equipment' ? 'Equipment' : 'New Block')]
+    const children = [...(parent.children ?? []), newBlock('text', 'New Block')]
     updateAt(parentIndex, { children })
-    setAddMenuFor(null)
   }
 
   const clearDragState = () => {
@@ -200,8 +244,12 @@ export function BlockTreeEditor({
     setOverNestFolderId(null)
   }
 
+  // Locked normally means "can't move, delete, or disable" (Open/Close Tag
+  // are fixed delimiters), but Equipment — locked for the same
+  // can't-delete/can't-disable reasons — is still just a block among
+  // others, so it stays reorderable.
   const dragStart = (pos: DragPos, block: CharacterBlock) => {
-    if (block.locked) return
+    if (block.locked && block.type !== 'equipment') return
     setDragPos(pos)
     setDraggingBlock(block)
   }
@@ -271,6 +319,13 @@ export function BlockTreeEditor({
     clearDragState()
   }
 
+  // Equipment isn't opened from here — it's managed in its own tab, and
+  // jumping tabs on a click read as disorienting. Only text/folder blocks
+  // open the full-screen content editor.
+  const openRow = (block: CharacterBlock) => {
+    if (block.type !== 'equipment') onOpenBlock(block.id)
+  }
+
   return (
     <div className="space-y-1.5">
       {blocks.map((block, i) => (
@@ -280,12 +335,18 @@ export function BlockTreeEditor({
           isOpen={openBlockId === block.id}
           confirmingDelete={confirmDeleteId === block.id}
           onToggle={(enabled) => updateAt(i, { enabled })}
-          onRequestDelete={() => setConfirmDeleteId(block.id)}
+          onRequestDelete={() => { setConfirmDeleteId(block.id); setMenuOpenId(null) }}
           onConfirmDelete={() => deleteRoot(i)}
           onCancelDelete={() => setConfirmDeleteId(null)}
-          addMenuOpen={addMenuFor === block.id}
-          onToggleAddMenu={() => setAddMenuFor(addMenuFor === block.id ? null : block.id)}
-          onAddChild={(type) => addChildBlock(i, type)}
+          menuOpen={menuOpenId === block.id}
+          onToggleMenu={() => setMenuOpenId(menuOpenId === block.id ? null : block.id)}
+          onRename={() => { setRenamingId(block.id); setMenuOpenId(null) }}
+          onDuplicate={() => duplicateRoot(i)}
+          renaming={renamingId === block.id}
+          onCommitRename={(name) => renameRoot(i, name)}
+          onCancelRename={() => setRenamingId(null)}
+          addChildEnabled
+          onAddChild={() => addChildBlock(i)}
           isDragging={dragPos?.scope === 'root' && dragPos.index === i}
           isDragOver={overPos?.scope === 'root' && overPos.index === i}
           isNestTarget={overNestFolderId === block.id}
@@ -293,7 +354,7 @@ export function BlockTreeEditor({
           onDragOverRow={(e) => rootDragOver(block, i, e)}
           onDropRow={dropRow}
           onDragEndRow={clearDragState}
-          onOpen={() => onOpenBlock(block.id)}
+          onOpen={() => openRow(block)}
         >
           {block.type === 'folder' && (
             <div className="ml-5 mt-1.5 space-y-1.5 border-l border-line pl-3">
@@ -304,9 +365,16 @@ export function BlockTreeEditor({
                   isOpen={openBlockId === child.id}
                   confirmingDelete={confirmDeleteId === child.id}
                   onToggle={(enabled) => updateChild(i, ci, { enabled })}
-                  onRequestDelete={() => setConfirmDeleteId(child.id)}
+                  onRequestDelete={() => { setConfirmDeleteId(child.id); setMenuOpenId(null) }}
                   onConfirmDelete={() => deleteChild(i, ci)}
                   onCancelDelete={() => setConfirmDeleteId(null)}
+                  menuOpen={menuOpenId === child.id}
+                  onToggleMenu={() => setMenuOpenId(menuOpenId === child.id ? null : child.id)}
+                  onRename={() => { setRenamingId(child.id); setMenuOpenId(null) }}
+                  onDuplicate={() => duplicateChild(i, ci)}
+                  renaming={renamingId === child.id}
+                  onCommitRename={(name) => renameChild(i, ci, name)}
+                  onCancelRename={() => setRenamingId(null)}
                   isDragging={dragPos?.scope === block.id && dragPos.index === ci}
                   isDragOver={overPos?.scope === block.id && overPos.index === ci}
                   isNestTarget={false}
@@ -314,7 +382,7 @@ export function BlockTreeEditor({
                   onDragOverRow={(e) => childDragOver(block.id, ci, e)}
                   onDropRow={dropRow}
                   onDragEndRow={clearDragState}
-                  onOpen={() => onOpenBlock(child.id)}
+                  onOpen={() => openRow(child)}
                 />
               ))}
               {(block.children ?? []).length === 0 && (
@@ -325,31 +393,109 @@ export function BlockTreeEditor({
         </BlockRow>
       ))}
 
-      <div className="relative pt-1">
+      <div className="flex gap-2 pt-1">
         <button
           type="button"
           className="font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
-          onClick={() => setAddMenuFor(addMenuFor === 'root' ? null : 'root')}
+          onClick={() => addRootBlock('text')}
         >
-          + ADD BLOCK
+          + CREATE BLOCK
         </button>
-        {addMenuFor === 'root' && (
-          <div className="absolute z-20 left-0 mt-0.5 border border-line bg-bg1 shadow-lg">
-            <AddMenuOption label="Text" onClick={() => addRootBlock('text')} />
-            <AddMenuOption label="Folder" onClick={() => addRootBlock('folder')} />
-            <AddMenuOption label="Equipment" onClick={() => addRootBlock('equipment')} />
-          </div>
-        )}
+        <button
+          type="button"
+          className="font-ui text-[10px] text-textsec border border-dashed border-line px-3 py-1.5 hover:border-line2 hover:text-text transition-colors"
+          onClick={() => addRootBlock('folder')}
+        >
+          + CREATE FOLDER
+        </button>
       </div>
     </div>
   )
 }
 
-function AddMenuOption({ label, onClick }: { label: string; onClick: () => void }) {
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
   return (
     <button
       type="button"
-      className="block w-full text-left px-3 py-1.5 text-xs font-body text-text hover:bg-bg2 transition-colors"
+      role="switch"
+      aria-checked={checked}
+      onClick={(e) => { e.stopPropagation(); onChange(!checked) }}
+      className={`shrink-0 relative w-7 h-4 rounded-full transition-colors ${checked ? 'bg-gold' : 'bg-bg3 border border-line'}`}
+      title={checked ? 'Enabled — included in the prompt' : 'Disabled — skipped'}
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-bg0 transition-transform ${checked ? 'translate-x-3' : 'translate-x-0'}`}
+      />
+    </button>
+  )
+}
+
+/** An in-row rename input — an internal cancelled-flag guards against the
+ * blur-triggered commit firing after Escape (blur still fires when a
+ * focused element unmounts). */
+function RenameInput({ initial, onCommit, onCancel }: {
+  initial: string
+  onCommit: (name: string) => void
+  onCancel: () => void
+}) {
+  const cancelled = useRef(false)
+  return (
+    <input
+      autoFocus
+      defaultValue={initial}
+      className="flex-1 min-w-0 text-sm font-body text-text bg-bg0 border border-line2 px-1.5 py-0.5 outline-none"
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={(e) => { if (!cancelled.current) onCommit(e.target.value) }}
+      onKeyDown={(e) => {
+        // stopPropagation: unmounting this input on Escape can race the
+        // app's global "Escape clears the Inspector selection" listener
+        // (App.tsx checks document.activeElement's tag — by the time it
+        // runs, this input may already be gone). Stop it from bubbling so
+        // cancelling a rename never also deselects the whole character.
+        if (e.key === 'Enter') { e.stopPropagation(); e.currentTarget.blur() }
+        if (e.key === 'Escape') { e.stopPropagation(); cancelled.current = true; onCancel() }
+      }}
+    />
+  )
+}
+
+function BlockMenu({ open, onToggle, onRename, onDuplicate, onDelete }: {
+  open: boolean
+  onToggle: () => void
+  onRename: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="relative shrink-0 mt-1">
+      <button
+        type="button"
+        className="w-6 h-7 flex items-center justify-center text-textdim hover:text-text transition-colors"
+        onClick={(e) => { e.stopPropagation(); onToggle() }}
+        title="Block actions"
+      >
+        <span className="text-sm leading-none tracking-widest">&bull;&bull;&bull;</span>
+      </button>
+      {open && (
+        <div
+          className="absolute z-20 left-0 top-full mt-0.5 border border-line bg-bg1 shadow-lg w-32"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MenuItem label="Rename" onClick={onRename} />
+          <MenuItem label="Duplicate" onClick={onDuplicate} />
+          <MenuItem label="Remove" danger onClick={onDelete} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={`block w-full text-left px-3 py-1.5 text-xs font-body transition-colors hover:bg-bg2 ${danger ? 'text-danger' : 'text-text'}`}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
     >
@@ -366,8 +512,14 @@ function BlockRow({
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
-  addMenuOpen,
-  onToggleAddMenu,
+  menuOpen,
+  onToggleMenu,
+  onRename,
+  onDuplicate,
+  renaming,
+  onCommitRename,
+  onCancelRename,
+  addChildEnabled,
   onAddChild,
   isDragging,
   isDragOver,
@@ -386,9 +538,15 @@ function BlockRow({
   onRequestDelete: () => void
   onConfirmDelete: () => void
   onCancelDelete: () => void
-  addMenuOpen?: boolean
-  onToggleAddMenu?: () => void
-  onAddChild?: (type: 'text' | 'equipment') => void
+  menuOpen: boolean
+  onToggleMenu: () => void
+  onRename: () => void
+  onDuplicate: () => void
+  renaming: boolean
+  onCommitRename: (name: string) => void
+  onCancelRename: () => void
+  addChildEnabled?: boolean
+  onAddChild?: () => void
   isDragging: boolean
   isDragOver: boolean
   isNestTarget: boolean
@@ -401,78 +559,80 @@ function BlockRow({
 }) {
   const [expanded, setExpanded] = useState(true)
   const locked = !!block.locked
+  const showTokenCount = block.type === 'text' || block.type === 'folder'
+  const isEquipment = block.type === 'equipment'
 
-  const base = `group relative border rounded-md overflow-hidden transition-colors cursor-pointer ${
+  // Equipment can be reordered (see dragStart) even though it's locked —
+  // it just isn't clickable-to-open (managed in its own tab instead).
+  const draggable = !locked || isEquipment
+
+  const base = `group relative border rounded-md overflow-hidden transition-colors ${isEquipment ? 'cursor-default' : 'cursor-pointer'} ${
     isOpen ? 'border-line bg-bg3' : 'border-line bg-bg2 hover:border-line2'
   } ${locked ? 'border-gold/30 bg-gold/5' : ''} ${!block.enabled ? 'opacity-60' : ''} ${
     isDragging ? 'opacity-30' : ''
   } ${isDragOver ? 'ring-1 ring-inset ring-gold' : ''} ${isNestTarget ? 'ring-2 ring-inset ring-gold bg-gold/10' : ''}`
 
   return (
-    <div
-      className={base}
-      onClick={onOpen}
-      title="Click to open"
-    >
-      <SelectionBar show={isOpen} />
+    <div className="flex items-start gap-1">
+      {!locked && (
+        <BlockMenu open={menuOpen} onToggle={onToggleMenu} onRename={onRename} onDuplicate={onDuplicate} onDelete={onRequestDelete} />
+      )}
       <div
-        className="flex items-center gap-1.5 pl-3 pr-2 py-1.5"
-        // Drag/drop lives on the header strip specifically, not the whole
-        // card — an expanded folder's body (children, "+ ADD INSIDE") is
-        // much taller than its header, and the nest-vs-reorder Y-band in
-        // rootDragOver() needs the header's own height to mean anything.
-        // stopPropagation keeps a nested child row's drag events from
-        // bubbling up into its parent Folder row's handlers.
-        onDragOver={(e) => { e.stopPropagation(); onDragOverRow(e) }}
-        onDrop={(e) => { e.stopPropagation(); onDropRow(e) }}
+        className={`flex-1 min-w-0 ${base}`}
+        onClick={onOpen}
+        title={isEquipment ? undefined : 'Click to open'}
       >
-        <span
-          draggable={!locked}
-          onDragStart={(e) => { e.stopPropagation(); onDragStart() }}
-          onDragEnd={(e) => { e.stopPropagation(); onDragEndRow() }}
-          onClick={(e) => e.stopPropagation()}
-          className={`shrink-0 px-0.5 ${
-            locked ? 'text-textdim/40 cursor-not-allowed' : 'text-textdim hover:text-text cursor-grab active:cursor-grabbing'
-          }`}
-          title={locked ? 'Locked — cannot be moved' : 'Drag to reorder'}
+        <SelectionBar show={isOpen} />
+        <div
+          className="flex items-center gap-1.5 pl-3 pr-2 py-1.5"
+          // Drag/drop lives on the header strip specifically, not the whole
+          // card — an expanded folder's body (children, "+ CREATE BLOCK") is
+          // much taller than its header, and the nest-vs-reorder Y-band in
+          // rootDragOver() needs the header's own height to mean anything.
+          // stopPropagation keeps a nested child row's drag events from
+          // bubbling up into its parent Folder row's handlers.
+          onDragOver={(e) => { e.stopPropagation(); onDragOverRow(e) }}
+          onDrop={(e) => { e.stopPropagation(); onDropRow(e) }}
         >
-          {GRIP_ICON}
-        </span>
-
-        {locked ? (
-          <LockGlyph />
-        ) : (
-          <input
-            type="checkbox"
-            checked={block.enabled}
-            onChange={(e) => onToggle(e.target.checked)}
+          <span
+            draggable={draggable}
+            onDragStart={(e) => { e.stopPropagation(); onDragStart() }}
+            onDragEnd={(e) => { e.stopPropagation(); onDragEndRow() }}
             onClick={(e) => e.stopPropagation()}
-            className="shrink-0 accent-gold"
-            title={block.enabled ? 'Enabled — included in the prompt' : 'Disabled — skipped'}
-          />
-        )}
-
-        {block.type === 'folder' && (
-          <button
-            type="button"
-            className="text-textdim hover:text-text shrink-0 px-0.5"
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
-            title={expanded ? 'Collapse' : 'Expand'}
+            className={`shrink-0 px-0.5 ${
+              draggable ? 'text-textdim hover:text-text cursor-grab active:cursor-grabbing' : 'text-textdim/40 cursor-not-allowed'
+            }`}
+            title={draggable ? 'Drag to reorder' : 'Locked — cannot be moved'}
           >
-            <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
-          </button>
-        )}
+            {GRIP_ICON}
+          </span>
 
-        <span className="flex-1 min-w-0 truncate text-sm font-body text-text px-1 py-0.5">
-          {block.name}
-        </span>
+          {locked ? <LockGlyph /> : <Toggle checked={block.enabled} onChange={onToggle} />}
 
-        <span className="shrink-0 font-ui text-[9px] tracking-wider text-textdim uppercase border border-line px-1.5 py-0.5">
-          {TYPE_LABELS[block.type]}
-        </span>
+          {block.type === 'folder' && (
+            <button
+              type="button"
+              className="text-textdim hover:text-text shrink-0 px-0.5"
+              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+              title={expanded ? 'Collapse' : 'Expand'}
+            >
+              <span className="text-[10px]">{expanded ? '▾' : '▸'}</span>
+            </button>
+          )}
 
-        {!locked && (
-          confirmingDelete ? (
+          {renaming ? (
+            <RenameInput initial={block.name} onCommit={onCommitRename} onCancel={onCancelRename} />
+          ) : (
+            <span className="flex-1 min-w-0 truncate text-sm font-body text-text px-1 py-0.5">
+              {block.name}
+            </span>
+          )}
+
+          <span className="shrink-0 font-ui text-[9px] tracking-wider text-textdim uppercase border border-line px-1.5 py-0.5">
+            {TYPE_LABELS[block.type]}
+          </span>
+
+          {confirmingDelete ? (
             <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
@@ -489,71 +649,56 @@ function BlockRow({
                 CANCEL
               </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              className="shrink-0 text-textdim hover:text-danger text-base font-ui leading-none px-1"
-              title="Remove block"
-              onClick={(e) => { e.stopPropagation(); onRequestDelete() }}
-            >
-              &times;
-            </button>
-          )
+          ) : showTokenCount ? (
+            <span className="shrink-0 font-ui text-[9px] text-textdim tabular-nums" title="Estimated tokens">
+              {estimateBlockTokens(block)}
+            </span>
+          ) : null}
+        </div>
+
+        {isEquipment && (
+          <div className="px-3 pb-2">
+            <p className="text-[11px] text-textdim italic font-body">
+              Rendered live from equipped gear — open the Equipment tab to manage what's worn.
+            </p>
+          </div>
         )}
-      </div>
 
-      {block.type === 'equipment' && (
-        <div className="px-3 pb-2">
-          <p className="text-[11px] text-textdim italic font-body">
-            Rendered live from equipped gear — open to manage what's worn.
-          </p>
-        </div>
-      )}
+        {block.type === 'image' && (
+          <div className="px-3 pb-2">
+            <p className="text-[11px] text-textdim italic font-body">
+              {block.file || 'Reference image'} — uploading new image blocks isn't supported yet.
+            </p>
+          </div>
+        )}
 
-      {block.type === 'image' && (
-        <div className="px-3 pb-2">
-          <p className="text-[11px] text-textdim italic font-body">
-            {block.file || 'Reference image'} — uploading new image blocks isn't supported yet.
-          </p>
-        </div>
-      )}
-
-      {block.type === 'folder' && expanded && (
-        <div className="px-3 pb-2" onClick={(e) => e.stopPropagation()}>
-          {children}
-          {onAddChild && (
-            <div className="relative mt-1 ml-5">
+        {block.type === 'folder' && expanded && (
+          <div className="px-3 pb-2" onClick={(e) => e.stopPropagation()}>
+            {children}
+            {addChildEnabled && onAddChild && (
               <button
                 type="button"
-                className="font-ui text-[9px] text-textsec border border-dashed border-line px-2 py-1 hover:border-line2 hover:text-text transition-colors"
-                onClick={onToggleAddMenu}
+                className="mt-1 ml-5 font-ui text-[9px] text-textsec border border-dashed border-line px-2 py-1 hover:border-line2 hover:text-text transition-colors"
+                onClick={onAddChild}
               >
-                + ADD INSIDE
+                + CREATE BLOCK
               </button>
-              {addMenuOpen && (
-                <div className="absolute z-20 left-0 mt-0.5 border border-line bg-bg1 shadow-lg">
-                  <AddMenuOption label="Text" onClick={() => onAddChild('text')} />
-                  <AddMenuOption label="Equipment" onClick={() => onAddChild('equipment')} />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-/** Read-only rendering for Play mode — enabled blocks only, folders recursed
- * (flattened, not visually nested), tags skipped. The Equipment block is the
- * one thing that stays interactive here (equipment is a play action, not
- * world-editing) — it renders the real slot grid in place. */
-export function BlockTreeView({ blocks, equipment, onEquipChange }: {
-  blocks: CharacterBlock[]
-  equipment: Equipment
-  onEquipChange: (slotKey: keyof Equipment, instanceId: string | null) => void
-}) {
-  type Row = { kind: 'text'; label: string; content: string } | { kind: 'equipment' }
+/** Read-only rendering for the Sheet tab — enabled blocks only, folders
+ * recursed (flattened, not visually nested), tags skipped. Equipment is
+ * excluded entirely (it has its own tab now). Image blocks render as
+ * placeholder tiles under an "Images" heading — there's no asset-serving
+ * route for them yet (image_block_paths() is prep for a future
+ * vision-attachment pass), so this stays a label-only stand-in. */
+export function BlockTreeView({ blocks }: { blocks: CharacterBlock[] }) {
+  type Row = { kind: 'text'; label: string; content: string } | { kind: 'image'; label: string }
   const rows: Row[] = []
   const walk = (items: CharacterBlock[]) => {
     for (const b of items) {
@@ -564,9 +709,10 @@ export function BlockTreeView({ blocks, equipment, onEquipChange }: {
         const content = (b.content ?? '').trim()
         if (!content || b.name === TAG_OPEN_NAME || b.name === TAG_CLOSE_NAME) continue
         rows.push({ kind: 'text', label: b.name, content })
-      } else if (b.type === 'equipment') {
-        rows.push({ kind: 'equipment' })
+      } else if (b.type === 'image') {
+        rows.push({ kind: 'image', label: b.name })
       }
+      // equipment: intentionally skipped — see the Equipment tab instead.
     }
   }
   walk(blocks)
@@ -575,18 +721,25 @@ export function BlockTreeView({ blocks, equipment, onEquipChange }: {
     return <p className="text-sm text-textdim italic font-body">Nothing written yet.</p>
   }
 
+  const images = rows.filter((r): r is Extract<Row, { kind: 'image' }> => r.kind === 'image')
+  const textRows = rows.filter((r): r is Extract<Row, { kind: 'text' }> => r.kind === 'text')
+
   return (
     <div className="space-y-3">
-      {rows.map((r, i) => {
-        if (r.kind === 'equipment') {
-          return (
-            <div key={i}>
-              <span className="text-[11px] text-textdim font-body block mb-1.5">Equipment</span>
-              <EquipmentGrid equipment={equipment} onChange={onEquipChange} />
-            </div>
-          )
-        }
-        return r.label === 'Description' ? (
+      {images.length > 0 && (
+        <div>
+          <span className="text-[11px] text-textdim font-body block mb-1.5">Images</span>
+          <div className="grid grid-cols-2 gap-2">
+            {images.map((img, i) => (
+              <div key={i} className="aspect-square border border-line rounded-md bg-bg2 flex items-center justify-center px-2">
+                <span className="font-ui text-[9px] text-textdim tracking-wider text-center">{img.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {textRows.map((r, i) =>
+        r.label === 'Description' ? (
           <p key={i} className="font-body text-sm text-text2 leading-relaxed">{r.content}</p>
         ) : (
           <div key={i}>
@@ -594,7 +747,7 @@ export function BlockTreeView({ blocks, equipment, onEquipChange }: {
             <p className="font-body text-sm text-text2 leading-relaxed">{r.content}</p>
           </div>
         )
-      })}
+      )}
     </div>
   )
 }

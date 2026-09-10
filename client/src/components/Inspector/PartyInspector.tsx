@@ -9,7 +9,6 @@ import { useNarratorStore } from '../../state/narratorStore'
 import { useUiStore } from '../../state/uiStore'
 import { CharacterSheetEditor } from '../CharacterSheet/CharacterSheetEditor'
 import { findBlock, updateBlockInTree } from '../CharacterSheet/BlockTreeEditor'
-import { EquipmentGrid } from '../CharacterSheet/EquipmentGrid'
 import { PartyMemberEditor } from '../PartyMember/PartyMemberEditor'
 import { ExpandableTextarea } from '../common/ExpandableTextarea'
 import { EQUIP_SLOT_LABELS, pickEquipSlot } from '../../lib/equipSlots'
@@ -114,8 +113,10 @@ export function PartyInspector() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Inspector Header */}
-      {hasSelection && (
+      {/* Inspector Header — PC/member sheets render their own full header
+          (portrait, name, i/Export/Delete), so skip this generic one for
+          them rather than showing the name twice. */}
+      {hasSelection && !selIsPC && !selIsMember && (
         <div className="shrink-0 border-b border-line px-6 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -155,9 +156,9 @@ export function PartyInspector() {
       <div className="flex-1 overflow-y-auto relative">
         {hasSelection && <SaveIndicator />}
         {selIsPC ? (
-          <CharacterSheetEditor mode={mode} />
+          <CharacterSheetEditor />
         ) : selIsMember ? (
-          <PartyMemberEditor key={selMember!.id} member={selMember!} mode={mode} />
+          <PartyMemberEditor key={selMember!.id} member={selMember!} />
         ) : selIsItem ? (
           <ItemInspector
             key={(selection?.kind === 'item' ? selection.instanceId : '') || selItem!.id}
@@ -1541,8 +1542,6 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
 }) {
   const saveBlocksPC = usePartyStore((s) => s.savePlayerCharacterBlocks)
   const saveBlocksMember = usePartyStore((s) => s.savePartyMemberBlocks)
-  const saveEquipmentPC = usePartyStore((s) => s.savePlayerCharacterEquipment)
-  const saveEquipmentMember = usePartyStore((s) => s.savePartyMemberEquipment)
   const setEditDirty = useUiStore((s) => s.setEditDirty)
 
   const draft = useRef<Pick<CharacterBlock, 'name' | 'content' | 'enabled'>>(
@@ -1577,12 +1576,6 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
     immediate ? flush() : scheduleFlush()
   }
 
-  const handleEquipChange = (slotKey: keyof Equipment, instanceId: string | null) => {
-    const nextEquipment = { ...owner.equipment, [slotKey]: instanceId }
-    if (ownerType === 'player') void saveEquipmentPC(nextEquipment)
-    else void saveEquipmentMember(owner.id, nextEquipment)
-  }
-
   const d = draft.current
 
   const nonTextNote = block.type === 'folder'
@@ -1606,10 +1599,6 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
             ) : (
               <p className="text-[12px] text-textdim font-body">(empty)</p>
             )}
-          </LoreSection>
-        ) : block.type === 'equipment' ? (
-          <LoreSection title="Equipment">
-            <EquipmentGrid equipment={owner.equipment} onChange={handleEquipChange} />
           </LoreSection>
         ) : (
           <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>
@@ -1656,10 +1645,6 @@ function BlockContentInspector({ owner, ownerType, block, mode }: {
             onChange={(e) => update({ content: e.target.value })}
             onBlur={(e) => update({ content: e.target.value }, true)}
           />
-        </LoreSection>
-      ) : block.type === 'equipment' ? (
-        <LoreSection title="Equipment">
-          <EquipmentGrid equipment={owner.equipment} onChange={handleEquipChange} />
         </LoreSection>
       ) : (
         <p className="text-[12px] text-textdim font-body italic">{nonTextNote}</p>

@@ -1406,6 +1406,7 @@ def _stream_llm_response(
                      json.dumps(block, ensure_ascii=False))
         inv_deltas: list[dict] = []
         equip_changes: list[dict] = []
+        tool_failures: list[str] = []
         saved_message: dict | None = None
 
         try:
@@ -1444,9 +1445,12 @@ def _stream_llm_response(
                 weather = scene.get("weather")
                 day = scene.get("day")
 
-                # Execute narrator actions if present
+                # Execute narrator actions if present. The same five-verb
+                # vocabulary and handlers the native tool-calling loop uses
+                # (server/ai/narrator_actions.ACTION_HANDLERS) — so this gets
+                # the same no-op guarantees and failure reporting for free.
                 if actions:
-                    inv_deltas, equip_changes = await execute_actions(
+                    inv_deltas, equip_changes, tool_failures = await execute_actions(
                         actions, save_session
                     )
 
@@ -1504,6 +1508,8 @@ def _stream_llm_response(
             done_payload['appliedEquipmentChanges'] = equip_changes
         if inline_suggestions:
             done_payload['suggestions'] = inline_suggestions
+        if tool_failures:
+            done_payload['toolFailures'] = tool_failures
         yield f"data: {json.dumps(done_payload)}\n\n"
 
         # Post-turn: compress history in the background (never blocks the player).

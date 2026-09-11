@@ -91,10 +91,17 @@ def _grant(title: str, count: int = 1) -> None:
 def adventure(client):
     """A fresh adventure with a named PC, in the shared Fantasy campaign (so
     Sword/Health Potion/Longbow/Rations from the template catalog already
-    exist and can be reused for take/equip/drop tests)."""
+    exist and can be reused for take/equip/drop tests). Restores whichever
+    adventure was active before, so switching here can't leak into
+    session-scoped fixtures elsewhere (e.g. test_app_integration.py's
+    ``boot_adventure_id``, which captures 'whatever is active' on first use —
+    independent of test file execution order)."""
+    prev_active = client.get("/api/adventures").json().get("activeId")
     aid = _new_adventure(client, "Steward Test")
     _seed_pc("Hero")
-    return aid
+    yield aid
+    if prev_active:
+        client.post(f"/api/adventures/{prev_active}/load")
 
 
 # ── _worth_stewarding ────────────────────────────────────────────

@@ -19,17 +19,14 @@ import logging
 from collections.abc import AsyncGenerator
 
 from server.ai.narrator_actions import (
+    ACTION_HANDLERS,
     ToolEffect,
-    tool_consume_item,
-    tool_equip,
+    _failure_note,
     tool_get_character,
-    tool_grant_item,
     tool_list_inventory,
     tool_lookup_item,
-    tool_remove_item,
     tool_search_items,
     tool_set_scene,
-    tool_unequip,
 )
 from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
 from server.ai import style
@@ -55,10 +52,10 @@ FINAL_ROUND_NUDGE = (
 # narrates the whole beat and only then appends one of these, we keep the beat
 # instead of discarding and regenerating it (see the preamble handling below).
 # The read tools are deliberately excluded — their result must be free to
-# change what actually gets narrated.
-_SAFE_WRITE_TOOLS = frozenset({
-    "grant_item", "remove_item", "consume_item", "equip", "unequip",
-})
+# change what actually gets narrated. Derived from ACTION_HANDLERS (the same
+# five verbs the text-protocol <<<ACTIONS>>> block executes) rather than a
+# hand-duplicated literal, so the two paths can't drift apart again.
+_SAFE_WRITE_TOOLS = frozenset(ACTION_HANDLERS)
 # A streamed beat this long (chars) accompanying only safe writes is treated as
 # real narration, not throwaway tool preamble.
 _MIN_PREAMBLE_NARRATION = 40
@@ -201,13 +198,12 @@ TOOL_SCHEMAS: list[dict] = [
     },
 ]
 
+# The five write tools (ACTION_HANDLERS) plus the read tools and legacy
+# set_scene, which are native-only — a one-shot text-protocol block has no
+# round-trip to react to a read result, so they aren't offered there.
 _HANDLERS = {
+    **ACTION_HANDLERS,
     "set_scene": tool_set_scene,
-    "grant_item": tool_grant_item,
-    "remove_item": tool_remove_item,
-    "consume_item": tool_consume_item,
-    "equip": tool_equip,
-    "unequip": tool_unequip,
     "lookup_item": tool_lookup_item,
     "search_items": tool_search_items,
     "list_inventory": tool_list_inventory,
@@ -431,7 +427,7 @@ async def run_narrator_agent(
                     yield {"type": "tool", "name": name, "result": note, "ok": True}
                     continue
                 executed.add(sig)
-                effect = await _execute_tool(name, args, agent_session, current_turn, variant)
+                effect = await _execute_tool(name, args, agent_session)
                 inv_deltas.extend(effect.inv_deltas)
                 equip_changes.extend(effect.equip_changes)
                 scene.update(effect.scene)
@@ -466,24 +462,8 @@ async def run_narrator_agent(
     }
 
 
-async def _execute_tool(name: str, args: dict, session, current_turn: int = 0, variant: int = 0) -> ToolEffect:
+async def _execute_tool(name: str, args: dict, session) -> ToolEffect:
     handler = _HANDLERS.get(name)
     if not handler:
         return ToolEffect(result=f"Unknown tool '{name}'.")
     return await handler(args, session)
-
-
-def _failure_note(name: str, args: dict) -> str | None:
-    """A short, spoiler-safe player-facing note for a mutating tool that failed,
-    so a bad tool call is visible ("the world stayed safe") rather than silent."""
-    item = args.get("itemName") or ""
-    who = args.get("characterName") or ""
-    if name == "equip":
-        target = f" onto {who}" if who else ""
-        return f"The narrator tried to equip a nonexistent item{(' (' + item + ')') if item else ''}{target}, but the world stayed safe."
-    if name == "unequip":
-        return f"The narrator tried to unequip an empty slot{(' on ' + who) if who else ''}, but nothing changed."
-    if name in ("grant_item", "remove_item", "consume_item"):
-        verb = {"grant_item": "grant", "remove_item": "remove", "consume_item": "use"}[name]
-        return f"The narrator tried to {verb} an item that isn't in the world{(' (' + item + ')') if item else ''}, but the world stayed safe."
-    return None

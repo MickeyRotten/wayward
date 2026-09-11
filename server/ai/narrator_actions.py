@@ -10,6 +10,7 @@ See CLAUDE.md > Narrator Actions for the full design.
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
@@ -157,138 +158,78 @@ def parse_action_block(raw_response: str) -> tuple[str, dict | None]:
     return clean, _parse_actions_json(candidate)
 
 
+def _legacy_action_entries(actions: dict) -> list[dict]:
+    """Fold the pre-unification top-level shape (``addItems``/``removeItems``/
+    ``equip``/``unequip`` arrays) into the canonical entry list, for any
+    pre-existing custom ``NarratorConfig.action_instruction`` override that
+    still teaches the old shape. There is no Settings UI to edit that field, so
+    this exists purely as cheap backward-compat insurance, not a live surface."""
+    entries: list[dict] = []
+    for add in actions.get("addItems") or []:
+        entries.append({"tool": "grant_item", **add})
+    for rem in actions.get("removeItems") or []:
+        entries.append({"tool": "remove_item", **rem})
+    for eq in actions.get("equip") or []:
+        entries.append({"tool": "equip", **eq})
+    for ueq in actions.get("unequip") or []:
+        entries.append({"tool": "unequip", **ueq})
+    return entries
+
+
 async def execute_actions(
     actions: dict,
     session: AsyncSession,
-) -> tuple[list[dict], list[dict]]:
-    """Execute parsed narrator actions against the database.
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Execute a parsed ``<<<ACTIONS>>>`` block against the database.
+
+    Canonical shape is ``{"actions": [{"tool": "grant_item", ...}, ...]}`` — the
+    same five verbs and argument names as the native tool-calling path's
+    ``TOOL_SCHEMAS`` (``grant_item``/``remove_item``/``consume_item``/``equip``/
+    ``unequip``), executed through the exact same handlers (``ACTION_HANDLERS``),
+    so this path gets the same no-op guarantees and failure reporting for free
+    instead of re-implementing them. The pre-unification shape is still read
+    (see ``_legacy_action_entries``) for backward compatibility.
 
     Returns:
-        (inventory_deltas, equipment_changes) -- lists of dicts recording
-        what changed, for storage on the ChatMessage and later reversal.
+        (inventory_deltas, equipment_changes, tool_failures) -- lists of dicts
+        (deltas/changes) and player-facing failure notes, for storage on the
+        ChatMessage / surfacing on ``done`` and later reversal.
     """
+    entries = actions.get("actions")
+    if not isinstance(entries, list):
+        entries = _legacy_action_entries(actions)
+
     inv_deltas: list[dict] = []
     equip_changes: list[dict] = []
+    tool_failures: list[str] = []
+    executed: set[str] = set()  # dedupe repeats within this one block
 
-    # --- addItems ---
-    for add in actions.get("addItems", []):
-        item_name = add.get("itemName", "")
-        count = add.get("count", 1)
-        if not item_name or count < 1:
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        entry = dict(entry)
+        name = entry.pop("tool", None)
+        handler = ACTION_HANDLERS.get(name)
+        if handler is None:
+            log.info("Narrator action block: unknown/unsupported tool '%s', skipping", name)
             continue
 
-        # Resolve name -> catalog entry (case-insensitive exact match)
-        item = (
-            await session.execute(
-                select(LorebookEntry).where(
-                    LorebookEntry.cat == "items",
-                    func.lower(LorebookEntry.title) == item_name.lower(),
-                )
-            )
-        ).scalars().first()
-
-        if not item:
-            log.info("Narrator addItems: unresolved item name '%s', skipping", item_name)
+        sig = name + "|" + json.dumps(entry, sort_keys=True, ensure_ascii=False, default=str)
+        if sig in executed:
+            log.info("Narrator action block: duplicate %s suppressed", name)
             continue
+        executed.add(sig)
 
-        _msg, deltas = await inv_ops.grant_items(session, item, count, "narrator_grant")
-        inv_deltas.extend(deltas)
+        effect = await handler(entry, session)
+        inv_deltas.extend(effect.inv_deltas)
+        equip_changes.extend(effect.equip_changes)
+        if not effect.ok:
+            note = _failure_note(name, entry)
+            if note:
+                tool_failures.append(note)
+        log.info("Narrator action block: %s(%s) -> %s", name, entry, effect.result)
 
-    # --- equip ---
-    for eq in actions.get("equip", []):
-        char_name = eq.get("characterName", "")
-        slot = eq.get("slot", "")
-        item_name = eq.get("itemName", "")
-        if not char_name or not slot or not item_name:
-            continue
-
-        if slot not in VALID_EQUIPMENT_SLOTS:
-            log.info("Narrator equip: invalid slot '%s', skipping", slot)
-            continue
-
-        # Resolve character by name (case-insensitive)
-        character, char_id = await _resolve_character(session, char_name)
-        if character is None:
-            log.info("Narrator equip: unresolved character '%s', skipping", char_name)
-            continue
-
-        # Resolve item by name
-        item = (
-            await session.execute(
-                select(LorebookEntry).where(
-                    LorebookEntry.cat == "items",
-                    func.lower(LorebookEntry.title) == item_name.lower(),
-                )
-            )
-        ).scalars().first()
-
-        if not item:
-            log.info("Narrator equip: unresolved item '%s', skipping", item_name)
-            continue
-
-        # Validate: item must be Equipment type
-        if item.item_type != "Equipment":
-            log.info(
-                "Narrator equip: item '%s' is type '%s', not Equipment, skipping",
-                item_name, item.item_type,
-            )
-            continue
-
-        # Validate: item's catalog slot must be compatible with the target Equipment slot
-        if item.slot and not _is_slot_compatible(item.slot, slot):
-            log.info(
-                "Narrator equip: item '%s' (slot=%s) incompatible with target slot '%s', skipping",
-                item_name, item.slot, slot,
-            )
-            continue
-
-        # Equip an ItemInstance (slots hold instance ids, not catalog ids): reuse
-        # a stowed copy or mint one.
-        _msg, changes, deltas = await inv_ops.equip_instance(
-            session, character, char_id, slot, item
-        )
-        equip_changes.extend(changes)
-        inv_deltas.extend(deltas)
-
-    # --- unequip ---
-    for ueq in actions.get("unequip", []):
-        char_name = ueq.get("characterName", "")
-        slot = ueq.get("slot", "")
-        if not char_name or not slot:
-            continue
-
-        if slot not in VALID_EQUIPMENT_SLOTS:
-            log.info("Narrator unequip: invalid slot '%s', skipping", slot)
-            continue
-
-        character, char_id = await _resolve_character(session, char_name)
-        if character is None:
-            log.info("Narrator unequip: unresolved character '%s', skipping", char_name)
-            continue
-
-        binding = await party_ops.binding_for(session, char_id)
-        if binding is None:
-            continue
-        equipment = dict(binding.equipment or {})
-        previous_instance_id = equipment.get(slot)
-
-        if not previous_instance_id:
-            log.info("Narrator unequip: slot '%s' already empty for '%s', skipping", slot, char_name)
-            continue
-
-        # Clear the slot; the instance is now unreferenced → derived as stowed.
-        # No InventoryStack / delta needed.
-        equipment[slot] = None
-        binding.equipment = equipment
-
-        equip_changes.append({
-            "characterId": char_id,
-            "slot": slot,
-            "previousItemId": previous_instance_id,
-            "newItemId": None,
-        })
-
-    return inv_deltas, equip_changes
+    return inv_deltas, equip_changes, tool_failures
 
 
 async def reverse_equipment_changes(
@@ -683,25 +624,60 @@ async def tool_get_character(args: dict, session: AsyncSession) -> ToolEffect:
     return ToolEffect(result=json.dumps(payload, ensure_ascii=False))
 
 
+# The five mutating actions, in the ONE canonical vocabulary shared by both the
+# native tool-calling loop (narrator_agent.py's _HANDLERS extends this with its
+# read-only tools + the native-only legacy set_scene) and the text-protocol
+# <<<ACTIONS>>> block (execute_actions, above, uses this directly — nothing
+# else, since a one-shot post-hoc block has no round-trip to react to a read
+# result). Native tool-calling is a faster, validated transport for exactly
+# this vocabulary, not a separate one.
+ACTION_HANDLERS: dict[str, Callable] = {
+    "grant_item": tool_grant_item,
+    "remove_item": tool_remove_item,
+    "consume_item": tool_consume_item,
+    "equip": tool_equip,
+    "unequip": tool_unequip,
+}
+
+
+def _failure_note(name: str, args: dict) -> str | None:
+    """A short, spoiler-safe player-facing note for a mutating tool that failed,
+    so a bad tool call is visible ("the world stayed safe") rather than silent.
+    Shared by the native loop and the text-protocol block executor."""
+    item = args.get("itemName") or ""
+    who = args.get("characterName") or ""
+    if name == "equip":
+        target = f" onto {who}" if who else ""
+        return f"The narrator tried to equip a nonexistent item{(' (' + item + ')') if item else ''}{target}, but the world stayed safe."
+    if name == "unequip":
+        return f"The narrator tried to unequip an empty slot{(' on ' + who) if who else ''}, but nothing changed."
+    if name in ("grant_item", "remove_item", "consume_item"):
+        verb = {"grant_item": "grant", "remove_item": "remove", "consume_item": "use"}[name]
+        return f"The narrator tried to {verb} an item that isn't in the world{(' (' + item + ')') if item else ''}, but the world stayed safe."
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Instruction block appended to every prompt (not user-editable)
 # ---------------------------------------------------------------------------
 
 ACTION_INSTRUCTION = """NARRATOR ACTION PROTOCOL (system — not part of your creative instructions):
-When your narration results in the party gaining or losing items, or a character equipping or unequipping something, append this block at the very end of your response, AFTER all prose and BEFORE the turn block:
+When your narration results in the party gaining, losing, or using up items, or a character equipping or unequipping something, append this block at the very end of your response, AFTER all prose and BEFORE the turn block:
 
 <<<ACTIONS>>>
-{
-  "addItems": [{ "itemName": "Item Name", "count": 1 }],
-  "removeItems": [{ "itemName": "Item Name", "count": 1 }],
-  "equip": [{ "characterName": "Tifa", "slot": "rightHand", "itemName": "Comet Wand" }],
-  "unequip": [{ "characterName": "Seraphine", "slot": "head" }]
-}
+{"actions": [
+  { "tool": "grant_item", "itemName": "Item Name", "count": 1 },
+  { "tool": "remove_item", "itemName": "Item Name", "count": 1 },
+  { "tool": "consume_item", "itemName": "Item Name", "count": 1 },
+  { "tool": "equip", "characterName": "Tifa", "slot": "rightHand", "itemName": "Comet Wand" },
+  { "tool": "unequip", "characterName": "Seraphine", "slot": "head" }
+]}
 <<<END ACTIONS>>>
 
 Rules:
 - The scene is NOT in this block. Location, weather and how long the beat took ride the trailing turn block instead (see the OUTPUT PROTOCOL). Never write a day number, a date or a clock time anywhere — the game keeps the calendar.
-- Only include the keys that apply. If nothing was gained, lost, equipped or unequipped, do not include the block at all.
+- "actions" is a list; include only the entries that actually apply. If nothing was gained, lost, used up, equipped or unequipped, do not include the block at all.
+- Five tools only: grant_item (the party GAINED it — found/bought/looted/received), remove_item (given away, sold, lost, destroyed — never pair with grant_item for the same handoff), consume_item (used up this turn, e.g. drank a potion), equip, unequip.
 - Every entry is a change your prose JUST made. Do not re-report something from an earlier turn, and do not confirm what you can already see in INVENTORY — setting something to what it already is will be discarded. An item merely SEEN (in a chest, held by someone else, or waiting behind an option you are about to offer) has not been taken: change nothing.
 - Use the character's first name for characterName.
 - Valid equipment slots: head, neck, torsoOver, torsoUnder, leftHand, rightHand, waist, legsOver, legsUnder, feet, accessory1, accessory2.

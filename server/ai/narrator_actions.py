@@ -26,20 +26,23 @@ from server.db.models import (
 log = logging.getLogger("wayward.narrator_actions")
 
 # Tolerant markers: weaker/older narrative models drift on the exact spelling
-# (extra spaces, casing) and routinely forget the closing marker. Matching
-# loosely — and salvaging the JSON even when the block is malformed — keeps the
-# text-protocol path reliable on exactly the models that need it.
-_ACTION_START_RE = re.compile(r"<<<\s*ACTIONS\s*>>>", re.IGNORECASE)
-_ACTION_END_RE = re.compile(r"<<<\s*END\s+ACTIONS\s*>>>", re.IGNORECASE)
+# (extra spaces, casing, bracket style) and routinely forget the closing
+# marker. Matching loosely — and salvaging the JSON even when the block is
+# malformed — keeps the text-protocol path reliable on exactly the models that
+# need it. Bracket-run/casing tolerance mirrors turn_block.py's marker regex.
+_ACTION_START_RE = re.compile(r"(?:<{1,3}|\[|\{{2})\s*ACTIONS\s*(?:>{1,3}|\]|\}{2})", re.IGNORECASE)
+_ACTION_END_RE = re.compile(r"(?:<{1,3}|\[|\{{2})\s*END\s+ACTIONS\s*(?:>{1,3}|\]|\}{2})", re.IGNORECASE)
 
 
-def _extract_json_object(s: str) -> str | None:
+def _extract_json_span(s: str) -> tuple[str | None, int]:
     """Return the first brace-balanced ``{...}`` object in ``s`` (string- and
-    escape-aware), or None. Salvages a valid object even when the model appended
-    trailing prose after it or wrapped it in stray characters."""
+    escape-aware) plus the index just past its closing brace, or ``(None, -1)``.
+    Salvages a valid object even when the model appended trailing prose after it
+    or wrapped it in stray characters — and the end index lets a caller tell
+    what, if anything, comes after the object."""
     start = s.find("{")
     if start == -1:
-        return None
+        return None, -1
     depth = 0
     in_str = False
     esc = False
@@ -59,8 +62,14 @@ def _extract_json_object(s: str) -> str | None:
         elif c == "}":
             depth -= 1
             if depth == 0:
-                return s[start:i + 1]
-    return None
+                return s[start:i + 1], i + 1
+    return None, -1
+
+
+def _extract_json_object(s: str) -> str | None:
+    """Return the first brace-balanced ``{...}`` object in ``s``, or None."""
+    obj, _ = _extract_json_span(s)
+    return obj
 
 
 def _parse_actions_json(candidate: str) -> dict | None:
@@ -128,9 +137,17 @@ def parse_action_block(raw_response: str) -> tuple[str, dict | None]:
         candidate = rest[: end.start()]
         after = rest[end.end():]
     else:
-        # No closing marker — treat everything after <<<ACTIONS>>> as the block.
-        candidate = rest
-        after = ""
+        # No closing marker — a weaker model forgot it. Only consume up to
+        # where the JSON object itself ends (brace-matched); anything genuinely
+        # AFTER it — most commonly the trailing <<<TURN>>> block — must survive
+        # rather than being silently swallowed to end-of-text along with it.
+        _obj, obj_end = _extract_json_span(rest)
+        if obj_end >= 0:
+            candidate = rest[:obj_end]
+            after = rest[obj_end:]
+        else:
+            candidate = rest
+            after = ""
 
     clean = before.rstrip()
     if after.strip():

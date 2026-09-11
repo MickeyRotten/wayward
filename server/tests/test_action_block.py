@@ -61,3 +61,25 @@ def test_prose_after_end_marker_is_kept():
     assert actions == {"day": 1}
     assert "Before." in clean and "After." in clean
     assert "<<<ACTIONS>>>" not in clean
+
+
+def test_missing_end_marker_does_not_swallow_a_trailing_turn_block():
+    # The reported bug: a model that forgets <<<END ACTIONS>>> used to have
+    # everything after it (crucially, the <<<TURN>>> block carrying the
+    # player's next options) silently discarded along with the actions block.
+    raw = (
+        "You find a sword.\n"
+        '<<<ACTIONS>>>\n{"addItems": [{"itemName": "Sword"}]}\n'
+        '<<<TURN>>>{"options": ["I take it.", "I leave it."]}'
+    )
+    clean, actions = parse_action_block(raw)
+    assert actions == {"addItems": [{"itemName": "Sword"}]}
+    assert "<<<ACTIONS>>>" not in clean
+    assert "<<<TURN>>>" in clean, "the turn block must survive to be parsed separately"
+
+
+def test_tolerant_bracket_variant_markers():
+    raw = 'Hi.\n[ACTIONS]{"day": 2}[END ACTIONS]'
+    clean, actions = parse_action_block(raw)
+    assert clean == "Hi."
+    assert actions == {"day": 2}

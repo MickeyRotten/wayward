@@ -507,7 +507,7 @@ export function SettingsPanel() {
         {/* Agents & Tools */}
         <Section title="Agents &amp; Tools" onReset={resetAgents} {...sectionProps('agents')}>
           <p className="text-[10px] text-textdim font-body leading-relaxed">
-            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story. The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/tasks/companions after each turn.
+            Wayward runs several LLM agents. The <span className="text-textsec">Narrator</span> tells the story. The <span className="text-textsec">Editor</span> builds the world in Edit Mode. The <span className="text-textsec">Chronicler</span> quietly records new lore/tasks/companions after each turn, and runs the Steward alongside it, which keeps item pickups/equips/losses accurate every turn.
           </p>
 
           <SubSection title="Narrator Tools" scope="Global">
@@ -535,7 +535,7 @@ export function SettingsPanel() {
               />
             </label>
             <p className="text-[10px] text-textdim font-body">
-              How the narrator changes game state (grant/equip/scene/etc.). <span className="text-textsec">Auto</span> uses native tool calling when the model supports it, otherwise the text-block protocol. <span className="text-textsec">Text protocol</span> forces the text block — more reliable on strong narrative models that call tools poorly. <span className="text-textsec">Native</span> caps at Max Tool Rounds per turn. <span className="text-textsec">Off</span> disables state changes entirely.
+              How the narrator changes game state (grant/equip/scene/etc.). <span className="text-textsec">Auto</span> uses native tool calling when the model supports it, otherwise the text-block protocol. <span className="text-textsec">Text protocol</span> forces the text block — more reliable on strong narrative models that call tools poorly. <span className="text-textsec">Native</span> caps at Max Tool Rounds per turn. <span className="text-textsec">Off</span> disables narrator-driven state changes entirely — scene/options still ride the turn block as normal. Recommended for a narrator model that can't call tools reliably at all: pair Off with the Chronicler's Steward (below) to handle item pickups/equips instead, on a separate tool-capable model.
             </p>
             <label className="block">
               <span className="text-[11px] text-textdim font-body">Auto-retry on error / safety block</span>
@@ -566,7 +566,12 @@ export function SettingsPanel() {
                 <option value="auto">Auto — apply changes automatically</option>
               </select>
               <span className="text-[10px] text-textdim font-body">
-                The Chronicler reviews each turn and records new lore, tasks, and companions. New party members always need your approval, even in Auto.
+                The Chronicler reviews each turn and records new lore, tasks, and companions —
+                gated by this setting; new party members always need your approval, even in Auto.
+                It also runs the Steward, which keeps item pickups/equips/losses accurate — the
+                Steward always applies immediately regardless of Confirmation/Auto (only "Disabled"
+                turns it off too). Pairs well with a weaker narrator model that can't call tools
+                reliably: set Tool Mode to "Off" on that model and let this handle items instead.
               </span>
             </label>
             <label className="block">
@@ -581,7 +586,9 @@ export function SettingsPanel() {
               <span className="text-[10px] text-textdim font-body">
                 Each run is a whole extra generation. Running less often is cheaper AND
                 usually better — reading several beats at once is a far better vantage
-                point for judging what is genuinely new than reading one.
+                point for judging what is genuinely new than reading one. This cadence is
+                for lore/tasks/companions only — the Steward checks item pickups every
+                single turn, regardless of this setting.
               </span>
             </label>
             <label className="block">
@@ -593,7 +600,9 @@ export function SettingsPanel() {
                 showAll={showAllModels}
               />
               <span className="text-[10px] text-textdim font-body">
-                Optional. Leave as "Use main model", or pick a cheaper/faster tool-capable model for bookkeeping.
+                Optional. Leave as "Use main model", or pick a cheaper/faster tool-capable model
+                for bookkeeping. Also used for the Steward's item pass — it needs a genuinely
+                tool-capable model to work reliably.
               </span>
             </label>
           </SubSection>

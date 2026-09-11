@@ -21,14 +21,22 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.ai.narrator_actions import (
+    SLOT_COMPATIBILITY,
+    VALID_EQUIPMENT_SLOTS,
+    _is_slot_compatible,
+    _resolve_character,
+)
 from server.ai.openrouter import chat_completion_agent_turn, provider_endpoint
 from server.ai.species import compose_species_content, merge_species_fields
 from server.db import events as event_ops
+from server.db import inventory as inv_ops
 from server.db import party as party_ops
 from server.db.database import new_session
 from server.db.models import (
     CampaignRules,
     ChatMessage,
+    ItemInstance,
     LorebookEntry,
     OpenRouterSettings,
     Task,
@@ -96,6 +104,23 @@ def _worth_chronicling(narration: str, known_tokens: set[str]) -> bool:
             continue
         return True                       # a name/place not already in the world
     return False
+
+
+_POSSESSION_HINTS_RE = re.compile(
+    r"\b(pick(?:s|ed)? up|grab(?:s|bed)?|take(?:s|n)?|loot(?:s|ed)?|find(?:s)?|found|"
+    r"pocket(?:s|ed)?|hand(?:s|ed)?|give(?:s)?|gave|receive(?:s|d)?|buy(?:s)?|bought|"
+    r"equip(?:s|ped)?|wear(?:s)?|wore|wield(?:s|ed)?|don(?:s|ned)?|draw(?:s)?|drew|"
+    r"drop(?:s|ped)?|discard(?:s|ed)?|lose(?:s)?|lost|use(?:s|d) up|consum(?:es|ed)|"
+    r"sell(?:s)?|sold)\b", re.IGNORECASE,
+)
+
+
+def _worth_stewarding(narration: str) -> bool:
+    """Cheap gate before spending an LLM call: does this beat plausibly involve
+    an item changing hands, being worn, or being lost? Mirrors _worth_chronicling's
+    philosophy — biased toward running, but most turns involve no possession
+    change at all, and those should cost nothing."""
+    return bool(_POSSESSION_HINTS_RE.search(narration or ""))
 
 
 def _is_named_character(title: str) -> bool:
@@ -252,6 +277,71 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
+STEWARD_TOOL_SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "take_item",
+            "description": "The party has just physically taken possession of something. If it is not already a known item, this also records it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "itemName": {"type": "string"},
+                    "count": {"type": "integer", "minimum": 1, "default": 1},
+                    "description": {"type": "string", "description": "Required only if this item is not already known — a generic, timeless description of the item itself, not what just happened."},
+                    "itemType": {"type": "string", "enum": ["Equipment", "Tool", "Consumable", "Key Item", "Artifact", "Currency", "Other"]},
+                    "slot": {"type": "string", "enum": ["Head", "Neck", "Torso", "Hands", "Waist", "Legs", "Feet", "Accessory"]},
+                    "equipOnCharacter": {"type": "string", "description": "Optional. First name of whoever is wearing/wielding it right now."},
+                },
+                "required": ["itemName"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "equip_item",
+            "description": "A character equips something already in the party's possession (not a new acquisition).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "characterName": {"type": "string"},
+                    "itemName": {"type": "string"},
+                    "slot": {"type": "string", "enum": sorted(VALID_EQUIPMENT_SLOTS)},
+                },
+                "required": ["characterName", "itemName"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "drop_item",
+            "description": "The party has lost, consumed, used up, given away, or unequipped something. For unequipping (item stays in the pack), pass unequipOnly=true.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "itemName": {"type": "string"},
+                    "characterName": {"type": "string", "description": "Only for unequipping — who currently has it on."},
+                    "count": {"type": "integer", "minimum": 1, "default": 1},
+                    "unequipOnly": {"type": "boolean", "default": False},
+                },
+                "required": ["itemName"],
+            },
+        },
+    },
+]
+
+STEWARD_GUIDANCE = """You are the Steward: you keep the party's possessions accurate after each beat. You do NOT narrate.
+
+Rules (strict):
+- Only record something as TAKEN if the prose says the party picked it up, was handed it, looted it, bought it, or otherwise now physically has it. Something merely SEEN, described, or offered-but-not-yet-taken is NOT an event — call no tool.
+- If the item is already known (see CURRENT ITEMS / INVENTORY below), use its EXACT existing name — never invent a near-duplicate name for something that already exists.
+- If it is genuinely new, take_item ALSO needs description, itemType, and (for Equipment) slot — describe the item itself, generically, not this scene.
+- Never grant something the party already has unless the prose says they got MORE of it (a specific new count).
+- Most turns nothing changes hands — in that case, call no tools at all."""
+
+
 def _parse_args(raw: str) -> dict:
     if not raw:
         return {}
@@ -319,6 +409,56 @@ async def _build_world_state(session: AsyncSession) -> str:
     member_names = [m.basic_info.get("name", "?") for m in members]
     lines.append(f"  party members: {', '.join(member_names) if member_names else '(none)'}")
     return "\n".join(lines)
+
+
+async def _build_inventory_state(session: AsyncSession) -> str:
+    """Current possessions, for the Steward's dedup + no-op judgment. Separate
+    from _build_world_state (which lists the catalog, not who holds what)."""
+    catalog = {
+        e.id: e for e in
+        (await session.execute(select(LorebookEntry).where(LorebookEntry.cat == "items"))).scalars().all()
+    }
+    equipped = await inv_ops.equipped_map(session)
+    instances = (await session.execute(select(ItemInstance))).scalars().all()
+
+    held_counts: dict[str, int] = {}
+    equipped_lines: list[str] = []
+    for inst in instances:
+        info = equipped.get(inst.id)
+        item = catalog.get(inst.item_id)
+        name = item.title if item else inst.item_id
+        if info:
+            equipped_lines.append(f"{info['characterName']}: {info['slot']}={name}")
+        else:
+            held_counts[name] = held_counts.get(name, 0) + max(1, int(inst.count or 1))
+
+    lines = ["CURRENT ITEMS / INVENTORY (the party's actual possessions — reuse exact names; do not re-grant what's already held):"]
+    if held_counts:
+        held = ", ".join(f"{n} x{c}" if c > 1 else n for n, c in sorted(held_counts.items()))
+        lines.append(f"  held: {held}")
+    else:
+        lines.append("  held: (none)")
+    if equipped_lines:
+        lines.append("  equipped: " + " · ".join(sorted(equipped_lines)))
+    else:
+        lines.append("  equipped: (none)")
+    return "\n".join(lines)
+
+
+def _infer_equip_slot(item: LorebookEntry, character) -> str | None:
+    """Given the item's catalog slot category, pick the first compatible
+    Equipment field not already occupied on this character; if every compatible
+    field is already occupied, fall back to the first one (an explicit equip
+    still succeeds and displaces whatever was there — the same behavior
+    ``inv_ops.equip_instance`` already has for the native tool path)."""
+    compatible = SLOT_COMPATIBILITY.get(item.slot or "", [])
+    if not compatible:
+        return None
+    equipment = character.equipment or {}
+    for field in compatible:
+        if not equipment.get(field):
+            return field
+    return compatible[0]
 
 
 async def _latest_narration(session: AsyncSession, turn_number: int, since_turn: int | None = None) -> str:
@@ -423,6 +563,25 @@ def _summary(kind: str, operation: str, payload: dict, target_title: str | None 
     if kind == "member":
         return f"Recruit member: {payload.get('name', '?')}"
     return f"{kind} {operation}"
+
+
+def _item_summary(op: str, args: dict) -> str:
+    name = args.get("itemName", "?")
+    if op == "take":
+        count = args.get("count") or 1
+        base = f"Took {name}" + (f" x{count}" if count and count > 1 else "")
+        if args.get("equipOnCharacter"):
+            base += f" (equipped by {args['equipOnCharacter']})"
+        return base
+    if op == "equip":
+        who = args.get("characterName", "?")
+        return f"{who} equipped {name}"
+    if op == "drop":
+        if args.get("unequipOnly"):
+            who = args.get("characterName", "?")
+            return f"{who} unequipped {name}"
+        return f"Dropped {name}"
+    return f"{op} {name}"
 
 
 async def _proposal_from_call(
@@ -640,6 +799,114 @@ async def apply_proposal(proposal: WorldbuildingProposal, session: AsyncSession)
         )
         return True, None
 
+    if kind == "item" and op == "take":
+        item_name = (p.get("itemName") or "").strip()
+        if not item_name:
+            return False, "No item name given."
+        item = await _resolve_lore(session, item_name)
+        created_new = False
+        if item is None:
+            description = (p.get("description") or "").strip()
+            if not description:
+                return False, "New item with no description — refused."
+            item = LorebookEntry(
+                title=item_name, content=description, cat="items",
+                item_type=p.get("itemType") or "Other", slot=p.get("slot"), max_stack=1,
+            )
+            session.add(item)
+            await session.flush()
+            created_new = True
+
+        # A grant with no EXPLICIT count for something already stowed is a
+        # restatement, not a second pickup — the same no-op rule the native
+        # grant_item tool applies (see narrator_actions.tool_grant_item).
+        raw_count = p.get("count")
+        count = int(raw_count or 1)
+        inv_deltas: list[dict] = []
+        if raw_count is None and await inv_ops.find_stowed_instance(session, item.id) is not None:
+            pass
+        else:
+            _msg, inv_deltas = await inv_ops.grant_items(session, item, count, "steward_grant")
+
+        equip_changes: list[dict] = []
+        equip_target = (p.get("equipOnCharacter") or "").strip()
+        if equip_target:
+            character, char_id = await _resolve_character(session, equip_target)
+            if character and item.item_type == "Equipment":
+                target_slot = _infer_equip_slot(item, character)
+                if target_slot:
+                    _msg, more_changes, more_deltas = await inv_ops.equip_instance(
+                        session, character, char_id, target_slot, item
+                    )
+                    equip_changes.extend(more_changes)
+                    inv_deltas.extend(more_deltas)
+
+        proposal.target_id = item.id  # tie the (possibly new) entry to this proposal/turn
+        proposal.payload = {**p, "_invDeltas": inv_deltas, "_equipChanges": equip_changes, "_createdNew": created_new}
+        return True, None
+
+    if kind == "item" and op == "equip":
+        character, char_id = await _resolve_character(session, p.get("characterName", ""))
+        item = await _resolve_lore(session, p.get("itemName", ""))
+        if not character or not item or item.item_type != "Equipment":
+            return False, "Could not resolve character/item, or item is not Equipment."
+        slot = p.get("slot") or _infer_equip_slot(item, character)
+        if not slot or slot not in VALID_EQUIPMENT_SLOTS or (item.slot and not _is_slot_compatible(item.slot, slot)):
+            return False, "No compatible slot."
+
+        # Already wearing exactly this in this slot — a no-op, not a change (or
+        # reversal would replay a bogus equip forever).
+        binding = await party_ops.binding_for(session, char_id)
+        current_instance_id = (dict(getattr(binding, "equipment", None) or {})).get(slot)
+        if current_instance_id:
+            current = await session.get(ItemInstance, current_instance_id)
+            if current is not None and current.item_id == item.id:
+                proposal.payload = {**p, "_invDeltas": [], "_equipChanges": []}
+                return True, None
+
+        _msg, equip_changes, inv_deltas = await inv_ops.equip_instance(session, character, char_id, slot, item)
+        proposal.payload = {**p, "_invDeltas": inv_deltas, "_equipChanges": equip_changes}
+        return True, None
+
+    if kind == "item" and op == "drop":
+        item = await _resolve_lore(session, p.get("itemName", ""))
+        if not item:
+            return False, "Unknown item."
+
+        inv_deltas: list[dict] = []
+        equip_changes: list[dict] = []
+        if p.get("unequipOnly") and p.get("characterName"):
+            character, char_id = await _resolve_character(session, p["characterName"])
+            binding = await party_ops.binding_for(session, char_id) if character else None
+            if not character or binding is None:
+                return False, "Could not resolve character."
+            equipment = dict(binding.equipment or {})
+            slot = None
+            for s, instance_id in equipment.items():
+                if not instance_id:
+                    continue
+                inst = await session.get(ItemInstance, instance_id)
+                if inst is not None and inst.item_id == item.id:
+                    slot = s
+                    break
+            if slot is None:
+                # Already not equipped — a no-op, not a failure.
+                proposal.payload = {**p, "_invDeltas": [], "_equipChanges": []}
+                return True, None
+            previous_instance_id = equipment[slot]
+            equipment[slot] = None
+            binding.equipment = equipment
+            equip_changes.append({
+                "characterId": char_id, "slot": slot,
+                "previousItemId": previous_instance_id, "newItemId": None,
+            })
+        else:
+            count = int(p.get("count") or 1)
+            _msg, inv_deltas = await inv_ops.remove_items(session, item, count, "steward_drop")
+
+        proposal.payload = {**p, "_invDeltas": inv_deltas, "_equipChanges": equip_changes}
+        return True, None
+
     return False, f"Unknown proposal {kind}/{op}."
 
 
@@ -688,23 +955,50 @@ async def _reverse_accepted_proposal(p: WorldbuildingProposal, session: AsyncSes
             return True
         return False
 
+    if kind == "item":
+        p_payload = p.payload or {}
+        inv_deltas = p_payload.get("_invDeltas") or []
+        equip_changes = p_payload.get("_equipChanges") or []
+        changed = False
+        if inv_deltas:
+            from server.ai.item_detection import reverse_inventory_deltas
+            await reverse_inventory_deltas(inv_deltas, session)
+            changed = True
+        if equip_changes:
+            from server.ai.narrator_actions import reverse_equipment_changes
+            await reverse_equipment_changes(equip_changes, session)
+            changed = True
+        # Only a NEWLY CREATED catalog entry is removed on reversal — granting
+        # an item that already existed and reversing that grant must restore
+        # inventory state without deleting the pre-existing catalog entry.
+        if op == "take" and p.target_id and p_payload.get("_createdNew"):
+            entry = await session.get(LorebookEntry, p.target_id)
+            if entry is not None and not entry.locked:
+                await session.delete(entry)
+                changed = True
+        return changed
+
     return False  # member creations and anything else are left in place
 
 
 async def reverse_chronicler_effects(
     session: AsyncSession, from_turn: int, *, exact: bool = False
 ) -> int:
-    """Undo the Chronicler's lore/quest effects on the given turn(s) and drop the
-    turn's proposal rows.
+    """Undo the Chronicler's (and Steward's) effects on the given turn(s) and
+    drop the turn's proposal rows.
 
-    Chronicler suggestions are tied to the message that triggered them: when that
-    message is deleted, regenerated, or swiped, the entries it spawned (or the
-    edits it made) are undone and its proposals cleared, so the re-run records a
-    fresh set. We use the proposal rows as the link (turn_number + the target_id
-    recorded at apply time).
+    Chronicler/Steward proposals are tied to the message that triggered them:
+    when that message is deleted, regenerated, or swiped, the entries/inventory
+    they spawned (or the edits they made) are undone and their proposals
+    cleared, so the re-run records a fresh set. We use the proposal rows as the
+    link (turn_number + the target_id/deltas recorded at apply time).
 
     - *accepted* create/update proposals (lore, quests, objectives) are reversed
       — creates deleted, updates restored from their ``_prev`` snapshot;
+    - *accepted* item proposals (take/equip/drop) are reversed by inverting the
+      inventory deltas and equipment changes recorded at apply time; a newly
+      created catalog entry (a brand-new item taken for the first time) is
+      deleted too, but an item that already existed is left in the catalog;
     - *pending / rejected / failed* proposals for the turn are simply dropped
       (they belonged to the discarded telling);
     - accepted *member* recruitments are left intact (deliberate) and their
@@ -759,13 +1053,95 @@ def chronicler_span(turn_number: int, interval: int) -> int | None:
     return turn_number - interval
 
 
+_STEWARD_MAX_TOKENS = 512
+
+
+async def _run_steward_pass(
+    session: AsyncSession, turn_number: int, narration: str, settings: OpenRouterSettings,
+) -> list[WorldbuildingProposal]:
+    """The Steward: a second, tool-capable pass that reads the FINISHED narration
+    and performs item-possession mutations via validated tool calls, instead of
+    asking the (possibly non-tool-capable) narration model to emit both prose and
+    precise state deltas in one pass.
+
+    Runs on every turn (independent of the Chronicler's lore/task/member
+    cadence) when the deterministic pre-filter finds a possession-change signal.
+    Item proposals always auto-apply — a player who can't pick up or equip
+    items has no game — regardless of the Confirmation/Auto ``worldbuilding_mode``
+    setting (which governs only lore/task/member proposals)."""
+    base_url, api_key, main_model = provider_endpoint(settings)
+    model_id = settings.worldbuilding_model_id or main_model
+
+    world_state = await _build_world_state(session)
+    inventory_state = await _build_inventory_state(session)
+
+    messages = [
+        {"role": "system", "content": STEWARD_GUIDANCE},
+        {"role": "system", "content": world_state},
+        {"role": "system", "content": inventory_state},
+        {"role": "user", "content": (
+            "NEW NARRATION THIS TURN:\n" + narration +
+            "\n\nRecord any possession changes. If nothing changed hands, call no tools."
+        )},
+    ]
+
+    log.info("STEWARD REQUEST turn=%s | model=%s", turn_number, model_id)
+
+    tool_calls: list[dict] = []
+    try:
+        async for ev in chat_completion_agent_turn(
+            api_key=api_key, model_id=model_id, base_url=base_url, messages=messages,
+            temperature=0.2,
+            max_tokens=min(settings.max_tokens_response, _STEWARD_MAX_TOKENS),
+            tools=STEWARD_TOOL_SCHEMAS,
+        ):
+            if ev["type"] == "result":
+                tool_calls = ev["tool_calls"]
+    except Exception:
+        log.exception("Steward call failed")
+        return []
+
+    op_by_name = {"take_item": "take", "equip_item": "equip", "drop_item": "drop"}
+    proposals: list[WorldbuildingProposal] = []
+    for tc in tool_calls:
+        op = op_by_name.get(tc["name"])
+        args = _parse_args(tc["arguments"])
+        if op is None or not (args.get("itemName") or "").strip():
+            continue
+
+        proposal = WorldbuildingProposal(
+            turn_number=turn_number, kind="item", operation=op, payload=dict(args),
+        )
+        ok, note = await apply_proposal(proposal, session)
+        proposal.status = "accepted" if ok else "failed"
+        proposal.note = note
+        proposal.summary = _item_summary(op, args)
+        session.add(proposal)
+        proposals.append(proposal)
+        if ok:
+            # Persistent in-chat toast, tethered to this turn (removed if the
+            # turn is later deleted/regenerated/swiped) — same mechanism the
+            # Chronicler's own auto-apply toasts use.
+            await event_ops.add_event(
+                session, turn_number=turn_number, kind="item",
+                text=proposal.summary, tethered=True,
+            )
+        log.info("STEWARD PROPOSAL turn=%s %s [%s]", turn_number, proposal.summary, proposal.status)
+
+    return proposals
+
+
 async def run_worldbuilder(turn_number: int, force: bool = False) -> list[WorldbuildingProposal]:
-    """Run the Chronicler over the turns since it last ran. Returns its proposals.
+    """Run the Steward (item possession, every turn) and the Chronicler (lore /
+    task / member, on its own cadence) over the turns since it last ran. Returns
+    the combined proposals.
 
     Clears any stale 'pending' proposals for this turn first (so swipe/regen
-    don't accumulate duplicates). No-op when mode is 'disabled', or when the
-    cadence says this is not a Chronicler turn (``force`` overrides — the manual
-    "run now" path).
+    don't accumulate duplicates). Both passes no-op when mode is 'disabled'; the
+    Chronicler pass additionally no-ops when the cadence says this is not a
+    Chronicler turn (``force`` overrides — the manual "run now" path). The
+    Steward pass is unaffected by cadence/``force`` — it always looks at just
+    the newest turn.
     """
     async with new_session() as session:
         settings = (await session.execute(select(OpenRouterSettings))).scalars().first()
@@ -778,12 +1154,20 @@ async def run_worldbuilder(turn_number: int, force: bool = False) -> list[Worldb
         if mode == "disabled":
             return []
 
+        # ── The Steward: item possession changes, every turn ──────────────
+        item_proposals: list[WorldbuildingProposal] = []
+        this_turn_narration = await _latest_narration(session, turn_number, turn_number - 1)
+        if _worth_stewarding(this_turn_narration):
+            item_proposals = await _run_steward_pass(session, turn_number, this_turn_narration, settings)
+            await session.commit()
+
+        # ── The Chronicler: lore / task / member, on its own cadence ───────
         since_turn = turn_number - 1 if force else chronicler_span(
             turn_number, getattr(settings, "worldbuilding_interval", 2) or 2
         )
         if since_turn is None:
             log.info("CHRONICLER SKIP turn=%s (not a Chronicler turn)", turn_number)
-            return []
+            return item_proposals
         since_turn = max(0, since_turn)
 
         # Prune pending proposals so they don't accumulate forever: drop this
@@ -807,7 +1191,7 @@ async def run_worldbuilder(turn_number: int, force: bool = False) -> list[Worldb
         if not _worth_chronicling(narration, known_tokens):
             await session.commit()  # persist the stale-pending cleanup
             log.info("CHRONICLER SKIP turn=%s (no new signals)", turn_number)
-            return []
+            return item_proposals
 
         world_state = await _build_world_state(session)
         turn_ctx = await _turn_context(session, turn_number, since_turn)
@@ -841,7 +1225,7 @@ async def run_worldbuilder(turn_number: int, force: bool = False) -> list[Worldb
                     tool_calls = ev["tool_calls"]
         except Exception:
             log.exception("Chronicler call failed")
-            return []
+            return item_proposals
 
         if not tool_calls:
             # The pre-filter passed (there were signals) but the model proposed
@@ -879,4 +1263,4 @@ async def run_worldbuilder(turn_number: int, force: bool = False) -> list[Worldb
             log.info("CHRONICLER PROPOSAL turn=%s %s [%s]", turn_number, proposal.summary, proposal.status)
 
         await session.commit()
-        return proposals
+        return item_proposals + proposals

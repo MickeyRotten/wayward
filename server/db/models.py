@@ -176,9 +176,6 @@ class NarratorConfig(Base):
     # Scripted choice options shown with the First Message (turn 0), where the
     # suggester can't run — authored alongside the first message itself.
     first_message_options = mapped_column(JSON, nullable=True)
-    # Skill checks: offer the narrator a server-rolled d20 skill_check tool for
-    # uncertain, consequential actions (rendered as dice chips in chat).
-    dice_enabled: Mapped[bool] = mapped_column(Integer, default=True)
     # Campaign Builder "Story Style" selections — a flat {key: value} dict
     # (genre/tone/writing_style/verbosity/content_limit/perspective/structure/
     # custom_instructions). Composed into a STORY STYLE prompt block at build

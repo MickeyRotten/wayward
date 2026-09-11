@@ -3,8 +3,8 @@
 DeepSeek-family models often narrate the whole beat and only then append a
 state-write tool call. The loop accepts that beat instead of discarding and
 regenerating it (the write->delete->rewrite artifact), but only for safe state
-writes — a skill_check / read tool still forces a clean re-narration. Malformed
-tool arguments are reported back for the model to resend.
+writes — a read tool still forces a clean re-narration. Malformed tool
+arguments are reported back for the model to resend.
 """
 
 import json
@@ -72,7 +72,6 @@ def _run(monkeypatch, responses: list[list[dict]]):
             base_messages=[{"role": "system", "content": "Narrate."},
                            {"role": "user", "content": "I open the door."}],
             current_turn=1,
-            dice_enabled=False,
         ):
             out.append(ev)
         return out

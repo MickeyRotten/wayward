@@ -761,7 +761,6 @@ async def chat_turn(
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
             user_message_id=user_msg.id,
-            dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
             inline_option_count=_inline_option_count(narrator),
             turn_guidance=_turn_block_guidance(narrator, mode != "off"),
             prev_scene=ctx.scene,
@@ -860,7 +859,6 @@ async def swipe(turn: int, session: AsyncSession = Depends(get_session)):
             variant=variant_count,
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
-            dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
             inline_option_count=_inline_option_count(narrator),
             turn_guidance=_turn_block_guidance(narrator, mode != "off"),
             # The clock advances from where the turn STARTED, not from the
@@ -977,7 +975,6 @@ async def regenerate(
             variant=0,
             spotlight_signals=spotlight_signals,
             schedule_summary=needs_summary,
-            dice_enabled=bool(getattr(narrator, "dice_enabled", True)),
             inline_option_count=_inline_option_count(narrator),
             turn_guidance=_turn_block_guidance(narrator, mode != "off"),
             prev_scene=_derive_scene([m for m in all_messages if m.turn_number < last_turn]),
@@ -1527,7 +1524,6 @@ def _stream_agent_response(
     spotlight_signals: list[SpotlightSignal] | None = None,
     schedule_summary: bool = False,
     user_message_id: int | None = None,
-    dice_enabled: bool = True,
     inline_option_count: int | None = None,
     turn_guidance: str = "",
     prev_scene: dict | None = None,
@@ -1578,7 +1574,6 @@ def _stream_agent_response(
                 base_messages=messages,
                 current_turn=current_turn,
                 variant=variant,
-                dice_enabled=dice_enabled,
             ):
                 etype = ev["type"]
                 if etype == "content":

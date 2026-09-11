@@ -21,7 +21,6 @@ interface NarratorConfigResponse {
   actionOptionRules: string[]
   firstMessageOptions: string[]
   firstMessageAlternates: OpeningAlt[]
-  diceEnabled: boolean
   hasVoice: boolean
 }
 
@@ -39,7 +38,6 @@ interface NarratorState {
   actionOptionRules: string[]
   firstMessageOptions: string[]
   firstMessageAlternates: OpeningAlt[]
-  diceEnabled: boolean
   hasVoice: boolean
   fetchConfig: () => Promise<void>
   save: (update: Partial<NarratorConfigResponse>) => Promise<void>
@@ -62,7 +60,6 @@ export const useNarratorStore = create<NarratorState>((set) => ({
   actionOptionRules: [],
   firstMessageOptions: [],
   firstMessageAlternates: [],
-  diceEnabled: true,
   hasVoice: false,
 
   fetchConfig: async () => {
@@ -81,7 +78,6 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       actionOptionRules: n.actionOptionRules,
       firstMessageOptions: n.firstMessageOptions,
       firstMessageAlternates: n.firstMessageAlternates,
-      diceEnabled: n.diceEnabled,
       hasVoice: n.hasVoice,
     })
   },
@@ -102,7 +98,6 @@ export const useNarratorStore = create<NarratorState>((set) => ({
       actionOptionRules: n.actionOptionRules,
       firstMessageOptions: n.firstMessageOptions,
       firstMessageAlternates: n.firstMessageAlternates,
-      diceEnabled: n.diceEnabled,
       hasVoice: n.hasVoice,
     })
   },

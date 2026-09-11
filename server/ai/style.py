@@ -234,8 +234,6 @@ _TOOL_GUIDANCE_FALLBACK = """You have tools for changing and reading game state.
 - Once all needed tool calls are done, write the narration in a final message with NO tool calls. That final message is the only text the player sees.
 - Most turns need no tools at all — just narrate."""
 
-_DICE_GUIDANCE_FALLBACK = """- skill_check: when the player or a party member attempts something meaningfully UNCERTAIN and CONSEQUENTIAL (leaping a chasm, picking a lock, persuading a hostile guard, spotting an ambush), call skill_check BEFORE narrating the outcome, then narrate the result you were given — a failure must actually fail. Pick the skill label from the action or the character's Field Skill. Choose difficulty honestly: easy / normal / hard / heroic. NEVER roll for trivial or guaranteed actions, for ordinary conversation, or more than once per player action. The roll is the game's, not yours: it is seeded on the turn, so asking again gets the same number and a failure has to be lived with."""
-
 _FORMATTING_GUIDE_FALLBACK = """Format the narration for a stylised RPG chat:
 - When ANY CHARACTER speaks, give them their own paragraph that begins with their name, a colon, then ONLY their spoken words in quotes — e.g.  Tifa: "We should move before the light fails."  This renders as a portrait dialogue box. Put nothing else on that line: any description of how they said it, their expression, or what happens next goes in a SEPARATE narration paragraph (a blank line after the quote), NOT on the dialogue line. One speaker per paragraph; only do this for party members and characters in focus.
 - Use *italics* for emphasis, whispers, or inner thoughts, and **bold** for the names of notable items the first time they appear.
@@ -262,11 +260,6 @@ def core_instructions() -> str:
 def tool_guidance() -> str:
     """How the agentic narrator should use its state tools (always injected)."""
     return _narrator_text("tool_guidance", _TOOL_GUIDANCE_FALLBACK)
-
-
-def dice_guidance() -> str:
-    """skill_check usage guidance (appended only when dice are enabled)."""
-    return _narrator_text("dice_guidance", _DICE_GUIDANCE_FALLBACK)
 
 
 def formatting_guide() -> str:

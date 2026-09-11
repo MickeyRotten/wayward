@@ -118,7 +118,6 @@ export function SettingsPanel() {
       actionSuggestionsInstructions: n.actionSuggestionsInstructions,
       actionSuggestionsCount: n.actionSuggestionsCount,
       actionSuggestionsMode: n.actionSuggestionsMode,
-      diceEnabled: n.diceEnabled,
     }))
   }, [track])
   const handleSave = useCallback(() => {
@@ -145,7 +144,7 @@ export function SettingsPanel() {
     ttsEnabled, ttsAutoplay } = settings
   const { spotlightRule, postHistoryInstructions: postHistory,
     plannerInstructions, actionSuggestionsEnabled, actionSuggestionsInstructions,
-    actionSuggestionsCount, actionSuggestionsMode, diceEnabled } = narrator
+    actionSuggestionsCount, actionSuggestionsMode } = narrator
 
   const setTemperature = (v: number) => setS({ temperature: v })
   const setTopP = (v: number) => setS({ topP: v })
@@ -181,7 +180,6 @@ export function SettingsPanel() {
   const setActionSuggestionsInstructions = (v: string) => setN({ actionSuggestionsInstructions: v })
   const setActionSuggestionsCount = (v: number) => setN({ actionSuggestionsCount: Math.max(1, Math.min(6, v)) })
   const setActionSuggestionsMode = (v: string) => setN({ actionSuggestionsMode: v })
-  const setDiceEnabled = (v: boolean) => setN({ diceEnabled: v })
 
   // Load the model list automatically when Config opens (public for OpenRouter).
   useEffect(() => {
@@ -206,7 +204,7 @@ export function SettingsPanel() {
     setS({ toolMode: 'auto', maxToolRounds: 4, autoRetryCount: 2, worldbuildingMode: 'confirmation', worldbuildingInterval: 2, worldbuildingModelId: '', summaryThreshold: 0.7, summaryModelId: '', actionSuggestionsModelId: '', plannerModelId: '', visionModelId: 'google/gemma-3-4b-it', visionUseSameKey: true, visionInstructions: '' })
     setN({ actionSuggestionsEnabled: false })
   }
-  const resetWorld = () => setN({ spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '', diceEnabled: true })
+  const resetWorld = () => setN({ spotlightRule: '', postHistoryInstructions: '', plannerInstructions: '' })
   const resetVoice = () => setS({ ttsEnabled: false, ttsAutoplay: true })
   const resetAppearance = () => {
     useAppearanceStore.getState().setChatFontSize('medium')
@@ -828,22 +826,6 @@ export function SettingsPanel() {
               onChange={setPlannerInstructions}
             />
             <span className="text-[10px] text-textdim font-body">Core instructions for the Editor persona (Edit Mode in chat).</span>
-          </SubSection>
-
-          <SubSection title="Skill Checks">
-            <label className="flex items-center gap-2 text-[11px] text-textdim font-body">
-              <input
-                type="checkbox"
-                checked={diceEnabled}
-                onChange={(e) => setDiceEnabled(e.target.checked)}
-              />
-              Enable dice (d20 skill checks)
-            </label>
-            <span className="text-[10px] text-textdim font-body">
-              For uncertain, consequential actions the Narrator asks the server to roll a
-              d20 and narrates the result it's given — shown as a dice chip in chat. Per
-              campaign; needs a tool-capable model.
-            </span>
           </SubSection>
 
           <SubSection title="Lorebook Injection">

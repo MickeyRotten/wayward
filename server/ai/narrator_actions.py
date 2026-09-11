@@ -374,37 +374,6 @@ class ToolEffect:
     ok: bool = True
 
 
-# ── Skill checks (dice) ───────────────────────────────────────────
-
-async def tool_skill_check(
-    args: dict, session: AsyncSession, turn_number: int = 0, variant: int = 0
-) -> ToolEffect:
-    """A d20 skill check the model narrates but never rolls.
-
-    The roll is **seeded on the turn** (see ``server/ai/dice.py``), not random.
-    An unseeded roll behind a regenerate button is an open save-scum hole: the
-    player re-rolls until the answer is the one they wanted and no failure ever
-    has to be lived with. Seeded, a regenerate re-*tells* the same result, while
-    a swipe — a deliberate request for a different take — rolls fresh, and
-    genuinely choosing another action earns a new roll on its own.
-
-    The roll writes a tethered ChatEvent (the dice chip in chat) that vanishes
-    with the turn on swipe/regenerate/delete."""
-    from server.ai.dice import skill_check as roll_skill_check
-    from server.db import events as event_ops
-
-    who = (args.get("characterName") or "").strip() or "Someone"
-    skill = (args.get("skill") or "").strip() or "a skill"
-    result = roll_skill_check(turn_number, who, skill, args.get("difficulty"), variant)
-
-    text = (f"{who} — {skill}: rolled {result['roll']} vs DC {result['dc']} "
-            f"— {result['outcome'].title()}")
-    await event_ops.add_event(
-        session, turn_number=turn_number, kind="dice", text=text, tethered=True
-    )
-    return ToolEffect(result=json.dumps(result))
-
-
 # Compound-location joiners. With any of these the TAIL is the narrower place,
 # so "Boars Head Tavern - Damp Cellar" is the Damp Cellar. A comma is
 # deliberately NOT a joiner ("Rodstroke, Mesmeria" nests the other way round),

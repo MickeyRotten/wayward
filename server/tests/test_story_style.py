@@ -93,7 +93,6 @@ def test_core_and_guides_default_to_fallbacks():
     assert style.core_instructions() == style._CORE_FALLBACK
     assert style.core_instructions().startswith("You are the Narrator")
     assert style.tool_guidance() == style._TOOL_GUIDANCE_FALLBACK
-    assert style.dice_guidance() == style._DICE_GUIDANCE_FALLBACK
     assert style.formatting_guide() == style._FORMATTING_GUIDE_FALLBACK
 
 

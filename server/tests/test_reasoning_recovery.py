@@ -138,7 +138,6 @@ def test_agent_recovers_from_reasoning_budget(client, monkeypatch):
             base_messages=[{"role": "system", "content": "Be the narrator."},
                            {"role": "user", "content": "I open the door."}],
             current_turn=1,
-            dice_enabled=False,
         ):
             out.append(ev)
         return out

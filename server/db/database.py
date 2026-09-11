@@ -263,7 +263,6 @@ async def _run_scope_migrations() -> None:
         ("adventure.chat_messages", "image_path", "ALTER TABLE adventure.chat_messages ADD COLUMN image_path VARCHAR"),
         ("adventure.chat_messages", "image_description", "ALTER TABLE adventure.chat_messages ADD COLUMN image_description TEXT"),
         ("adventure.chat_messages", "editor_actions", "ALTER TABLE adventure.chat_messages ADD COLUMN editor_actions JSON"),
-        ("campaign.narrator_configs", "dice_enabled", "ALTER TABLE campaign.narrator_configs ADD COLUMN dice_enabled INTEGER DEFAULT 1"),
         ("campaign.lorebook_config", "scan_depth", "ALTER TABLE campaign.lorebook_config ADD COLUMN scan_depth INTEGER DEFAULT 3"),
         ("adventure.chat_messages", "prompt_tokens", "ALTER TABLE adventure.chat_messages ADD COLUMN prompt_tokens INTEGER"),
         ("adventure.chat_messages", "completion_tokens", "ALTER TABLE adventure.chat_messages ADD COLUMN completion_tokens INTEGER"),

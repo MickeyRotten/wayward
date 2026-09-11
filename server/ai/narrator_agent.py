@@ -29,7 +29,6 @@ from server.ai.narrator_actions import (
     tool_remove_item,
     tool_search_items,
     tool_set_scene,
-    tool_skill_check,
     tool_unequip,
 )
 from server.ai.openrouter import agent_turn_with_retry, chat_completion_agent_turn, provider_endpoint
@@ -39,7 +38,7 @@ from server.db.database import new_session
 log = logging.getLogger("wayward.narrator_agent")
 
 
-# The always-on narrator guides (tool use, dice, chat formatting) now live in the
+# The always-on narrator guides (tool use, chat formatting) now live in the
 # editable style_catalog.json and are read live via ``style`` (with code
 # fallbacks there) — see "Story Style (the Campaign Builder)" in CLAUDE.md.
 
@@ -55,8 +54,8 @@ FINAL_ROUND_NUDGE = (
 # so a beat narrated *before* the call is still consistent with it. When a model
 # narrates the whole beat and only then appends one of these, we keep the beat
 # instead of discarding and regenerating it (see the preamble handling below).
-# skill_check and the read tools are deliberately excluded — their result must
-# be free to change what actually gets narrated.
+# The read tools are deliberately excluded — their result must be free to
+# change what actually gets narrated.
 _SAFE_WRITE_TOOLS = frozenset({
     "grant_item", "remove_item", "consume_item", "equip", "unequip",
 })
@@ -202,30 +201,6 @@ TOOL_SCHEMAS: list[dict] = [
     },
 ]
 
-# Offered only when the campaign has dice enabled (NarratorConfig.dice_enabled).
-SKILL_CHECK_SCHEMA: dict = {
-    "type": "function",
-    "function": {
-        "name": "skill_check",
-        "description": (
-            "Roll a d20 skill check for a meaningfully uncertain, consequential "
-            "action. The SERVER rolls the die and returns roll/DC/outcome — "
-            "narrate the outcome you are given, never invent your own. Call it "
-            "before narrating; at most one check per player action."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "characterName": {"type": "string", "description": "Who attempts it (first name; the player character or a party member)."},
-                "skill": {"type": "string", "description": "Short skill label, e.g. 'Athletics', 'Lockpicking', 'Persuasion' — from the action or the character's Field Skill."},
-                "difficulty": {"type": "string", "enum": ["easy", "normal", "hard", "heroic"], "default": "normal"},
-                "reason": {"type": "string", "description": "One short clause: what is at stake."},
-            },
-            "required": ["characterName", "skill"],
-        },
-    },
-}
-
 _HANDLERS = {
     "set_scene": tool_set_scene,
     "grant_item": tool_grant_item,
@@ -260,7 +235,6 @@ async def run_narrator_agent(
     current_turn: int,
     variant: int = 0,
     summarize_hint: bool = False,
-    dice_enabled: bool = True,
 ) -> AsyncGenerator[dict, None]:
     """Drive the agentic narrator loop for one turn.
 
@@ -276,12 +250,11 @@ async def run_narrator_agent(
     # unused — history summarisation is handled deterministically server-side.)
     messages = list(base_messages)
     insert_at = 1 if messages and messages[0].get("role") == "system" else 0
-    guidance = style.tool_guidance() + ("\n" + style.dice_guidance() if dice_enabled else "")
     messages[insert_at:insert_at] = [
-        {"role": "system", "content": guidance},
+        {"role": "system", "content": style.tool_guidance()},
         {"role": "system", "content": style.formatting_guide()},
     ]
-    tool_schemas = TOOL_SCHEMAS + ([SKILL_CHECK_SCHEMA] if dice_enabled else [])
+    tool_schemas = TOOL_SCHEMAS
 
     inv_deltas: list[dict] = []
     equip_changes: list[dict] = []
@@ -494,9 +467,6 @@ async def run_narrator_agent(
 
 
 async def _execute_tool(name: str, args: dict, session, current_turn: int = 0, variant: int = 0) -> ToolEffect:
-    if name == "skill_check":
-        # Needs the turn to tether its dice ChatEvent (removed on swipe/delete).
-        return await tool_skill_check(args, session, current_turn, variant)
     handler = _HANDLERS.get(name)
     if not handler:
         return ToolEffect(result=f"Unknown tool '{name}'.")

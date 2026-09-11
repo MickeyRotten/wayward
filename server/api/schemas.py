@@ -131,12 +131,10 @@ class NarratorUpdate(BaseModel):
     actionOptionRules: list[str] | None = None  # legacy; retained for back-compat
     firstMessageOptions: list[str] | None = None
     firstMessageAlternates: list[OpeningAlt] | None = None
-    diceEnabled: bool | None = None
 
 
 class NarratorResponse(BaseModel):
     hasVoice: bool = False  # narrator TTS voice sample present for this campaign
-    diceEnabled: bool = True  # server-rolled d20 skill_check tool offered
     instructions: str
     actionInstruction: str
     spotlightRule: str

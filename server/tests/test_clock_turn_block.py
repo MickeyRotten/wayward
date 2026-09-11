@@ -1,7 +1,5 @@
-"""The three deterministic seams added to take state back from the narrator:
-the clock, the dice, and the trailing turn block."""
-
-import collections
+"""The deterministic seams added to take state back from the narrator:
+the clock and the trailing turn block."""
 
 from server.ai.clock import (
     MINUTES_PER_DAY,
@@ -9,7 +7,6 @@ from server.ai.clock import (
     normalize_duration,
     phase_of,
 )
-from server.ai.dice import roll_dice, seed_hash, skill_check
 from server.ai.narrator_actions import coerce_scene, simplify_location
 from server.ai.roster import compose_roll_call
 from server.ai.turn_block import normalize_options, parse_turn_block
@@ -50,40 +47,6 @@ def test_time_reaches_the_world_only_as_a_phase_word():
         "late night", "dawn", "morning", "midday",
         "afternoon", "evening", "dusk", "night",
     ]
-
-
-# ── Dice ───────────────────────────────────────────────────────────────────
-
-def test_the_same_turn_re_tells_the_same_roll():
-    a = skill_check(7, "Tifa", "climb", "hard")
-    b = skill_check(7, "Tifa", "climb", "hard")
-    assert a == b, "a regenerate must re-tell, not re-roll"
-
-
-def test_a_swipe_is_a_genuinely_new_take_and_rolls_fresh():
-    rolls = {skill_check(7, "Tifa", "climb", "hard", v)["roll"] for v in range(8)}
-    assert len(rolls) > 1
-
-
-def test_a_d20_reaches_every_face_with_both_parities():
-    # Regression: a raw FNV hash fed to `% sides` leaks its low bit, so a die's
-    # parity became a function of the seed's characters — a d20 that could only
-    # roll odd.
-    counts = collections.Counter(
-        roll_dice(seed_hash(t, "actor", "skill"), 1, 20)[0] for t in range(4000)
-    )
-    assert len(counts) == 20, "every face must be reachable"
-    odd = sum(v for k, v in counts.items() if k % 2)
-    assert 0.45 < odd / sum(counts.values()) < 0.55
-
-
-def test_2d6_can_roll_seven():
-    # Regression: hashing `seed|i` for extra dice — seeds a suffix apart — locked
-    # them into opposite parities, so 2d6 produced only even sums. Each die
-    # looked uniform alone; only the joint distribution was wrong.
-    sums = collections.Counter(sum(roll_dice(seed_hash(t), 2, 6)) for t in range(3000))
-    assert sums[7] > 0
-    assert sums[7] == max(sums.values()), "7 is the mode of 2d6"
 
 
 # ── Scene guards ───────────────────────────────────────────────────────────
